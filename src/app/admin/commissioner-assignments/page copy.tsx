@@ -79,8 +79,8 @@ export default function CommissionerAssignmentsPage() {
           assignments.map((item: AssignmentRow) => [
             item.departmentId,
             item.commissionerId || "",
-          ])
-        )
+          ]),
+        ),
       );
     } catch (error) {
       console.error("Load commissioner assignments error:", error);
@@ -131,44 +131,6 @@ export default function CommissionerAssignmentsPage() {
     } catch (error) {
       console.error("Save commissioner assignment error:", error);
       setMessage("Failed to save assignment");
-    } finally {
-      setSavingDepartmentId("");
-    }
-  };
-
-  // ✅ FIXED DELETE FUNCTION (properly inside component)
-  const handleDelete = async (departmentId: string) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-
-    try {
-      setSavingDepartmentId(departmentId);
-      setMessage("");
-
-      const res = await fetch("/api/admin/commissioner-assignments", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ departmentId }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMessage(data?.error || "Failed to delete assignment");
-        return;
-      }
-
-      setMessage("Assignment deleted");
-      await loadData();
-    } catch (error) {
-      console.error("Delete commissioner assignment error:", error);
-      setMessage("Failed to delete assignment");
     } finally {
       setSavingDepartmentId("");
     }
@@ -240,27 +202,15 @@ export default function CommissionerAssignmentsPage() {
                       </Select.Root>
                     </Table.Cell>
                     <Table.Cell>
-                      <Flex gap="2">
-                        <Button
-                          size="1"
-                          onClick={() => handleSave(row.departmentId)}
-                          disabled={savingDepartmentId === row.departmentId}
-                        >
-                          {savingDepartmentId === row.departmentId
-                            ? "Saving..."
-                            : "Save"}
-                        </Button>
-
-                        <Button
-                          size="1"
-                          color="red"
-                          variant="soft"
-                          onClick={() => handleDelete(row.departmentId)}
-                          disabled={savingDepartmentId === row.departmentId}
-                        >
-                          Delete
-                        </Button>
-                      </Flex>
+                      <Button
+                        size="1"
+                        onClick={() => handleSave(row.departmentId)}
+                        disabled={savingDepartmentId === row.departmentId}
+                      >
+                        {savingDepartmentId === row.departmentId
+                          ? "Saving..."
+                          : "Save"}
+                      </Button>
                     </Table.Cell>
                   </Table.Row>
                 ))}
@@ -273,9 +223,7 @@ export default function CommissionerAssignmentsPage() {
           <Text
             size="2"
             mt="3"
-            color={
-              message.toLowerCase().includes("failed") ? "red" : "green"
-            }
+            color={message.toLowerCase().includes("failed") ? "red" : "green"}
           >
             {message}
           </Text>

@@ -8,26 +8,11 @@ const getYear = () => new Date().getFullYear();
 
 function normalizeId(value) {
   if (!value) return "";
-
   if (typeof value === "string") return value;
-
   if (typeof value === "object" && value !== null) {
-    // ✅ prevent infinite recursion
-    if (value._id && value._id !== value) {
-      return normalizeId(value._id);
-    }
-
-    // ✅ MongoDB ObjectId safe conversion
-    if (typeof value.toHexString === "function") {
-      return value.toHexString();
-    }
-
-    if (typeof value.toString === "function") {
-      const str = value.toString();
-      if (str !== "[object Object]") return str;
-    }
+    if (value._id) return normalizeId(value._id);
+    if (typeof value.toString === "function") return value.toString();
   }
-
   return "";
 }
 
@@ -47,9 +32,6 @@ function getUserIdFromAuth(req) {
 
   const token = authHeader.split(" ")[1];
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-  if (!decoded?.id) throw new Error("Unauthorized");
-
   return decoded.id;
 }
 
@@ -103,26 +85,18 @@ export async function GET(req) {
 
     if (["DivisionHead", "DepartmentHead"].includes(requesterRole)) {
       visibilityLabel = "My Department Leaves";
-
       if (requesterDepartmentId) {
         const departmentMembers = await db.collection("users").find({
           departmentId: { $in: buildIdVariants(requesterDepartmentId) },
         }).toArray();
-
-        userScopeIds = departmentMembers
-          .map((u) => normalizeId(u._id))
-          .filter(Boolean);
+        userScopeIds = departmentMembers.map((u) => normalizeId(u._id)).filter(Boolean);
       }
     } else if (requesterDivisionId) {
       visibilityLabel = "My Division Leaves";
-
       const divisionMembers = await db.collection("users").find({
         divisionId: { $in: buildIdVariants(requesterDivisionId) },
       }).toArray();
-
-      userScopeIds = divisionMembers
-        .map((u) => normalizeId(u._id))
-        .filter(Boolean);
+      userScopeIds = divisionMembers.map((u) => normalizeId(u._id)).filter(Boolean);
     }
 
     if (userScopeIds.length === 0) {
@@ -136,17 +110,13 @@ export async function GET(req) {
       .toArray();
 
     const usersInScope = await db.collection("users").find({
-      _id: {
-        $in: userScopeIds
-          .filter((id) => ObjectId.isValid(id))
-          .map((id) => new ObjectId(id)),
-      },
+      _id: { $in: userScopeIds.filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id)) },
     }).toArray();
 
     const userNameMap = new Map(
       usersInScope.map((u) => [
         normalizeId(u._id),
-        u.name || u.email || "-",
+        u.name || u.name || u.email || "-",
       ])
     );
 
@@ -221,7 +191,6 @@ export async function POST(req) {
 
     const year = getYear();
     const userObjectId = new ObjectId(userId);
-
     const applicantUser = await db.collection("users").findOne({ _id: userObjectId });
 
     if (!applicantUser) {
@@ -232,14 +201,6 @@ export async function POST(req) {
       fromDate,
       toDate,
     });
-
-    
-console.log("Applicant:", applicantUser.name);
-console.log("Applicant Role:", applicantUser.role);
-console.log("Resolved Approver:", resolvedApprover);
-
-
-
     if (!resolvedApprover?.approverId) {
       return NextResponse.json(
         { error: "No approver configured for your department/division hierarchy" },
@@ -272,8 +233,8 @@ console.log("Resolved Approver:", resolvedApprover);
     }
 
     await db.collection("leave_applications").insertOne({
-      userId: userObjectId, // ✅ stored as ObjectId
-      userName: applicantUser.name || applicantUser.email || "",
+      userId,
+      userName: applicantUser.name || applicantUser.name || applicantUser.email || "",
       applicantRole: applicantUser.role || "Officer",
       departmentId: applicantUser.departmentId || "",
       divisionId: applicantUser.divisionId || "",
@@ -294,6 +255,7 @@ console.log("Resolved Approver:", resolvedApprover);
       updatedAt: new Date(),
     });
 
+    // Reserve days immediately after application submission.
     await db.collection("leave_balances").updateOne(
       {
         _id: leaveBalance._id,

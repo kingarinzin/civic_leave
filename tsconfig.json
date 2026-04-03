@@ -30,6 +30,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-, "src/models/division.js", "src/lib/mongodb.ts", "src/lib/mongodb.jsssss", "src/app/admin/department/page.tsx", "src/components/MasterTable.js", "src/lib/mongodb.js"  ],
+, "src/models/division.js", "src/lib/mongodb.ts", "src/lib/mongodb.jsssss", "src/app/admin/department/page.tsx", "src/components/MasterTable.js", "src/lib/mongodb.js", "src/app/api/test-db/route.js"  ],
   "exclude": ["node_modules"]
 }

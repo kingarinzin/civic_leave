@@ -3,19 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
-import {
-  Badge,
-  Box,
-  Button,
-  Card,
-  Checkbox,
-  Flex,
-  Heading,
-  Separator,
-  Text,
-  TextArea,
-  TextField,
-} from "@radix-ui/themes";
+import {Badge,Box,Button,Card,Checkbox,Flex,Heading,Separator,Text,TextArea,TextField,} from "@radix-ui/themes";
 
 type LeaveType = {
   _id: string;
@@ -359,7 +347,6 @@ export default function ApplyLeavePage() {
                   Reset
                 </Button>
               </Flex>
-
               {message && (
                 <Text size="2" color="red">
                   {message}

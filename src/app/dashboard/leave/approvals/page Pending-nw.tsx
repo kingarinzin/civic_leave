@@ -175,42 +175,17 @@ export default function LeaveApprovalsPage() {
 
         {/* Tabs */}
         <Flex gap="2" mb="4" wrap="wrap">
-  {(["all", "pending", "approved", "rejected"] as const).map((tab) => (
-    <Button
-      key={tab}
-      size="2"
-      variant={activeTab === tab ? "solid" : "soft"}
-      onClick={() => setActiveTab(tab)}
-      style={{ position: "relative" }}
-    >
-      {tab.toUpperCase()} ({counts[tab]})
-
-      {/* 🔴 Number badge for Pending */}
-      {tab === "pending" && counts.pending > 0 && (
-        <span
-          style={{
-            position: "absolute",
-            top: "-6px",
-            right: "-6px",
-            minWidth: "18px",
-            height: "18px",
-            padding: "0 5px",
-            borderRadius: "999px",
-            backgroundColor: "red",
-            color: "white",
-            fontSize: "12px",
-            fontWeight: "bold",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {counts.pending}
-        </span>
-      )}
-    </Button>
-  ))}
-</Flex>
+          {(["all", "pending", "approved", "rejected"] as const).map((tab) => (
+              <Button
+                key={tab}
+                size="2"
+                variant={activeTab === tab ? "solid" : "soft"}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab.toUpperCase()} ({counts[tab]})
+              </Button>
+            ))}
+        </Flex>
 
         <Card size="3">
           {loading ? (

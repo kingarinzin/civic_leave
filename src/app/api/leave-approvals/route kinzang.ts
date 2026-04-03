@@ -26,24 +26,12 @@ function getTokenUserId(req: Request): string {
 
 function normalizeId(value: unknown): string {
   if (!value) return "";
-
   if (typeof value === "string") return value;
-
-  if (value instanceof ObjectId) return value.toString();
-
   if (typeof value === "object" && value !== null) {
-    const obj = value as any;
-
-    if (obj._id instanceof ObjectId) {
-      return obj._id.toString();
-    }
-
-    if (typeof obj.toString === "function") {
-      const str = obj.toString();
-      if (str && str !== "[object Object]") return str;
-    }
+    const maybeObject = value as { _id?: unknown; toString?: () => string };
+    if (maybeObject._id) return normalizeId(maybeObject._id);
+    if (typeof maybeObject.toString === "function") return maybeObject.toString();
   }
-
   return "";
 }
 
@@ -67,7 +55,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ applications: [] }, { status: 200 });
     }
 
-    const query: Record<string, unknown> = {};
+    const query: Record<string, unknown> = { status: "pending" };
     if (!currentUser.isAdmin) {
       query.approverId = currentUserId;
     }
@@ -85,7 +73,6 @@ export async function GET(req: Request) {
       const department = departments.find(
         (d) => normalizeId(d._id) === normalizeId(entry.departmentId)
       );
-
       const division = divisions.find(
         (d) => normalizeId(d._id) === normalizeId(entry.divisionId)
       );
@@ -105,11 +92,7 @@ export async function GET(req: Request) {
         approverName: entry.approverName || "-",
         approverRole: entry.approverRole || "-",
         createdAt: entry.createdAt,
-
-        // ✅ status + approval info
         status: entry.status || "pending",
-        approvedBy: entry.approvedBy || "",
-        approvedAt: entry.approvedAt || null,
       };
     });
 
@@ -129,7 +112,6 @@ export async function POST(req: Request) {
     const currentUserId = getTokenUserId(req);
 
     const { applicationId, action, remarks } = await req.json();
-
     if (!applicationId || !["approve", "reject"].includes(action)) {
       return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
     }
@@ -161,8 +143,7 @@ export async function POST(req: Request) {
     }
 
     const canApproveByRole = !!currentUser.isAdmin || isLeaveApproverRole(currentUser.role);
-    const isAssignedApprover =
-      normalizeId(leaveApplication.approverId) === currentUserId;
+    const isAssignedApprover = normalizeId(leaveApplication.approverId) === currentUserId;
 
     if (!canApproveByRole || (!currentUser.isAdmin && !isAssignedApprover)) {
       return NextResponse.json({ error: "Not authorized for this leave request" }, { status: 403 });
@@ -170,45 +151,34 @@ export async function POST(req: Request) {
 
     const newStatus = action === "approve" ? "approved" : "rejected";
 
-    // ✅ UPDATED: include approvedBy + approvedAt
     await db.collection("leave_applications").updateOne(
       { _id: new ObjectId(applicationId) },
       {
         $set: {
           status: newStatus,
-
-          approvedBy: currentUser.name || currentUser.email || "Approver",
-          approvedAt: new Date(),
-          remarks: remarks || "",
-
           reviewRemarks: remarks || "",
           reviewedAt: new Date(),
           reviewedById: currentUserId,
-          reviewedByRole:
-            currentUser.role || (currentUser.isAdmin ? "Admin" : "Approver"),
+          reviewedByRole: currentUser.role || (currentUser.isAdmin ? "Admin" : "Approver"),
           reviewedByName:
-            currentUser.name || currentUser.email || "Approver",
+            currentUser.name || currentUser.name || currentUser.email || "Approver",
           updatedAt: new Date(),
         },
       }
     );
 
+    // Balance is reserved at apply time. Revert it only when rejected.
     if (newStatus === "rejected") {
       const year = getYear();
       const applicantObjectId = new ObjectId(leaveApplication.userId);
-
       const leaveBalance = await db.collection("leave_balances").findOne({
         userId: applicantObjectId,
         year,
-        
       });
 
       if (leaveBalance && Array.isArray(leaveBalance.leaves)) {
         const updatedLeaves = leaveBalance.leaves.map((leaf: LeaveBalanceLeaf) => {
-          if (
-            normalizeId(leaf.leaveTypeId) !==
-            normalizeId(leaveApplication.leaveTypeId)
-          ) {
+          if (normalizeId(leaf.leaveTypeId) !== normalizeId(leaveApplication.leaveTypeId)) {
             return leaf;
           }
 

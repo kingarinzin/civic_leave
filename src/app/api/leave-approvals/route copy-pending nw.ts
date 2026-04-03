@@ -200,7 +200,6 @@ export async function POST(req: Request) {
       const leaveBalance = await db.collection("leave_balances").findOne({
         userId: applicantObjectId,
         year,
-        
       });
 
       if (leaveBalance && Array.isArray(leaveBalance.leaves)) {

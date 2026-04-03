@@ -41,8 +41,9 @@ export default function LeaveApprovalsPage() {
   const [remarksById, setRemarksById] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<
-  "all" | "pending" | "approved" | "rejected"
-  >("all");
+    "pending" | "approved" | "rejected"
+  >("pending");
+
   const loadApplications = useCallback(async () => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -134,18 +135,10 @@ export default function LeaveApprovalsPage() {
     }
   };
 
-  const filteredApplications =
-  activeTab === "all"
-    ? applications
-    : applications.filter((item) => item.status === activeTab);
+  const filteredApplications = applications.filter(
+    (item) => item.status === activeTab
+  );
 
-
-      const counts = {
-        all: applications.length,
-        pending: applications.filter((a) => a.status === "pending").length,
-        approved: applications.filter((a) => a.status === "approved").length,
-        rejected: applications.filter((a) => a.status === "rejected").length,
-      };
   return (
     <div className="flex flex-col lg:flex-row bg-slate-50 min-h-screen">
       <Sidebar />
@@ -175,42 +168,19 @@ export default function LeaveApprovalsPage() {
 
         {/* Tabs */}
         <Flex gap="2" mb="4" wrap="wrap">
-  {(["all", "pending", "approved", "rejected"] as const).map((tab) => (
-    <Button
-      key={tab}
-      size="2"
-      variant={activeTab === tab ? "solid" : "soft"}
-      onClick={() => setActiveTab(tab)}
-      style={{ position: "relative" }}
-    >
-      {tab.toUpperCase()} ({counts[tab]})
-
-      {/* 🔴 Number badge for Pending */}
-      {tab === "pending" && counts.pending > 0 && (
-        <span
-          style={{
-            position: "absolute",
-            top: "-6px",
-            right: "-6px",
-            minWidth: "18px",
-            height: "18px",
-            padding: "0 5px",
-            borderRadius: "999px",
-            backgroundColor: "red",
-            color: "white",
-            fontSize: "12px",
-            fontWeight: "bold",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {counts.pending}
-        </span>
-      )}
-    </Button>
-  ))}
-</Flex>
+          {["pending", "approved", "rejected"].map((tab) => (
+            <Button
+              key={tab}
+              size="2"
+              variant={activeTab === tab ? "solid" : "soft"}
+              onClick={() =>
+                setActiveTab(tab as "pending" | "approved" | "rejected")
+              }
+            >
+              {tab.toUpperCase()}
+            </Button>
+          ))}
+        </Flex>
 
         <Card size="3">
           {loading ? (
