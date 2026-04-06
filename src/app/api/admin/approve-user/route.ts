@@ -74,8 +74,8 @@ export async function POST(req: Request) {
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #10b981;">Account Approved! 🎉</h2>
               <p>Hi ${userName},</p>
-              <p>Great news! Your E-Sign account has been approved by ${admin?.name || "an administrator"}.</p>
-              <p>You can now log in and start using E-Sign to create and sign documents.</p>
+              <p>Great news! Your app registration has been approved by ${admin?.name || "an administrator"}.</p>
+              <p>You can now log in and start using app for.......</p>
               <a href="${appUrl}/login" 
                  style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 20px;">
                 Login to Your Account
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #ef4444;">Registration Not Approved</h2>
               <p>Hi ${userName},</p>
-              <p>We regret to inform you that your E-Sign account registration was not approved at this time.</p>
+              <p>We regret to inform you that your app account registration was not approved at this time.</p>
               <p>If you believe this was a mistake or have questions, please contact your administrator.</p>
               <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
                 Thank you for your interest in E-Sign.

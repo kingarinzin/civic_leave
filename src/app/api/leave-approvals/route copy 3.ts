@@ -62,18 +62,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-const isApprover = !!currentUser.isAdmin || isLeaveApproverRole(currentUser.role);
 
-let query: Record<string, unknown> = {};
-
-if (isApprover && !currentUser.isAdmin) {
-  // Approvers see only assigned requests
-  query.approverId = currentUserId;
-} else if (!isApprover) {
-  // Normal users see THEIR OWN leave history
-  query.userId = currentUserId;
+const canApprove = !!currentUser.isAdmin || isLeaveApproverRole(currentUser.role);
+if (!canApprove) {
+  return NextResponse.json({ applications: [] }, { status: 200 });
 }
 
+const query: Record<string, unknown> = {};
+if (!currentUser.isAdmin) {
+  query.approverId = currentUserId;
+}
     
 
     const applications = await db

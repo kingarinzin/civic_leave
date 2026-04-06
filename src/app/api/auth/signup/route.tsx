@@ -87,7 +87,7 @@ export async function POST(req: Request) {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2563eb;">Registration Received</h2>
             <p>Hi ${name},</p>
-            <p>Your account has been created and is currently <strong>pending approval</strong>.</p>
+            <p>Your account has been created for acc app and is currently <strong>pending approval</strong>.</p>
             <p>You will receive an email once an administrator approves your account.</p>
             <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
               This is an automated message. Please do not reply.

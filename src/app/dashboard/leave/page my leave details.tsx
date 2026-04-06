@@ -104,7 +104,7 @@ export default function LeaveDashboardPage() {
 
         const [balanceRes, applicationsRes] = await Promise.all([
           fetch(`/api/leave-balances?userId=${userId}`),
-          fetch("/api/my-leaves", {
+          fetch("/api/leave-approvals", {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
