@@ -242,19 +242,27 @@ export async function resolveApproverForApplicant(
 
   /* ✅ STOPPER LOGIC (SEQUENTIAL) */
   for (const finder of chain) {
-  const candidate = await finder();
+    const candidate = await finder();
 
-  if (!candidate) continue;
+    if (!candidate) continue;
 
-  const candidateId = normalizeId(candidate._id);
-  if (!candidateId) continue;
+    const candidateId = normalizeId(candidate._id);
+    if (!candidateId) continue;
 
-  return {
-    approverId: candidateId,
-    approverRole: candidate.role || (candidate.isAdmin ? "Admin" : "Approver"),
-    approverName: displayName(candidate),
-  };
-}
+    const approverOnLeave = await isApproverOnLeaveInRequestedRange(
+      db,
+      candidateId,
+      leaveWindow,
+    );
+
+    if (approverOnLeave) continue;
+
+    return {
+      approverId: candidateId,
+      approverRole: candidate.role || (candidate.isAdmin ? "Admin" : "Approver"),
+      approverName: displayName(candidate),
+    };
+  }
 
   return null;
 }
