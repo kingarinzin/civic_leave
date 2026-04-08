@@ -64,15 +64,17 @@ export function normalizeRole(role: string | undefined): string {
 }
 
 export function isLeaveApproverRole(role: string): boolean {
-  const normalized = normalizeRole(role);
-
   const approverRoles = [
     "DivisionHead",
     "DepartmentHead",
     "Commissioner"
   ];
 
-  return approverRoles.includes(normalized);
+  return approverRoles.includes(role);
+}
+
+function isValidObjectId(value: string) {
+  return ObjectId.isValid(value);
 }
 
 async function findSingleUser(db: DbLike, query: any) {
@@ -174,7 +176,7 @@ export async function resolveApproverForApplicant(
   db: DbLike,
   applicantUser: any,
   leaveWindow: { fromDate?: string; toDate?: string } = {},
-  visited: Set<string> = new Set()
+  visited: Set<string> = new Set() // ✅ cycle guard
 ) {
   const applicantId = normalizeId(applicantUser?._id);
   const role = normalizeRole(applicantUser?.role);
@@ -183,15 +185,13 @@ export async function resolveApproverForApplicant(
 
   if (!applicantId) return null;
 
-  // ✅ Improved cycle key (role + user)
-  const visitKey = `${applicantId}:${role}`;
-
-  if (visited.has(visitKey)) {
-    console.warn("Circular approver resolution detected:", visitKey);
+  // 🔒 Prevent infinite recursion / loops
+  if (visited.has(applicantId)) {
+    console.warn("Circular approver resolution detected for:", applicantId);
     return null;
   }
 
-  visited.add(visitKey);
+  visited.add(applicantId);
 
   const resolverChains: Record<string, Array<() => Promise<any>>> = {
     Officer: [
@@ -237,7 +237,7 @@ export async function resolveApproverForApplicant(
     const candidateId = normalizeId(candidate._id);
     if (!candidateId) continue;
 
-    // avoid self-approval
+    // 🔒 Avoid self-approval loops
     if (candidateId === applicantId) continue;
 
     return {
