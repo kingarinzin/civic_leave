@@ -32,19 +32,8 @@ export async function GET(req: Request) {
     const client = await clientPromise;
     const db = client.db(DATABASE_NAME);
 
-    // ✅ DEBUG: Fetch departments separately
-    const departments = await db
-      .collection("departments")
-      .find({})
-      .sort({ name: 1 })
-      .toArray();
-
-    console.log("DATABASE:", DATABASE_NAME);
-    console.log("Departments count:", departments.length);
-    console.log("Sample:", departments[0]);
-
-    // Fetch other collections
-    const [commissioners, assignments] = await Promise.all([
+    const [departments, commissioners, assignments] = await Promise.all([
+      db.collection("departments").find({}).sort({ name: 1 }).toArray(),
       db
         .collection("users")
         .find({ role: "Commissioner", isActive: { $ne: false } })
@@ -53,23 +42,16 @@ export async function GET(req: Request) {
       db.collection("commissioner_assignments").find({}).toArray(),
     ]);
 
-    // Normalize assignments into map (STRING-BASED)
-    const assignmentMap = new Map<string, string>();
+    const assignmentMap = new Map(
+      assignments.map((item) => [
+        normalizeId(item.departmentId),
+        normalizeId(item.commissionerId),
+      ])
+    );
 
-    assignments.forEach((item) => {
-      const deptId = normalizeId(item.departmentId);
-      const commissionerId = normalizeId(item.commissionerId);
-
-      if (deptId && commissionerId) {
-        assignmentMap.set(deptId, commissionerId);
-      }
-    });
-
-    // Map departments with assigned commissioner
     const mapped = departments.map((dept) => {
       const departmentId = normalizeId(dept._id);
       const commissionerId = assignmentMap.get(departmentId) || "";
-
       const commissioner = commissioners.find(
         (c) => normalizeId(c._id) === commissionerId
       );
@@ -79,14 +61,16 @@ export async function GET(req: Request) {
         departmentName: dept.name || "-",
         commissionerId,
         commissionerName:
-          commissioner?.name || commissioner?.email || "Unassigned",
+          commissioner?.name ||
+          commissioner?.name ||
+          commissioner?.email ||
+          "Unassigned",
       };
     });
 
-    // Commissioner dropdown options
     const commissionerOptions = commissioners.map((c) => ({
       _id: normalizeId(c._id),
-      name: c.name || c.email || "Commissioner",
+      name: c.name || c.name || c.email || "Commissioner",
       email: c.email || "",
     }));
 
@@ -96,10 +80,7 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     console.error("GET /api/admin/commissioner-assignments error:", error);
-    return NextResponse.json(
-      { error: (error as any)?.message || "Server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 
@@ -111,7 +92,6 @@ export async function POST(req: Request) {
     }
 
     const { departmentId, commissionerId } = await req.json();
-
     if (!departmentId || !commissionerId) {
       return NextResponse.json(
         { error: "Department and Commissioner are required" },
@@ -175,6 +155,53 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("POST /api/admin/commissioner-assignments error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const adminCheck = await verifyAdmin(req);
+    if (!adminCheck.valid) {
+      return NextResponse.json({ error: adminCheck.error }, { status: 403 });
+    }
+
+    const { departmentId } = await req.json();
+    if (!departmentId) {
+      return NextResponse.json(
+        { error: "Department ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const parsedDepartmentId = toObjectId(departmentId);
+    if (!parsedDepartmentId) {
+      return NextResponse.json(
+        { error: "Invalid Department ID" },
+        { status: 400 }
+      );
+    }
+
+    const client = await clientPromise;
+    const db = client.db(DATABASE_NAME);
+
+    const result = await db.collection("commissioner_assignments").deleteOne({
+      departmentId: parsedDepartmentId,
+    });
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json(
+        { error: "Assignment not found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Commissioner assignment deleted",
+    });
+  } catch (error) {
+    console.error("DELETE /api/admin/commissioner-assignments error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
