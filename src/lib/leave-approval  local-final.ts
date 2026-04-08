@@ -25,6 +25,18 @@ function normalizeId(value: unknown): string {
   }
   return "";
 }
+export function isLeaveApproverRole(role: string | undefined): boolean {
+  const normalized = normalizeRole(role);
+
+  return [
+    "DivisionHead",
+    "DepartmentHead",
+    "Commissioner",
+    "Chairperson",
+    "SecretaryService",
+  ].includes(normalized);
+}
+
 
 function toObjectIdIfValid(value: string): ObjectId | null {
   try {
@@ -42,7 +54,7 @@ function buildIdQueryVariants(value: string): unknown[] {
 }
 
 function displayName(user: any): string {
-  return user?.name || user?.name || user?.email || "Approver";
+  return user?.name || user?.email || "Approver";
 }
 
 export function normalizeRole(role: string | undefined): string {
@@ -114,25 +126,13 @@ async function findMappedCommissionerByDepartment(
   if (!commissionerId) return null;
 
   const commissionerObjectId = toObjectIdIfValid(commissionerId);
-  const applicantObjectId = toObjectIdIfValid(applicantId);
-
   if (!commissionerObjectId) return null;
 
-  if (
-    applicantObjectId &&
-    applicantObjectId.toString() === commissionerObjectId.toString()
-  ) {
-    return null;
-  }
-
-  return db.collection("users").findOne(
-    {
-      ...ACTIVE_USER_FILTER,
-      role: "Commissioner",
-      _id: commissionerObjectId,
-    },
-    { sort: { createdAt: 1 } },
-  );
+  return db.collection("users").findOne({
+    ...ACTIVE_USER_FILTER,
+    role: "Commissioner",
+    _id: commissionerObjectId,
+  });
 }
 
 async function findChairperson(db: DbLike, applicantId: string) {
@@ -159,31 +159,16 @@ async function findAdmin(db: DbLike, applicantId: string) {
   });
 }
 
-export function isLeaveApproverRole(role: string | undefined): boolean {
-  const normalized = normalizeRole(role);
-  return [
-    "DivisionHead",
-    "DepartmentHead",
-    "Commissioner",
-    "Chairperson",
-    "SecretaryService",
-  ].includes(normalized);
-}
-
 async function isApproverOnLeaveInRequestedRange(
   db: DbLike,
   approverId: string,
   leaveWindow: LeaveWindow,
 ) {
-  if (!leaveWindow.fromDate || !leaveWindow.toDate) {
-    return false;
-  }
+  if (!leaveWindow.fromDate || !leaveWindow.toDate) return false;
 
   const approverIdVariants: unknown[] = [approverId];
   const approverObjectId = toObjectIdIfValid(approverId);
-  if (approverObjectId) {
-    approverIdVariants.push(approverObjectId);
-  }
+  if (approverObjectId) approverIdVariants.push(approverObjectId);
 
   const overlap = await db.collection("leave_applications").findOne({
     userId: { $in: approverIdVariants },
@@ -195,6 +180,8 @@ async function isApproverOnLeaveInRequestedRange(
   return !!overlap;
 }
 
+/* ===================== MAIN ===================== */
+
 export async function resolveApproverForApplicant(
   db: DbLike,
   applicantUser: any,
@@ -205,31 +192,19 @@ export async function resolveApproverForApplicant(
   const departmentId = normalizeId(applicantUser?.departmentId);
   const divisionId = normalizeId(applicantUser?.divisionId);
 
-  if (!applicantId) {
-    return null;
-  }
-  
-  
-console.log("=== APPROVER RESOLUTION START ===");
-console.log("Applicant ID:", applicantId);
-console.log("Role:", role);
-console.log("Division ID:", divisionId);
-console.log("Department ID:", departmentId);
+  if (!applicantId) return null;
 
-
-
-
+  console.log("=== APPROVER RESOLUTION START ===");
+  console.log("Role:", role);
 
   const resolverChains: Record<string, Array<() => Promise<any>>> = {
     Officer: [
       () => findDivisionHead(db, divisionId, applicantId),
       () => findDepartmentHead(db, departmentId, applicantId),
       () => findMappedCommissionerByDepartment(db, departmentId, applicantId),
-      () => findCommissioner(db, applicantId),
-      () => findChairperson(db, applicantId),
-      () => findSecretaryService(db, applicantId),
       () => findAdmin(db, applicantId),
     ],
+
     DivisionHead: [
       () => findDepartmentHead(db, departmentId, applicantId),
       () => findMappedCommissionerByDepartment(db, departmentId, applicantId),
@@ -238,6 +213,7 @@ console.log("Department ID:", departmentId);
       () => findSecretaryService(db, applicantId),
       () => findAdmin(db, applicantId),
     ],
+
     DepartmentHead: [
       () => findMappedCommissionerByDepartment(db, departmentId, applicantId),
       () => findCommissioner(db, applicantId),
@@ -245,15 +221,18 @@ console.log("Department ID:", departmentId);
       () => findSecretaryService(db, applicantId),
       () => findAdmin(db, applicantId),
     ],
+
     Commissioner: [
       () => findChairperson(db, applicantId),
       () => findSecretaryService(db, applicantId),
       () => findAdmin(db, applicantId),
     ],
+
     Chairperson: [
       () => findSecretaryService(db, applicantId),
       () => findAdmin(db, applicantId),
     ],
+
     SecretaryService: [
       () => findAdmin(db, applicantId),
     ],
@@ -261,31 +240,21 @@ console.log("Department ID:", departmentId);
 
   const chain = resolverChains[role] || resolverChains.Officer;
 
+  /* ✅ STOPPER LOGIC (SEQUENTIAL) */
   for (const finder of chain) {
-    const candidate = await finder();
-    if (candidate) {
-      const candidateId = normalizeId(candidate._id);
-      if (!candidateId) {
-        continue;
-      }
+  const candidate = await finder();
 
-      const approverOnLeave = await isApproverOnLeaveInRequestedRange(
-        db,
-        candidateId,
-        leaveWindow,
-      );
+  if (!candidate) continue;
 
-      if (approverOnLeave) {
-        continue;
-      }
+  const candidateId = normalizeId(candidate._id);
+  if (!candidateId) continue;
 
-      return {
-        approverId: candidateId,
-        approverRole: candidate.role || (candidate.isAdmin ? "Admin" : "Approver"),
-        approverName: displayName(candidate),
-      };
-    }
-  }
+  return {
+    approverId: candidateId,
+    approverRole: candidate.role || (candidate.isAdmin ? "Admin" : "Approver"),
+    approverName: displayName(candidate),
+  };
+}
 
   return null;
 }
