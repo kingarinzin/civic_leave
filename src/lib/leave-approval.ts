@@ -63,9 +63,6 @@ export function normalizeRole(role: string | undefined): string {
   return map[normalized] || "Officer";
 }
 
-//
-// ✅ ADD THIS FUNCTION HERE
-//
 export function isLeaveApproverRole(role: string): boolean {
   const approverRoles = [
     "Division Head",
@@ -178,7 +175,8 @@ async function findMappedCommissionerByDepartment(
 export async function resolveApproverForApplicant(
   db: DbLike,
   applicantUser: any,
-  leaveWindow: { fromDate?: string; toDate?: string } = {}
+  leaveWindow: { fromDate?: string; toDate?: string } = {},
+  visited: Set<string> = new Set() // ✅ cycle guard
 ) {
   const applicantId = normalizeId(applicantUser?._id);
   const role = normalizeRole(applicantUser?.role);
@@ -186,6 +184,14 @@ export async function resolveApproverForApplicant(
   const divisionId = normalizeId(applicantUser?.divisionId);
 
   if (!applicantId) return null;
+
+  // 🔒 Prevent infinite recursion / loops
+  if (visited.has(applicantId)) {
+    console.warn("Circular approver resolution detected for:", applicantId);
+    return null;
+  }
+
+  visited.add(applicantId);
 
   const resolverChains: Record<string, Array<() => Promise<any>>> = {
     Officer: [
@@ -230,6 +236,9 @@ export async function resolveApproverForApplicant(
 
     const candidateId = normalizeId(candidate._id);
     if (!candidateId) continue;
+
+    // 🔒 Avoid self-approval loops
+    if (candidateId === applicantId) continue;
 
     return {
       approverId: candidateId,

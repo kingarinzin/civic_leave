@@ -62,17 +62,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // ✅ FIXED: align roles with resolver system
+    const approverRoles = ["DivisionHead", "DepartmentHead", "Commissioner"];
 
-const canApprove = !!currentUser.isAdmin || isLeaveApproverRole(currentUser.role);
-if (!canApprove) {
-  return NextResponse.json({ applications: [] }, { status: 200 });
-}
+    const canApprove =
+      !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
 
-const query: Record<string, unknown> = {};
-if (!currentUser.isAdmin) {
-  query.approverId = currentUserId;
-}
-    
+    if (!canApprove) {
+      return NextResponse.json({ applications: [] }, { status: 200 });
+    }
+
+    const query: Record<string, unknown> = {};
+
+    if (!currentUser.isAdmin) {
+      query.approverId = currentUserId;
+    }
 
     const applications = await db
       .collection("leave_applications")
@@ -108,7 +112,6 @@ if (!currentUser.isAdmin) {
         approverRole: entry.approverRole || "-",
         createdAt: entry.createdAt,
 
-        // ✅ status + approval info
         status: entry.status || "pending",
         approvedBy: entry.approvedBy || "",
         approvedAt: entry.approvedAt || null,
@@ -162,17 +165,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const canApproveByRole = !!currentUser.isAdmin || isLeaveApproverRole(currentUser.role);
+    // ✅ FIXED: consistent role check
+    const approverRoles = ["DivisionHead", "DepartmentHead", "Commissioner"];
+
+    const canApproveByRole =
+      !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
+
     const isAssignedApprover =
       normalizeId(leaveApplication.approverId) === currentUserId;
 
-    if (!canApproveByRole || (!currentUser.isAdmin && !isAssignedApprover)) {
-      return NextResponse.json({ error: "Not authorized for this leave request" }, { status: 403 });
+    if (!canApproveByRole) {
+      return NextResponse.json({ error: "Not authorized (role)" }, { status: 403 });
+    }
+
+    if (!currentUser.isAdmin && !isAssignedApprover) {
+      return NextResponse.json({ error: "Not assigned approver" }, { status: 403 });
     }
 
     const newStatus = action === "approve" ? "approved" : "rejected";
 
-    // ✅ UPDATED: include approvedBy + approvedAt
     await db.collection("leave_applications").updateOne(
       { _id: new ObjectId(applicationId) },
       {
@@ -202,7 +213,6 @@ export async function POST(req: Request) {
       const leaveBalance = await db.collection("leave_balances").findOne({
         userId: applicantObjectId,
         year,
-        
       });
 
       if (leaveBalance && Array.isArray(leaveBalance.leaves)) {
