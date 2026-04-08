@@ -65,8 +65,8 @@ export function normalizeRole(role: string | undefined): string {
 
 export function isLeaveApproverRole(role: string): boolean {
   const approverRoles = [
-    "Division Head",
-    "Department Head",
+    "DivisionHead",
+    "DepartmentHead",
     "Commissioner"
   ];
 
