@@ -11,6 +11,7 @@ const ACTIVE_USER_FILTER = {
 
 function normalizeId(value: any): string {
   if (!value) return "";
+
   if (typeof value === "string") return value;
 
   if (typeof value === "object") {
@@ -48,8 +49,12 @@ function displayName(user: any): string {
   return user?.name || user?.email || "Approver";
 }
 
+/**
+ * Normalize role into standard format
+ */
 export function normalizeRole(role: string | undefined): string {
   const normalized = (role || "Officer").toLowerCase().replace(/[\s_-]/g, "");
+
   const map: Record<string, string> = {
     officer: "Officer",
     divisionhead: "DivisionHead",
@@ -63,89 +68,55 @@ export function normalizeRole(role: string | undefined): string {
   return map[normalized] || "Officer";
 }
 
+/**
+ * Check if role is allowed to approve leaves
+ */
 export function isLeaveApproverRole(role: string): boolean {
   const normalized = normalizeRole(role);
 
-  const approverRoles = [
-    "DivisionHead",
-    "DepartmentHead",
-    "Commissioner"
-  ];
-
-  return approverRoles.includes(normalized);
+  return ["DivisionHead", "DepartmentHead", "Commissioner"].includes(
+    normalized
+  );
 }
 
+/**
+ * Generic user finder
+ */
 async function findSingleUser(db: DbLike, query: any) {
   return db.collection("users").findOne(query);
 }
 
-async function findDivisionHead(db: DbLike, divisionId: string, applicantId: string) {
-  const applicantOid = toObjectIdSafe(applicantId);
-
+async function findDivisionHead(
+  db: DbLike,
+  divisionId: string,
+  applicantId: string
+) {
   if (!divisionId) return null;
 
   return findSingleUser(db, {
     ...ACTIVE_USER_FILTER,
     role: "DivisionHead",
-    ...(applicantOid && { _id: { $ne: applicantOid } }),
+    _id: { $ne: toObjectIdSafe(applicantId) },
     divisionId: { $in: buildIdQueryVariants(divisionId) },
   });
 }
 
-async function findDepartmentHead(db: DbLike, departmentId: string, applicantId: string) {
-  const applicantOid = toObjectIdSafe(applicantId);
-
+async function findDepartmentHead(
+  db: DbLike,
+  departmentId: string,
+  applicantId: string
+) {
   if (!departmentId) return null;
 
   return findSingleUser(db, {
     ...ACTIVE_USER_FILTER,
     role: "DepartmentHead",
-    ...(applicantOid && { _id: { $ne: applicantOid } }),
+    _id: { $ne: toObjectIdSafe(applicantId) },
     departmentId: { $in: buildIdQueryVariants(departmentId) },
   });
 }
 
-async function findCommissioner(db: DbLike, applicantId: string) {
-  const applicantOid = toObjectIdSafe(applicantId);
-
-  return findSingleUser(db, {
-    ...ACTIVE_USER_FILTER,
-    role: "Commissioner",
-    ...(applicantOid && { _id: { $ne: applicantOid } }),
-  });
-}
-
-async function findChairperson(db: DbLike, applicantId: string) {
-  const applicantOid = toObjectIdSafe(applicantId);
-
-  return findSingleUser(db, {
-    ...ACTIVE_USER_FILTER,
-    role: "Chairperson",
-    ...(applicantOid && { _id: { $ne: applicantOid } }),
-  });
-}
-
-async function findSecretaryService(db: DbLike, applicantId: string) {
-  const applicantOid = toObjectIdSafe(applicantId);
-
-  return findSingleUser(db, {
-    isAdmin: true,
-    isActive: { $ne: false },
-    ...(applicantOid && { _id: { $ne: applicantOid } }),
-  });
-}
-
-async function findAdmin(db: DbLike, applicantId: string) {
-  const applicantOid = toObjectIdSafe(applicantId);
-
-  return findSingleUser(db, {
-    isAdmin: true,
-    isActive: { $ne: false },
-    ...(applicantOid && { _id: { $ne: applicantOid } }),
-  });
-}
-
-async function findMappedCommissionerByDepartment(
+async function findCommissionerByDepartment(
   db: DbLike,
   departmentId: string,
   applicantId: string
@@ -166,94 +137,105 @@ async function findMappedCommissionerByDepartment(
   return db.collection("users").findOne({
     ...ACTIVE_USER_FILTER,
     role: "Commissioner",
-    _id: oid,
+    _id: { $eq: oid, $ne: toObjectIdSafe(applicantId) },
   });
 }
 
+async function findChairperson(db: DbLike, applicantId: string) {
+  return findSingleUser(db, {
+    ...ACTIVE_USER_FILTER,
+    role: "Chairperson",
+    _id: { $ne: toObjectIdSafe(applicantId) },
+  });
+}
+
+async function findSecretaryService(db: DbLike, applicantId: string) {
+  return findSingleUser(db, {
+    isAdmin: true,
+    isActive: { $ne: false },
+    _id: { $ne: toObjectIdSafe(applicantId) },
+  });
+}
+
+async function findAdmin(db: DbLike, applicantId: string) {
+  return findSingleUser(db, {
+    isAdmin: true,
+    isActive: { $ne: false },
+    _id: { $ne: toObjectIdSafe(applicantId) },
+  });
+}
+
+/**
+ * ✅ MAIN APPROVER RESOLUTION (NON-RECURSIVE, DETERMINISTIC)
+ */
 export async function resolveApproverForApplicant(
   db: DbLike,
-  applicantUser: any,
-  leaveWindow: { fromDate?: string; toDate?: string } = {},
-  visited: Set<string> = new Set()
+  applicantUser: any
 ) {
   const applicantId = normalizeId(applicantUser?._id);
   const role = normalizeRole(applicantUser?.role);
   const departmentId = normalizeId(applicantUser?.departmentId);
   const divisionId = normalizeId(applicantUser?.divisionId);
 
-
-// ✅ ADD THIS RIGHT HERE (very top of function body)
-  console.log("➡️ ENTER resolveApproverForApplicant", {
-    applicantId,
-    role,
-    time: Date.now()
-  });
-  
   if (!applicantId) return null;
 
-  // ✅ Improved cycle key (role + user)
-  const visitKey = `${applicantId}:${role}`;
+  console.log("🔵 Resolving approver:", {
+    applicantId,
+    role,
+    departmentId,
+    divisionId,
+  });
 
-  if (visited.has(visitKey)) {
-    console.warn("Circular approver resolution detected:", visitKey);
-    return null;
+  // Step-by-step upward resolution (NO recursion)
+  let candidate: any = null;
+
+  if (role === "Officer") {
+    candidate =
+      (await findDivisionHead(db, divisionId, applicantId)) ||
+      (await findDepartmentHead(db, departmentId, applicantId)) ||
+      (await findCommissionerByDepartment(db, departmentId, applicantId)) ||
+      (await findAdmin(db, applicantId));
   }
 
-  visited.add(visitKey);
+  if (role === "DivisionHead") {
+    candidate =
+      (await findDepartmentHead(db, departmentId, applicantId)) ||
+      (await findCommissionerByDepartment(db, departmentId, applicantId)) ||
+      (await findChairperson(db, applicantId)) ||
+      (await findSecretaryService(db, applicantId)) ||
+      (await findAdmin(db, applicantId));
+  }
 
-  const resolverChains: Record<string, Array<() => Promise<any>>> = {
-    Officer: [
-      () => findDivisionHead(db, divisionId, applicantId),
-      () => findDepartmentHead(db, departmentId, applicantId),
-      () => findMappedCommissionerByDepartment(db, departmentId, applicantId),
-      () => findAdmin(db, applicantId),
-    ],
-    DivisionHead: [
-      () => findDepartmentHead(db, departmentId, applicantId),
-      () => findMappedCommissionerByDepartment(db, departmentId, applicantId),
-      () => findCommissioner(db, applicantId),
-      () => findChairperson(db, applicantId),
-      () => findSecretaryService(db, applicantId),
-      () => findAdmin(db, applicantId),
-    ],
-    DepartmentHead: [
-      () => findMappedCommissionerByDepartment(db, departmentId, applicantId),
-      () => findCommissioner(db, applicantId),
-      () => findChairperson(db, applicantId),
-      () => findSecretaryService(db, applicantId),
-      () => findAdmin(db, applicantId),
-    ],
-    Commissioner: [
-      () => findChairperson(db, applicantId),
-      () => findSecretaryService(db, applicantId),
-      () => findAdmin(db, applicantId),
-    ],
-    Chairperson: [
-      () => findSecretaryService(db, applicantId),
-      () => findAdmin(db, applicantId),
-    ],
-    SecretaryService: [() => findAdmin(db, applicantId)],
+  if (role === "DepartmentHead") {
+    candidate =
+      (await findCommissionerByDepartment(db, departmentId, applicantId)) ||
+      (await findChairperson(db, applicantId)) ||
+      (await findSecretaryService(db, applicantId)) ||
+      (await findAdmin(db, applicantId));
+  }
+
+  if (role === "Commissioner") {
+    candidate =
+      (await findChairperson(db, applicantId)) ||
+      (await findSecretaryService(db, applicantId)) ||
+      (await findAdmin(db, applicantId));
+  }
+
+  if (role === "Chairperson") {
+    candidate =
+      (await findSecretaryService(db, applicantId)) ||
+      (await findAdmin(db, applicantId));
+  }
+
+  if (role === "SecretaryService") {
+    candidate = await findAdmin(db, applicantId);
+  }
+
+  if (!candidate) return null;
+
+  return {
+    approverId: normalizeId(candidate._id),
+    approverRole: candidate.role || (candidate.isAdmin ? "Admin" : "Approver"),
+    approverName: displayName(candidate),
   };
-
-  const chain = resolverChains[role] || resolverChains.Officer;
-
-  for (const finder of chain) {
-    const candidate = await finder();
-
-    if (!candidate) continue;
-
-    const candidateId = normalizeId(candidate._id);
-    if (!candidateId) continue;
-
-    // avoid self-approval
-    if (candidateId === applicantId) continue;
-
-    return {
-      approverId: candidateId,
-      approverRole: candidate.role || (candidate.isAdmin ? "Admin" : "Approver"),
-      approverName: displayName(candidate),
-    };
-  }
-
-  return null;
 }
