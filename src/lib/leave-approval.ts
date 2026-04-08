@@ -182,10 +182,11 @@ export async function resolveApproverForApplicant(
   const divisionId = normalizeId(applicantUser?.divisionId);
 
 
-// ✅ ADD THIS LOG HERE
-  console.log("Resolving approver for:", {
+// ✅ ADD THIS RIGHT HERE (very top of function body)
+  console.log("➡️ ENTER resolveApproverForApplicant", {
     applicantId,
     role,
+    time: Date.now()
   });
   
   if (!applicantId) return null;
