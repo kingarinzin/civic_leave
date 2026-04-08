@@ -181,6 +181,13 @@ export async function resolveApproverForApplicant(
   const departmentId = normalizeId(applicantUser?.departmentId);
   const divisionId = normalizeId(applicantUser?.divisionId);
 
+
+// ✅ ADD THIS LOG HERE
+  console.log("Resolving approver for:", {
+    applicantId,
+    role,
+  });
+  
   if (!applicantId) return null;
 
   // ✅ Improved cycle key (role + user)
