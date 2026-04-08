@@ -14,6 +14,8 @@ function normalizeId(value: any): string {
 
   if (typeof value === "string") return value;
 
+  if (value instanceof ObjectId) return value.toString();
+
   if (typeof value === "object") {
     if (value._id) return normalizeId(value._id);
 
@@ -73,7 +75,6 @@ export function normalizeRole(role: string | undefined): string {
  */
 export function isLeaveApproverRole(role: string): boolean {
   const normalized = normalizeRole(role);
-
   return ["DivisionHead", "DepartmentHead", "Commissioner"].includes(
     normalized
   );
@@ -166,7 +167,7 @@ async function findAdmin(db: DbLike, applicantId: string) {
 }
 
 /**
- * ✅ MAIN APPROVER RESOLUTION (NON-RECURSIVE, DETERMINISTIC)
+ * ✅ MAIN APPROVER RESOLUTION (NON-RECURSIVE)
  */
 export async function resolveApproverForApplicant(
   db: DbLike,
@@ -186,7 +187,6 @@ export async function resolveApproverForApplicant(
     divisionId,
   });
 
-  // Step-by-step upward resolution (NO recursion)
   let candidate: any = null;
 
   if (role === "Officer") {
