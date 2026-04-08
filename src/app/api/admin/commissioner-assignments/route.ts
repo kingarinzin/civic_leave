@@ -5,12 +5,24 @@ import { verifyAdmin } from "@/lib/admin-auth";
 
 function normalizeId(value: unknown): string {
   if (!value) return "";
+
+  // If it's already a string
   if (typeof value === "string") return value;
+
+  // If it's a Mongo ObjectId
+  if (value instanceof ObjectId) return value.toString();
+
+  // If it's an object with _id (but avoid recursion)
   if (typeof value === "object" && value !== null) {
-    const maybeObject = value as { _id?: unknown; toString?: () => string };
-    if (maybeObject._id) return normalizeId(maybeObject._id);
-    if (typeof maybeObject.toString === "function") return maybeObject.toString();
+    if ("toString" in value && typeof (value as any).toString === "function") {
+      try {
+        return (value as any).toString();
+      } catch {
+        return "";
+      }
+    }
   }
+
   return "";
 }
 
