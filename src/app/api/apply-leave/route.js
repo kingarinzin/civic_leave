@@ -232,10 +232,22 @@ export async function POST(req) {
     let resolvedApprover;
 
     try {
+      // 🔵 LOG BEFORE CALL
+      console.log("🔵 BEFORE calling resolveApproverForApplicant", {
+        userId,
+        role: applicantUser.role,
+        departmentId: applicantUser.departmentId,
+        divisionId: applicantUser.divisionId,
+      });
+
       resolvedApprover = await resolveApproverForApplicant(db, applicantUser, {
         fromDate,
         toDate,
       });
+
+      // 🟢 LOG AFTER CALL
+      console.log("🟢 AFTER resolveApproverForApplicant", resolvedApprover);
+
     } catch (err) {
       console.error("Approver resolution failed:", err);
       return NextResponse.json(
