@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 export default function DivisionPage() {
@@ -130,6 +131,18 @@ export default function DivisionPage() {
     }
   };
 
+// ================== Edit function ==================
+  const handleEdit = (division) => {
+  setEditData(division);
+  setFormData({
+    name: division.name || "",
+    remarks: division.remarks || "",
+    departmentId: division.departmentId?._id || "",
+  });
+  setShowForm(true);
+};
+
+
   // ================== SEARCH, SORT, PAGINATION ==================
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
@@ -187,9 +200,9 @@ export default function DivisionPage() {
                 setEditData(null);
                 setFormData({ name: "", remarks: "", departmentId: "" });
               }}
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
-              + Add Division
+              <Plus size={14} /> Division
             </button>
           )}
         </div>
@@ -251,10 +264,13 @@ export default function DivisionPage() {
                 />
               </div>
             </div>
-
             <div className="flex justify-end gap-3 mt-5">
-              <button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded">Cancel</button>
-              <button onClick={editData ? handleUpdate : handleAdd} className="px-4 py-2 bg-blue-600 text-white rounded">
+              <button onClick={() => setShowForm(false)} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+              >
+                <X size={14} /> Cancel</button>
+              <button onClick={editData ? handleUpdate : handleAdd} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+              >
+                {editData ? <Check size={14} /> : <Save size={14} />}
                 {editData ? "Update" : "Save"}
               </button>
             </div>
@@ -292,11 +308,13 @@ export default function DivisionPage() {
                     <td className="px-6 py-3 text-sm">{d.name}</td>
                     <td className="px-6 py-3 text-sm">{d.remarks}</td>
                     <td className="px-6 py-3 text-sm flex gap-2">
-                      <button onClick={() => handleEdit(d)} className="px-2 py-1 bg-yellow-400 rounded text-white">
-                        Edit
+                      <button onClick={() => handleEdit(d)} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                    >
+                      <Pencil size={14} /> Edit
                       </button>
-                      <button onClick={() => handleDelete(d)} className="px-2 py-1 bg-red-500 rounded text-white">
-                        Delete
+                      <button onClick={() => handleDelete(d)} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                    >
+                      <Trash2 size={14} /> Delete
                       </button>
                     </td>
                   </tr>

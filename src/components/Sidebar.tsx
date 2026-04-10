@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
+import { Layers, Calendar, Clock } from "lucide-react";
 import {
   Shield,
   Settings,
@@ -29,7 +30,6 @@ function normalizeRole(rawRole?: string): string {
 
   return roleMap[normalized] || "Officer";
 }
-
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
@@ -146,7 +146,7 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 h-screen fixed top-0 left-0 flex flex-col text-sm">
-      <div className="p-6 flex justify-center border-b border-gray-200">
+      {/*<div className="p-6 flex justify-center border-b border-gray-200">
         <Image
           src="/civicleave-logo.svg"
           alt="CivicLeave"
@@ -155,14 +155,21 @@ export default function Sidebar() {
           className="h-12 w-auto"
           priority
         />
-      </div>
+      </div> */}
 
-      <div className="px-4 py-4 border-b border-gray-200">
-        <p className="text-xs text-gray-500 truncate">{userName || "User"}</p>
-        <p className="text-sm text-black truncate">
-          {userEmail || "No email available"}
-        </p>
-      </div>
+      <div className="px-4 py-4 flex items-center gap-3">
+          {/* Avatar */}
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+            <span className="text-sm font-semibold text-gray-700">
+              {userName ? userName.charAt(0).toUpperCase() : "U"}
+            </span>
+          </div>
+
+          {/* Name */}
+          <p className="text-lg text-gray-700 font-medium truncate">
+            {userName || "User"}
+          </p>
+        </div>
 
       <nav className="flex-1 px-4 py-3 space-y-2 overflow-y-auto min-h-0">
         {isAdmin ? (
@@ -171,7 +178,7 @@ export default function Sidebar() {
               onClick={() => toggleSection("master")}
               className={navButtonClass(isMasterActive)}
             >
-              <Shield size={18} />
+              <Layers size={18} /> 
               <span className="flex-1 text-left">Master</span>
               {displayedOpenSection === "master" ? (
                 <ChevronDown size={16} />
@@ -203,7 +210,7 @@ export default function Sidebar() {
               onClick={() => toggleSection("leave")}
               className={navButtonClass(isLeaveActive)}
             >
-              <Shield size={18} />
+              <Calendar size={18} />
               <span className="flex-1 text-left">Leave</span>
               {displayedOpenSection === "leave" ? (
                 <ChevronDown size={16} />
@@ -256,7 +263,7 @@ export default function Sidebar() {
               onClick={() => router.push("/admin/pending-users")}
               className={navButtonClass(pathname === "/admin/pending-users")}
             >
-              <Shield size={18} />
+              <Clock size={18} />
               Pending Approvals
             </button>
 
@@ -327,17 +334,17 @@ export default function Sidebar() {
         )}
       </nav>
 
-      <div className="px-4 pb-3 pt-2 border-t border-gray-200">
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-md text-black hover:bg-gray-100"
-        >
-          <LogOut size={18} />
-          Logout
-        </button>
-      </div>
+      <div className="px-4 py-4">
+  <button
+    onClick={handleLogout}
+    className="w-full flex items-center gap-3 px-4 py-3 rounded-md text-black hover:bg-gray-100"
+  >
+    <LogOut size={18} className="text-red-500" />
+    <span className="text-red-500">Logout</span>
+  </button>
+</div>
 
-      <div className="p-4 border-t border-gray-200 text-center text-xs text-gray-500">
+      <div className="px-4 py-4">
         © {new Date().getFullYear()} ANTI-CORRUPTION COMMISSION
       </div>
     </aside>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 export default function LeaveTypePage() {
@@ -156,9 +157,9 @@ export default function LeaveTypePage() {
                 setEditData(null);
                 setFormData({ name: "", remarks: "" });
               }}
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
-              + Add Leave Type
+              <Plus size={14} /> Leave Type
             </button>
           )}
         </div>
@@ -217,14 +218,16 @@ export default function LeaveTypePage() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={() => setShowForm(false)}
-                className="px-4 py-2 border rounded"
+                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
               >
+                <X size={14} />
                 Cancel
               </button>
               <button
                 onClick={editData ? handleUpdate : handleAdd}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
+                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
               >
+                {editData ? <Check size={14} /> : <Save size={14} />}
                 {editData ? "Update" : "Save"}
               </button>
             </div>
@@ -289,14 +292,17 @@ export default function LeaveTypePage() {
                     <td className="px-6 py-3 text-sm flex gap-2">
                       <button
                         onClick={() => handleEdit(item)}
-                        className="px-2 py-1 bg-yellow-400 rounded text-white"
+                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
+                        <Pencil size={14} className="text-blue-500 group-hover:text-blue-700" />
                         Edit
                       </button>
+
                       <button
                         onClick={() => handleDelete(item)}
-                        className="px-2 py-1 bg-red-500 rounded text-white"
+                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
+                        <Trash2 size={14} className="text-red-500" />
                         Delete
                       </button>
                     </td>
@@ -337,3 +343,5 @@ export default function LeaveTypePage() {
     </div>
   );
 }
+
+

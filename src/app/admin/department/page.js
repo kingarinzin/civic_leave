@@ -2,6 +2,7 @@
 
 
 import { useState, useEffect } from "react";
+import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 
@@ -169,9 +170,10 @@ export default function AddDepartmentPage() {
          {!showForm && (
            <button
              onClick={() => { setShowForm(true); setEditData(null); setFormData({ name: "", remarks: "" }); }}
-             className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-           >
-             + Add Department
+             className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
+            >
+              <Plus size={14} />
+              Add Department
            </button>
          )}
        </div>
@@ -225,20 +227,19 @@ export default function AddDepartmentPage() {
                />
              </div>
            </div>
-
-
            <div className="flex justify-end gap-3 mt-5">
              <button
                onClick={() => setShowForm(false)}
-               className="px-4 py-2 border rounded"
-             >
-               Cancel
+               className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+              >
+                <X size={14} /> Cancel
              </button>
              <button
                onClick={editData ? handleUpdate : handleAdd}
-               className="px-4 py-2 bg-blue-600 text-white rounded"
-             >
-               {editData ? "Update" : "Save"}
+               className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+              >
+                {editData ? <Check size={14} /> : <Save size={14} />}
+                {editData ? "Update" : "Save"}
              </button>
            </div>
          </div>
@@ -300,15 +301,15 @@ export default function AddDepartmentPage() {
                    <td className="px-6 py-3 text-sm flex gap-2">
                      <button
                        onClick={() => handleEdit(dept)}
-                       className="px-2 py-1 bg-yellow-400 rounded text-white"
-                     >
-                       Edit
+                       className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                    >
+                      <Pencil size={14} /> Edit
                      </button>
                      <button
                        onClick={() => handleDelete(dept)}
-                       className="px-2 py-1 bg-red-500 rounded text-white"
-                     >
-                       Delete
+                       className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                    >
+                      <Trash2 size={14} /> Delete
                      </button>
                    </td>
                  </tr>
@@ -323,8 +324,6 @@ export default function AddDepartmentPage() {
            </tbody>
          </table>
        </div>
-
-
        {/* Pagination */}
        {totalPages > 1 && (
          <div className="flex justify-end items-center gap-4 mt-5 text-sm">

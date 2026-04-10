@@ -196,14 +196,13 @@ export default function AllUsersPage() {
 
       <Sidebar />
 
-      <main className="flex-1 p-4 md:p-6 lg:p-8 ml-0 md:ml-64">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-6">
-          <h4 className="text-xl font-semibold tracking-tight">
-            User Registration - <span className="text-gray-600 text-sm md:text-base font-normal">
-              View and manage all registered users
-            </span>
-          </h4>
-</div>
+      <main className="flex-1 p-6 md:p-8 ml-64">
+        <h1 className="text-3xl font-semibold tracking-tight mb-1">
+          All Users
+        </h1>
+        <p className="text-gray-600 mb-6">
+          View and manage all registered users
+        </p>
 
         {/* Search & Rows */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-3 mb-5">
@@ -232,132 +231,114 @@ export default function AllUsersPage() {
         </div>
 
         {/* Users Table */}
-        <div className="w-full bg-white border border-gray-200 rounded-lg overflow-hidden">
-  <div className="overflow-x-auto">
-    {/* Desktop Table */}
-    <table className="w-full min-w-[1100px] table-fixed divide-y divide-gray-200 hidden md:table">
-      <thead className="bg-gray-100/60">
-        <tr>
-          {[
-            "Name",
-            "CID",
-            "Designation",
-            "Phone",
-            "Email",
-            "Department",
-            "Division",
-            "Role / Change",
-            //"Registered",
-            "Actions",
-          ].map((col) => (
-            <th
-              key={col}
-              className="px-3 py-2 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-700"
-            >
-              {col}
-            </th>
-          ))}
-        </tr>
-      </thead>
-
-      <tbody className="divide-y divide-gray-200 text-sm">
-        {paginatedUsers.length > 0 ? (
-          paginatedUsers.map((user) => (
-            <tr
-              key={user._id}
-              className="hover:bg-gray-50/80 transition-colors"
-            >
-              <td className="px-3 py-2 font-medium truncate max-w-[140px]">
-                {user.name}
-              </td>
-
-              <td className="px-3 py-2 whitespace-nowrap">{user.cid}</td>
-
-              <td className="px-3 py-2 truncate max-w-[120px]">
-                {user.designation}
-              </td>
-
-              <td className="px-3 py-2 whitespace-nowrap">{user.phone}</td>
-
-              <td className="px-3 py-2 truncate max-w-[180px]">
-                {user.email}
-              </td>
-
-              <td className="px-3 py-2 truncate max-w-[140px]">
-                {user.departmentName}
-              </td>
-
-              <td className="px-3 py-2 truncate max-w-[140px]">
-                {user.divisionName}
-              </td>
-
-              <td className="px-3 py-2 min-w-[180px]">
-                <p className="text-[10px] text-gray-500 mb-1">
-                  {user.role || "Officer"}
-                </p>
-                <select
-                  value={user.role || "Officer"}
-                  onChange={(e) =>
-                    handleRoleChange(user._id, e.target.value)
-                  }
-                  className="border border-gray-300 rounded-md px-2 py-1 text-xs w-full bg-white focus:ring-0 focus:border-black outline-none"
-                >
-                  <option value="Officer">Officer</option>
-                  <option value="DivisionHead">Division Head</option>
-                  <option value="DepartmentHead">Department Head</option>
-                  <option value="Commissioner">Commissioner</option>
-                  <option value="Chairperson">Chairperson</option>
-                  <option value="SecretaryService">Secretary Service</option>
-                </select>
-              </td>
-
-             {/*<td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                {new Date(user.createdAt).toLocaleDateString()}
-              </td> */}
-
-              <td className="px-3 py-2 flex gap-2 flex-wrap">
-                <button
-                  onClick={() =>
-                    handleAction(user._id, "toggleStatus", user.isActive)
-                  }
-                  disabled={actionLoading === user._id}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border transition ${
-                    user.isActive
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300"
-                  }`}
-                >
-                  {actionLoading === user._id ? (
-                    <Loader2 className="animate-spin" size={12} />
-                  ) : user.isActive ? (
-                    <PowerOff size={12} />
-                  ) : (
-                    <Power size={12} />
-                  )}
-                  {user.isActive ? "Deactivate" : "Activate"}
-                </button>
-
-                <button
-                  onClick={() => handleAction(user._id, "delete")}
-                  disabled={actionLoading === user._id}
-                  className="flex items-center gap-1 px-2 py-1 bg-white text-black border border-gray-300 rounded-md text-[11px]"
-                >
-                  <Trash2 size={12} /> Delete
-                </button>
-              </td>
-            </tr>
-          ))
-        ) : (
-          <tr>
-            <td colSpan={10} className="text-center py-8 text-gray-500">
-              No records found
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-  </div>
-</div>
+        <div className="overflow-x-auto w-full bg-white border border-gray-200 rounded-lg">
+          {/* Desktop Table */}
+          <table
+            className="w-full table-auto divide-y divide-gray-200 hidden md:table"
+            style={{ minWidth: 1350 }}
+          >
+            <thead className="bg-gray-100/60">
+              <tr>
+                {[
+                  "Name",
+                  "CID",
+                  "Designation",
+                  "Phone",
+                  "Email",
+                  "Department",
+                  "Division",
+                  "Role / Change",
+                  "Registered",
+                  "Actions",
+                ].map((col) => (
+                  <th
+                    key={col}
+                    className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap text-gray-700"
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {paginatedUsers.length > 0 ? (
+                paginatedUsers.map((user) => (
+                  <tr
+                    key={user._id}
+                    className="hover:bg-gray-50/80 transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium">{user.name}</td>
+                    <td className="px-4 py-3">{user.cid}</td>
+                    <td className="px-4 py-3">{user.designation}</td>
+                    <td className="px-4 py-3">{user.phone}</td>
+                    <td className="px-4 py-3">{user.email}</td>
+                    <td className="px-4 py-3">{user.departmentName}</td>
+                    <td className="px-4 py-3">{user.divisionName}</td>
+                    <td className="px-4 py-3" style={{ minWidth: 220 }}>
+                      <p className="text-[11px] text-gray-500 mb-1">
+                        Current: {user.role || "Officer"}
+                      </p>
+                      <select
+                        value={user.role || "Officer"}
+                        onChange={(e) =>
+                          handleRoleChange(user._id, e.target.value)
+                        }
+                        className="border border-gray-300 rounded-md px-2 py-1.5 text-xs w-full bg-white focus:ring-0 focus:border-black outline-none"
+                      >
+                        <option value="Officer">Officer</option>
+                        <option value="DivisionHead">Division Head</option>
+                        <option value="DepartmentHead">Department Head</option>
+                        <option value="Commissioner">Commissioner</option>
+                        <option value="Chairperson">Chairperson</option>
+                        <option value="SecretaryService">
+                          Secretary Service
+                        </option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {new Date(user.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 flex gap-2 flex-wrap">
+                      <button
+                        onClick={() =>
+                          handleAction(user._id, "toggleStatus", user.isActive)
+                        }
+                        disabled={actionLoading === user._id}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border transition ${
+                          user.isActive
+                            ? "bg-black text-white border-black hover:bg-gray-900"
+                            : "bg-white text-black border-gray-300 hover:border-black"
+                        }`}
+                      >
+                        {actionLoading === user._id ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : user.isActive ? (
+                          <PowerOff size={14} />
+                        ) : (
+                          <Power size={14} />
+                        )}
+                        {user.isActive ? "Deactivate" : "Activate"}
+                      </button>
+                      <button
+                        onClick={() => handleAction(user._id, "delete")}
+                        disabled={actionLoading === user._id}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white text-black border border-gray-300 rounded-md text-xs font-medium hover:border-black transition"
+                      >
+                        <Trash2 size={14} /> Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={10} className="text-center py-8 text-gray-500">
+                    No records found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
