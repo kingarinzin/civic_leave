@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import {Badge,Box,Button,Card,Flex,Heading,Select,Table,Text,TextField,} from "@radix-ui/themes";
-import {FaFilePdf,FaFileWord,FaFileExcel,FaFileImage,FaFileAlt,FaFile,} from "react-icons/fa";
 
 type LeaveEntry = {
   leaveTypeName: string;
@@ -22,8 +21,7 @@ type LeaveApplication = {
   days: number;
   status: string;
   approverName?: string;
-  attachments?: string[];      // ✅ new: array of filenames
-  attachmentName?: string;      // ✅ fallback: comma‑separated string
+  attachment?: string;
   description?: string;
 };
 
@@ -57,7 +55,6 @@ export default function LeaveDashboardPage() {
   const [canApprove, setCanApprove] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [visibilityLabel, setVisibilityLabel] = useState("My Leaves");
-  const [showAllLeaveTypes, setShowAllLeaveTypes] = useState(false); // 👈 new state
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -120,16 +117,11 @@ export default function LeaveDashboardPage() {
           : [];
         setLeaveEntries(leaves);
 
- // ✅ Ensure attachments field is present (fallback to attachmentName)
-        const apps = Array.isArray(applicationsData?.applications)
-          ? applicationsData.applications.map((app: any) => ({
-              ...app,
-              attachments: app.attachments || (app.attachmentName ? app.attachmentName.split(", ") : []),
-            }))
-          : [];
-        setApplications(apps);
-
-
+        setApplications(
+          Array.isArray(applicationsData?.applications)
+            ? applicationsData.applications
+            : [],
+        );
 
         setVisibilityLabel(applicationsData?.visibilityLabel || "My Leaves");
       } catch (error) {
@@ -148,12 +140,6 @@ export default function LeaveDashboardPage() {
       .filter((entry) => !!entry.leaveTypeName)
       .sort((a, b) => a.leaveTypeName.localeCompare(b.leaveTypeName));
   }, [leaveEntries]);
-
-  // 👈 visible rows based on expand/collapse state
-  const visibleLeaveTypes = showAllLeaveTypes
-    ? leaveAvailabilityRows
-    : leaveAvailabilityRows.slice(0, 4);
-
 
   const filteredApplications = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -177,62 +163,6 @@ export default function LeaveDashboardPage() {
       ? filteredApplications
       : filteredApplications.slice(0, rowsPerPage);
 
-// Helper: remove timestamp prefix from saved filename
-function getOriginalFileName(savedName: string): string {
-  // saved format: "timestamp-originalname"
-  const firstDashIndex = savedName.indexOf("-");
-  if (firstDashIndex === -1) return savedName;
-  return savedName.substring(firstDashIndex + 1);
-}
-
-// Helper: get file extension and return appropriate icon
-function getFileIcon(filename: string) {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "pdf":
-      return <FaFilePdf className="text-red-600" />;
-    case "doc":
-    case "docx":
-      return <FaFileWord className="text-blue-700" />;
-    case "xls":
-    case "xlsx":
-      return <FaFileExcel className="text-green-700" />;
-    case "jpg":
-    case "jpeg":
-    case "png":
-    case "gif":
-    case "webp":
-      return <FaFileImage className="text-purple-600" />;
-    default:
-      return <FaFileAlt className="text-gray-600" />;
-  }
-}
-
-// Render attachments with cleaned name and icon
-const renderAttachments = (attachments?: string[]) => {
-  if (!attachments || attachments.length === 0) return "-";
-  return (
-    <div className="flex flex-col gap-1">
-      {attachments.map((file, idx) => {
-        const originalName = getOriginalFileName(file);
-        const icon = getFileIcon(originalName);
-        return (
-          <a
-            key={idx}
-            href={`/uploads/leave-attachments/${encodeURIComponent(file)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-gray-700 hover:text-blue-600 text-sm"
-          >
-            {icon}
-            <span>{originalName}</span>
-          </a>
-        );
-      })}
-    </div>
-  );
-};
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -248,12 +178,12 @@ const renderAttachments = (attachments?: string[]) => {
         {/* HEADER */}
         <Flex align="center" justify="between" mb="5" wrap="wrap" gap="3">
           <Box>
-            <h5 className="text-xl font-semibold tracking-tight">
-            Leave Section - <span className="text-gray-600 text-sm md:text-base font-normal">
+            <Heading size="6">Leave Section</Heading>
+            <Text size="2" color="gray">
               Track balance and leave status.
-            </span>
-          </h5>
+            </Text>
           </Box>
+
           <Flex gap="2" wrap="wrap">
             {!isAdmin && (
               <Button onClick={() => router.push("/dashboard/leave/apply")}>
@@ -286,8 +216,8 @@ const renderAttachments = (attachments?: string[]) => {
             </Table.Header>
 
             <Table.Body>
-              {visibleLeaveTypes.length > 0 ? (
-                visibleLeaveTypes.map((row, index) => (
+              {leaveAvailabilityRows.length > 0 ? (
+                leaveAvailabilityRows.map((row, index) => (
                   <Table.Row key={index}>
                     <Table.RowHeaderCell>
                       {row.leaveTypeName}
@@ -296,7 +226,6 @@ const renderAttachments = (attachments?: string[]) => {
                   </Table.Row>
                 ))
               ) : (
-
                 <Table.Row>
                   <Table.Cell colSpan={2}>
                     <Text size="2" color="gray">
@@ -307,20 +236,8 @@ const renderAttachments = (attachments?: string[]) => {
               )}
             </Table.Body>
           </Table.Root>
-          {/* Expand / Collapse Button */}
-          {leaveAvailabilityRows.length > 4 && (
-            <Flex justify="center" mt="3">
-              <Button
-                variant="soft"
-                onClick={() => setShowAllLeaveTypes((prev) => !prev)}
-              >
-                {showAllLeaveTypes
-                  ? "Show less"
-                  : `Show all (${leaveAvailabilityRows.length})`}
-              </Button>
-            </Flex>
-          )}
         </Card>
+
         {/* APPLICATIONS TABLE */}
         <Card size="3">
           <Flex align="center" justify="between" mb="4" wrap="wrap" gap="3">
@@ -375,7 +292,7 @@ const renderAttachments = (attachments?: string[]) => {
                 <Table.ColumnHeaderCell>Start Date</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>End Date</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>No. of Days</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>Attachment</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell>Attachmenttttt</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>Description</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>Approver</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>Status</Table.ColumnHeaderCell>
@@ -405,7 +322,21 @@ const renderAttachments = (attachments?: string[]) => {
                     <Table.Cell>{row.days}</Table.Cell>
 
                     <Table.Cell>
-                     {renderAttachments(row.attachments)}
+                      {row.attachment ? (
+                        <a
+                          href={row.attachment}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "blue",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          View
+                        </a>
+                      ) : (
+                        "-"
+                      )}
                     </Table.Cell>
 
                     <Table.Cell>{row.description || "-"}</Table.Cell>

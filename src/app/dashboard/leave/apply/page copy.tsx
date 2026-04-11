@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
-import { FaUpload } from 'react-icons/fa';
 import {Badge,Box,Button,Card,Checkbox,Flex,Heading,Separator,Text,TextArea,TextField,} from "@radix-ui/themes";
 
 type LeaveType = {
@@ -151,65 +150,64 @@ export default function ApplyLeavePage() {
 
 //Submit Handaler
   const handleSubmit = async (e: FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  const parsedDays = Number(days);
+    const parsedDays = Number(days);
 
-  if (!leaveTypeId || !fromDate || !toDate || !parsedDays) {
-    setMessage("Please fill all required fields");
-    return;
-  }
-
-  if (fromDate < minSelectableDate || toDate < minSelectableDate) {
-    setMessage("Past dates are not allowed. Please select today or future dates");
-    return;
-  }
-
-  if (parsedDays > selectedBalance) {
-    setMessage("No. of days cannot exceed assigned leave balance");
-    return;
-  }
-
-  try {
-    setSubmitting(true);
-    setMessage("");
-
-    const token = localStorage.getItem("token");
-
-    const formData = new FormData();
-    formData.append("isHalfDay", String(isHalfDay));
-    formData.append("leaveTypeId", leaveTypeId);
-    formData.append("fromDate", fromDate);
-    formData.append("toDate", toDate);
-    formData.append("days", String(parsedDays));
-    formData.append("description", description);
-    attachments.forEach((file) => {
-      formData.append("attachments", file);
-    });
-
-    const res = await fetch("/api/apply-leave", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setMessage(data?.error || "Failed to apply leave");
+    if (!leaveTypeId || !fromDate || !toDate || !parsedDays) {
+      setMessage("Please fill all required fields");
       return;
     }
 
-    router.push("/dashboard/leave");
-  } catch (error) {
-    console.error("Apply leave submit error:", error);
-    setMessage("Failed to apply leave");
-  } finally {
-    setSubmitting(false);
-  }
-};
+    if (fromDate < minSelectableDate || toDate < minSelectableDate) {
+      setMessage(
+        "Past dates are not allowed. Please select today or future dates",
+      );
+      return;
+    }
+
+    if (parsedDays > selectedBalance) {
+      setMessage("No. of days cannot exceed assigned leave balance");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setMessage("");
+
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/apply-leave", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          isHalfDay,
+          leaveTypeId,
+          fromDate,
+          toDate,
+          days: parsedDays,
+          description,
+          attachmentName,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMessage(data?.error || "Failed to apply leave");
+        return;
+      }
+
+      router.push("/dashboard/leave");
+    } catch (error) {
+      console.error("Apply leave submit error:", error);
+      setMessage("Failed to apply leave");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -218,7 +216,7 @@ export default function ApplyLeavePage() {
       </div>
     );
   }
-  //Return
+
   return (
     <div className="flex bg-slate-50 min-h-screen">
       <Sidebar />
@@ -327,44 +325,19 @@ export default function ApplyLeavePage() {
                 </Box>
               </div>
 
-              {/* ================= FILE ATTACHMENT ================= */}
-               <Box>
-                <div className="flex items-center gap-2 mb-1">
-                  <Text as="label" size="2" weight="medium">
-                    Attach Files (optional)
-                  </Text>
-                  <label className="cursor-pointer text-gray-400 hover:text-gray-600">
-                    <FaUpload />
-                    <input
-                      type="file"
-                      multiple
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                {attachments.length > 0 && (
-                  <div className="space-y-1 mt-2">
-                    {attachments.map((file, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between items-center bg-gray-100 px-3 py-2 rounded text-sm"
-                      >
-                        <span className="text-gray-700">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFile(idx)}
-                          className="text-red-500"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <Box>
+                <Text as="label" size="2" weight="medium">
+                  Attachment (optional)
+                </Text>
+                <input
+                  type="file"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 bg-white"
+                  onChange={(e) =>
+                    setAttachmentName(e.target.files?.[0]?.name || "")
+                  }
+                />
               </Box>
-             {/* ================= DESCRIPTION ================= */}
+
               <Box>
                 <Text as="label" size="2" weight="medium">
                   Description
@@ -377,6 +350,7 @@ export default function ApplyLeavePage() {
                   mt="1"
                 />
               </Box>
+
               <Flex gap="3" pt="2">
                 <Button type="submit" disabled={submitting}>
                   {submitting ? "Submitting..." : "Submit"}

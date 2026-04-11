@@ -48,25 +48,27 @@ export async function GET(req: Request) {
 
     const userName = user?.name || user?.email || "-";
 
-    // ✅ Normalize response
+     // ✅ Map response, ensuring attachment fields are included
     const mapped = leaveApplications.map((entry) => ({
-      ...entry,
       _id: entry._id.toString(),
       userName,
-      leaveTypeName:
-        entry.leaveTypeName ||
-        leaveTypeMap.get(entry.leaveTypeId?.toString()) ||
-        "-",
+      leaveTypeName: entry.leaveTypeName || leaveTypeMap.get(entry.leaveTypeId?.toString()) || "-",
+      fromDate: entry.fromDate,
+      toDate: entry.toDate,
+      days: entry.days,
+      status: entry.status,
+      approverName: entry.approverName,
+      description: entry.description || "",
+      attachments: entry.attachments || [],           // ✅ array of filenames
+      attachmentName: entry.attachmentName || "",     // ✅ fallback comma-separated string
+      // ... include any other fields you need (isHalfDay, createdAt, etc.)
     }));
 
-    return NextResponse.json({
-      applications: mapped,
-    });
+    return NextResponse.json({ applications: mapped });
   } catch (error: any) {
     if (error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     console.error("GET /api/my-leaves error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

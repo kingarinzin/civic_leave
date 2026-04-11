@@ -5,8 +5,6 @@ import { ObjectId } from "mongodb";
 import { normalizeRole, resolveApproverForApplicant } from "@/lib/leave-approval";
 import crypto from "crypto";  //email
 import { createTransporter } from "@/lib/mailer";
-import fs from "fs/promises";  // File attachment
-import path from "path";  // file attachment
 
 
 const getYear = () => new Date().getFullYear();
@@ -175,42 +173,21 @@ export async function GET(req) {
 }
 
 
-
-// Helper: ensure upload directory exists and save files
-async function saveUploadedFiles(files) {
-  if (!files || files.length === 0) return [];
-
-  const uploadDir = path.join(process.cwd(), "public/uploads/leave-attachments");
-  await fs.mkdir(uploadDir, { recursive: true });
-
-  const savedFiles = [];
-  for (const file of files) {
-    const timestamp = Date.now();
-    const safeName = `${timestamp}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-    const filePath = path.join(uploadDir, safeName);
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(filePath, buffer);
-    savedFiles.push(safeName);
-  }
-  return savedFiles;
-}
-
-//====================POST Handler============================
 export async function POST(req) {
   try {
     const userId = getUserIdFromAuth(req);
 
-    // --- Parse multipart form data ---
-    const formData = await req.formData();
-    const isHalfDay = formData.get("isHalfDay") === "true";
-    const leaveTypeId = formData.get("leaveTypeId");
-    const fromDate = formData.get("fromDate");
-    const toDate = formData.get("toDate");
-    const daysRaw = formData.get("days");           // ✅ renamed for clarity
-    const description = formData.get("description") || "";
-    const attachments = formData.getAll("attachments");
+    const {
+      isHalfDay,
+      leaveTypeId,
+      fromDate,
+      toDate,
+      days,
+      description,
+      attachmentName,
+    } = await req.json();
 
-    if (!leaveTypeId || !fromDate || !toDate || !daysRaw) {
+    if (!leaveTypeId || !fromDate || !toDate || !days) {
       return NextResponse.json(
         { error: "Leave type, dates, and no. of days are required" },
         { status: 400 }
@@ -224,7 +201,7 @@ export async function POST(req) {
       );
     }
 
-    const parsedDays = Number(daysRaw);   // ✅ now daysRaw is defined
+    const parsedDays = Number(days);
     const calculatedDays = calculateLeaveDays(fromDate, toDate, !!isHalfDay);
 
     if (calculatedDays <= 0) {
@@ -314,12 +291,6 @@ export async function POST(req) {
       );
     }
 
-    // --- Save uploaded files ---
-    let savedFileNames = [];
-    if (attachments && attachments.length > 0) {
-      savedFileNames = await saveUploadedFiles(attachments);
-    }
-
     const result = await db.collection("leave_applications").insertOne({
       userId: userObjectId,
       userName: applicantUser.name || applicantUser.email || "",
@@ -337,14 +308,13 @@ export async function POST(req) {
       approverRole: resolvedApprover.approverRole,
       approverName: resolvedApprover.approverName,
       description: description || "",
-      attachments: savedFileNames,          // <-- new field (array)
-      attachmentName: savedFileNames.join(", "),
+      attachmentName: attachmentName || "",
       status: "pending",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
 
-//=================================Rest of your email & token logic ====================================
+//=================================Token Generation====================================
     const token = crypto.randomBytes(32).toString("hex");
     const tokenExpiry = new Date();
     tokenExpiry.setHours(tokenExpiry.getHours() + 24);
