@@ -62,7 +62,7 @@ function LoginForm() {
 </div>
   {/* Title - no top margin */}
   <div className="text-center px-6">
-    <h4 className="text-[18px] font-semibold text-gray-900 mt-0">
+    <h4 className="text-[25px] font-semibold text-gray-900 mt-0">
   Anti-Corruption Commission
 </h4>
     <p className="text-gray-500 text-sm mt-1">
