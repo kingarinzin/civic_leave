@@ -54,9 +54,9 @@ function LoginForm() {
   <Image
     src="/acc-insights.png"
     alt="ACC Insights"
-    width={400}      // smaller width
-    height={267}     // maintains 640:427 aspect ratio
-    className="block -mt-10 -mb-10"
+    width={320}      // smaller width
+    height={140}     // maintains 640:427 aspect ratio
+    className="block -mt-5 -mb-5"
     priority
   />
 </div>
