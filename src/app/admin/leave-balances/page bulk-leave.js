@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
@@ -16,10 +16,10 @@ export default function LeaveBalancesPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
   const [notification, setNotification] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [actionLoading, setActionLoading] = useState(null);
 
-  const fetchData = async (year) => {
-    const res = await fetch(`/api/leave-balances?year=${year}`);
+  const fetchData = async () => {
+    const res = await fetch("/api/leave-balances");
     const json = await res.json();
     setData(json);
   };
@@ -31,45 +31,28 @@ export default function LeaveBalancesPage() {
   };
 
   useEffect(() => {
-    fetchData(selectedYear);
+    fetchData();
     fetchLeaveTypes();
-  }, [selectedYear]);
+  }, []);
 
   const showNotification = (message, type = "success") => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const hasBulkAllocationOccurred = () => {
-    return data.some(user =>
-      user.leaves?.some(leave => (leave.allocated || 0) > 0)
-    );
-  };
-
   // ================= ADD =================
   const handleAdd = async () => {
-    if (hasBulkAllocationOccurred()) {
-      showNotification(
-        `Bulk leave allocation has already been done for ${selectedYear}. You can only allocate once per year.`,
-        "error"
-      );
-      return;
-    }
-
     try {
       await fetch("/api/leave-balances", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          year: selectedYear,
-          allocation: formData,
-        }),
+        body: JSON.stringify(formData),
       });
 
-      fetchData(selectedYear);
+      fetchData();
       setShowForm(false);
       setFormData({});
-      showNotification(`Leave allocated successfully for ${selectedYear}`);
+      showNotification("Leave allocated successfully");
     } catch (err) {
       showNotification("Allocation failed", "error");
     }
@@ -114,7 +97,7 @@ export default function LeaveBalancesPage() {
         }),
       });
 
-      fetchData(selectedYear);
+      fetchData();
       setShowForm(false);
       setEditData(null);
       showNotification("Updated successfully");
@@ -133,7 +116,7 @@ export default function LeaveBalancesPage() {
       body: JSON.stringify({ _id: row._id }),
     });
 
-    fetchData(selectedYear);
+    fetchData();
     showNotification("Deleted successfully");
   };
 
@@ -157,8 +140,10 @@ export default function LeaveBalancesPage() {
   const startIndex = (currentPage - 1) * rowsPerPage;
   const paginated = sorted.slice(startIndex, startIndex + rowsPerPage);
 
+  // ================= PAGE NUMBER RENDER =================
   const renderPageNumbers = () => {
     const pages = [];
+
     for (let i = 1; i <= totalPages; i++) {
       pages.push(
         <button
@@ -172,34 +157,18 @@ export default function LeaveBalancesPage() {
         </button>
       );
     }
+
     return pages;
   };
-
-  const isBulkAllocationDisabled = !editData && hasBulkAllocationOccurred();
 
   return (
     <div className="flex">
       <Sidebar />
       <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
-        {/* HEADER with Year Selector */}
+
+        {/* HEADER */}
         <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">Leave Balance List</h1>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">Year:</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="border rounded px-3 py-1 bg-white"
-              >
-                {[2024, 2025, 2026, 2027, 2028].map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold">Leave Balance List</h1>
 
           {!showForm && (
             <button
@@ -209,50 +178,19 @@ export default function LeaveBalancesPage() {
                 setFormData({});
                 setRemarks("");
               }}
-              disabled={isBulkAllocationDisabled}
-              className={`flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium transition ${
-                isBulkAllocationDisabled
-                  ? "opacity-50 cursor-not-allowed"
-                  : "hover:border-black"
-              }`}
-              title={
-                isBulkAllocationDisabled
-                  ? `Bulk allocation already done for ${selectedYear}. Edit individual users instead.`
-                  : ""
-              }
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
-              <Plus size={14} /> Allocate Leave for {selectedYear}
+              <Plus size={14} /> Allocate Leave
             </button>
           )}
         </div>
 
-        {/* FORM (unchanged) */}
+        {/* FORM */}
         {showForm && (
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             <h2 className="text-lg font-semibold mb-4">
-              {editData ? "Edit Leave Allocation" : `Allocate Leave (All Users) – ${selectedYear}`}
+              {editData ? "Edit Leave Allocation" : "Allocate Leave (All Users)"}
             </h2>
-
-            {editData && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <span className="font-medium">Editing leave for: </span>
-                <span className="text-blue-800 font-semibold">{editData.userName}</span>
-              </div>
-            )}
-
-            {!editData && hasBulkAllocationOccurred() && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-yellow-800">
-                ⚠️ Leave has already been allocated for {selectedYear}. Bulk allocation can only be done once per year.
-                You can still edit individual users using the <strong>Edit</strong> button in the table.
-              </div>
-            )}
-
-            {!editData && !hasBulkAllocationOccurred() && (
-              <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-600">
-                ℹ️ This will allocate the same leave days to <strong>ALL users</strong> for the year {selectedYear}.
-                This action can only be performed once per year. After allocation, you may edit individual users.
-              </div>
-            )}
 
             <div className="grid md:grid-cols-3 gap-4">
               {leaveTypes.map((lt) => (
@@ -313,43 +251,22 @@ export default function LeaveBalancesPage() {
           />
         </div>
 
-        {/* TABLE with Allocated / Used / Balance columns */}
+        {/* TABLE */}
         <div className="bg-white shadow rounded-lg overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              {/* First header row: leave type names spanning 3 columns each */}
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  S/N
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  User
-                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">S/N</th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">User</th>
+
                 {leaveTypes.map((lt) => (
-                  <th
-                    key={lt._id}
-                    className="px-2 py-3 text-center text-sm font-medium uppercase"
-                    colSpan={3}
-                  >
+                  <th key={lt._id} className="px-6 py-3 text-center text-sm font-medium uppercase">
                     {lt.name}
                   </th>
                 ))}
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  Remarks
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  Actions
-                </th>
-              </tr>
-              {/* Second header row: sub-columns */}
-              <tr>
-                {leaveTypes.map((lt) => (
-                  <React.Fragment key={lt._id}>
-                    <th className="px-2 py-1 text-xs font-medium text-center border">Alloc</th>
-                    <th className="px-2 py-1 text-xs font-medium text-center border">Used</th>
-                    <th className="px-2 py-1 text-xs font-medium text-center border">Balance</th>
-                  </React.Fragment>
-                ))}
+
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">Remarks</th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">Actions</th>
               </tr>
             </thead>
 
@@ -364,15 +281,14 @@ export default function LeaveBalancesPage() {
                       (l) => l.leaveTypeId.toString() === lt._id.toString()
                     );
                     return (
-                      <React.Fragment key={lt._id}>
-                        <td className="px-2 py-3 text-center border">{leave?.allocated || 0}</td>
-                        <td className="px-2 py-3 text-center border">{leave?.used || 0}</td>
-                        <td className="px-2 py-3 text-center border">{leave?.balance || 0}</td>
-                      </React.Fragment>
+                      <td key={lt._id} className="px-6 py-3 text-center">
+                        {leave?.allocated || 0}
+                      </td>
                     );
                   })}
 
                   <td className="px-6 py-3">{row.remarks}</td>
+
                   <td className="px-6 py-3 flex gap-2">
                     <button
                       onClick={() => handleEdit(row)}
@@ -380,6 +296,7 @@ export default function LeaveBalancesPage() {
                     >
                       <Pencil size={14} /> Edit
                     </button>
+
                     <button
                       onClick={() => handleDelete(row)}
                       className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
@@ -395,6 +312,7 @@ export default function LeaveBalancesPage() {
 
         {/* PAGINATION */}
         <div className="flex justify-between items-center mt-4">
+          {/* Rows per page */}
           <div className="flex items-center gap-2">
             <span className="text-sm">Rows per page:</span>
             <select
@@ -413,6 +331,7 @@ export default function LeaveBalancesPage() {
             </select>
           </div>
 
+          {/* Page numbers */}
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
@@ -421,7 +340,9 @@ export default function LeaveBalancesPage() {
             >
               Prev
             </button>
+
             {renderPageNumbers()}
+
             <button
               onClick={() =>
                 setCurrentPage((prev) => Math.min(prev + 1, totalPages))
@@ -433,6 +354,7 @@ export default function LeaveBalancesPage() {
             </button>
           </div>
         </div>
+
       </main>
     </div>
   );

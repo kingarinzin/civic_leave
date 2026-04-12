@@ -2,8 +2,15 @@ import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { isLeaveApproverRole } from "@/lib/leave-approval";
 
-// ========== Helper functions (keep as they are) ==========
+type LeaveBalanceLeaf = {
+  leaveTypeId: unknown;
+  used?: number;
+  balance?: number;
+  [key: string]: unknown;
+};
+
 const getYear = () => new Date().getFullYear();
 
 function getTokenUserId(req: Request): string {
@@ -11,6 +18,7 @@ function getTokenUserId(req: Request): string {
   if (!authHeader?.startsWith("Bearer ")) {
     throw new Error("Unauthorized");
   }
+
   const token = authHeader.split(" ")[1];
   const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
   return decoded.id;
@@ -18,40 +26,54 @@ function getTokenUserId(req: Request): string {
 
 function normalizeId(value: unknown): string {
   if (!value) return "";
+
   if (typeof value === "string") return value;
+
   if (value instanceof ObjectId) return value.toString();
+
   if (typeof value === "object" && value !== null) {
     const obj = value as any;
-    if (obj._id instanceof ObjectId) return obj._id.toString();
+
+    if (obj._id instanceof ObjectId) {
+      return obj._id.toString();
+    }
+
     if (typeof obj.toString === "function") {
       const str = obj.toString();
       if (str && str !== "[object Object]") return str;
     }
   }
+
   return "";
 }
 
-// ========== GET handler (unchanged) ==========
 export async function GET(req: Request) {
   try {
     const currentUserId = getTokenUserId(req);
+
     const client = await clientPromise;
     const db = client.db("civic_leave_db");
 
     const currentUser = await db.collection("users").findOne({
       _id: new ObjectId(currentUserId),
     });
+
     if (!currentUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // ✅ FIXED: align roles with resolver system
     const approverRoles = ["DivisionHead", "DepartmentHead", "Commissioner"];
-    const canApprove = !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
+
+    const canApprove =
+      !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
+
     if (!canApprove) {
       return NextResponse.json({ applications: [] }, { status: 200 });
     }
 
     const query: Record<string, unknown> = {};
+
     if (!currentUser.isAdmin) {
       query.approverId = currentUserId;
     }
@@ -69,9 +91,11 @@ export async function GET(req: Request) {
       const department = departments.find(
         (d) => normalizeId(d._id) === normalizeId(entry.departmentId)
       );
+
       const division = divisions.find(
         (d) => normalizeId(d._id) === normalizeId(entry.divisionId)
       );
+
       return {
         _id: normalizeId(entry._id),
         userId: entry.userId,
@@ -87,6 +111,7 @@ export async function GET(req: Request) {
         approverName: entry.approverName || "-",
         approverRole: entry.approverRole || "-",
         createdAt: entry.createdAt,
+
         status: entry.status || "pending",
         approvedBy: entry.approvedBy || "",
         approvedAt: entry.approvedAt || null,
@@ -98,6 +123,7 @@ export async function GET(req: Request) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     console.error("GET /api/leave-approvals error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -106,6 +132,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const currentUserId = getTokenUserId(req);
+
     const { applicationId, action, remarks } = await req.json();
 
     if (!applicationId || !["approve", "reject"].includes(action)) {
@@ -118,6 +145,7 @@ export async function POST(req: Request) {
     const currentUser = await db.collection("users").findOne({
       _id: new ObjectId(currentUserId),
     });
+
     if (!currentUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -125,9 +153,11 @@ export async function POST(req: Request) {
     const leaveApplication = await db.collection("leave_applications").findOne({
       _id: new ObjectId(applicationId),
     });
+
     if (!leaveApplication) {
       return NextResponse.json({ error: "Leave application not found" }, { status: 404 });
     }
+
     if (leaveApplication.status !== "pending") {
       return NextResponse.json(
         { error: "This leave request has already been processed" },
@@ -135,91 +165,28 @@ export async function POST(req: Request) {
       );
     }
 
-    // Authorization
+    // ✅ FIXED: consistent role check
     const approverRoles = ["DivisionHead", "DepartmentHead", "Commissioner"];
-    const canApproveByRole = !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
-    const isAssignedApprover = normalizeId(leaveApplication.approverId) === currentUserId;
+
+    const canApproveByRole =
+      !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
+
+    const isAssignedApprover =
+      normalizeId(leaveApplication.approverId) === currentUserId;
+
     if (!canApproveByRole) {
       return NextResponse.json({ error: "Not authorized (role)" }, { status: 403 });
     }
+
     if (!currentUser.isAdmin && !isAssignedApprover) {
       return NextResponse.json({ error: "Not assigned approver" }, { status: 403 });
     }
 
     const newStatus = action === "approve" ? "approved" : "rejected";
 
-    // ========== BALANCE DEDUCTION ON APPROVAL (SAFE VERSION) ==========
-    // ========== BALANCE DEDUCTION ON APPROVAL (simpler, no aggregation) ==========
-if (newStatus === "approved") {
-  const leaveYear = new Date(leaveApplication.fromDate).getFullYear();
-  const applicantObjectId = new ObjectId(leaveApplication.userId);
-  const leaveTypeIdObj = new ObjectId(leaveApplication.leaveTypeId);
-  const daysToDeduct = Number(leaveApplication.days);
 
-  // Fetch current leave balance document
-  const balanceDoc = await db.collection("leave_balances").findOne({
-    userId: applicantObjectId,
-    year: leaveYear,
-  });
 
-  if (!balanceDoc) {
-    return NextResponse.json(
-      { error: "Leave balance record not found for this user/year" },
-      { status: 404 }
-    );
-  }
-
-  // Find the specific leave type entry
-  const leaveIndex = balanceDoc.leaves.findIndex(
-    (l: any) => l.leaveTypeId.toString() === leaveTypeIdObj.toString()
-  );
-
-  if (leaveIndex === -1) {
-    return NextResponse.json(
-      { error: "Leave type not found in balance record" },
-      { status: 404 }
-    );
-  }
-
-  const currentUsed = Number(balanceDoc.leaves[leaveIndex].used) || 0;
-  const allocated = Number(balanceDoc.leaves[leaveIndex].allocated);
-  const remainingBalance = allocated - currentUsed;
-
-  if (daysToDeduct > remainingBalance) {
-    return NextResponse.json(
-      { error: "Insufficient leave balance (balance changed after application)" },
-      { status: 400 }
-    );
-  }
-
-  // Update used and balance
-  const newUsed = currentUsed + daysToDeduct;
-  const newBalance = allocated - newUsed;
-
-  // Update only the specific leave entry using $set with array index
-  const updateQuery = {
-    $set: {
-      [`leaves.${leaveIndex}.used`]: newUsed,
-      [`leaves.${leaveIndex}.balance`]: newBalance,
-      updatedAt: new Date()
-    }
-  };
-
-  const updateResult = await db.collection("leave_balances").updateOne(
-    { _id: balanceDoc._id },
-    updateQuery
-  );
-
-  if (updateResult.matchedCount === 0) {
-    return NextResponse.json(
-      { error: "Failed to update leave balance" },
-      { status: 500 }
-    );
-  }
-}
-    // =============================================================
-
-    // Update application status
+    
     await db.collection("leave_applications").updateOne(
       { _id: new ObjectId(applicationId) },
       {
@@ -231,12 +198,50 @@ if (newStatus === "approved") {
           reviewRemarks: remarks || "",
           reviewedAt: new Date(),
           reviewedById: currentUserId,
-          reviewedByRole: currentUser.role || (currentUser.isAdmin ? "Admin" : "Approver"),
-          reviewedByName: currentUser.name || currentUser.email || "Approver",
+          reviewedByRole:
+            currentUser.role || (currentUser.isAdmin ? "Admin" : "Approver"),
+          reviewedByName:
+            currentUser.name || currentUser.email || "Approver",
           updatedAt: new Date(),
         },
       }
     );
+
+    if (newStatus === "rejected") {
+      const year = getYear();
+      const applicantObjectId = new ObjectId(leaveApplication.userId);
+
+      const leaveBalance = await db.collection("leave_balances").findOne({
+        userId: applicantObjectId,
+        year,
+      });
+
+      if (leaveBalance && Array.isArray(leaveBalance.leaves)) {
+        const updatedLeaves = leaveBalance.leaves.map((leaf: LeaveBalanceLeaf) => {
+          if (
+            normalizeId(leaf.leaveTypeId) !==
+            normalizeId(leaveApplication.leaveTypeId)
+          ) {
+            return leaf;
+          }
+
+          const days = Number(leaveApplication.days || 0);
+          const updatedUsed = Math.max(0, Number(leaf.used || 0) - days);
+          const updatedBalance = Number(leaf.balance || 0) + days;
+
+          return {
+            ...leaf,
+            used: updatedUsed,
+            balance: updatedBalance,
+          };
+        });
+
+        await db.collection("leave_balances").updateOne(
+          { _id: leaveBalance._id },
+          { $set: { leaves: updatedLeaves, updatedAt: new Date() } }
+        );
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -246,6 +251,7 @@ if (newStatus === "approved") {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     console.error("POST /api/leave-approvals error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

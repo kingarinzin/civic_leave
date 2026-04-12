@@ -440,7 +440,6 @@ const renderAttachments = (attachments?: string[]) => {
             </Table.Body>
           </Table.Root>
         </Card>
-
         {message && (
           <Text size="2" color="red" mt="3">
             {message}

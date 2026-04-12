@@ -256,6 +256,23 @@ export async function POST(req) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+      // ========== INSERT DATE OVERLAP VALIDATION HERE ==========
+      const overlapping = await db.collection("leave_applications").findOne({
+        userId: userObjectId,
+        status: { $in: ["pending", "approved"] },
+        $or: [
+          { fromDate: { $lte: toDate }, toDate: { $gte: fromDate } }
+        ]
+      });
+
+      if (overlapping) {
+        return NextResponse.json(
+          { error: "You already have a leave application covering some of these dates" },
+          { status: 400 }
+        );
+      }
+      // =========================================================
+
     let resolvedApprover;
 
     try {
