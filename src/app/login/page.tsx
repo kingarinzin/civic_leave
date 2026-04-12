@@ -56,7 +56,7 @@ function LoginForm() {
     alt="ACC Insights"
     width={280}      // smaller width
     height={120}     // maintains 640:427 aspect ratio
-    className="block -mt-3 -mb-3"
+    className="block -mt-10 -mb-10"
     priority
   />
 </div>
