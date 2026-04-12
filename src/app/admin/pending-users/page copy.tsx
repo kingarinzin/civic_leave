@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import SuccessModal from "@/components/SuccessModal";
 
 interface PendingUser {
   _id: string;
@@ -18,18 +19,11 @@ export default function PendingUsersPage() {
   const [users, setUsers] = useState<PendingUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [inlineMessage, setInlineMessage] = useState<{
-    text: string;
-    type: "success" | "error";
-  } | null>(null);
-
-  // Auto-dismiss inline message after 3 seconds
-  useEffect(() => {
-    if (inlineMessage) {
-      const timer = setTimeout(() => setInlineMessage(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [inlineMessage]);
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({ isOpen: false, title: "", message: "" });
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -41,9 +35,10 @@ export default function PendingUsersPage() {
     }
 
     if (!isAdmin) {
-      setInlineMessage({
-        text: "Admin access required. Redirecting...",
-        type: "error",
+      setModalState({
+        isOpen: true,
+        title: "Unauthorized",
+        message: "Admin access required",
       });
       setTimeout(() => router.push("/dashboard/leave"), 2000);
       return;
@@ -85,9 +80,10 @@ export default function PendingUsersPage() {
       }
 
       if (res.status === 403) {
-        setInlineMessage({
-          text: "Admin access required. Redirecting...",
-          type: "error",
+        setModalState({
+          isOpen: true,
+          title: "Unauthorized",
+          message: "Admin access required",
         });
         setTimeout(() => router.push("/dashboard/leave"), 2000);
         return;
@@ -97,7 +93,6 @@ export default function PendingUsersPage() {
       setUsers(data.users || []);
     } catch (err) {
       console.error("Failed to fetch pending users:", err);
-      setInlineMessage({ text: "Failed to load pending users", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -124,22 +119,25 @@ export default function PendingUsersPage() {
       }
 
       if (res.ok) {
-        setInlineMessage({
-          text: `User ${action === "approve" ? "approved" : "rejected"} successfully`,
-          type: "success",
+        setModalState({
+          isOpen: true,
+          title: "Success",
+          message: `User ${action === "approve" ? "approved" : "rejected"} successfully`,
         });
         fetchPendingUsers();
       } else {
         const data = await res.json();
-        setInlineMessage({
-          text: data.error || "Action failed",
-          type: "error",
+        setModalState({
+          isOpen: true,
+          title: "Error",
+          message: data.error || "Action failed",
         });
       }
     } catch (err) {
-      setInlineMessage({
-        text: "Failed to process request",
-        type: "error",
+      setModalState({
+        isOpen: true,
+        title: "Error",
+        message: "Failed to process request",
       });
     } finally {
       setActionLoading(null);
@@ -159,29 +157,14 @@ export default function PendingUsersPage() {
       <Sidebar />
       <div className="flex-1 ml-64 min-h-screen bg-gray-50 p-8">
         <div className="max-w-4xl mx-auto">
-          {/* Inline Message Banner */}
-          {inlineMessage && (
-            <div
-              className={`mb-4 p-3 rounded-md text-sm ${
-                inlineMessage.type === "success"
-                  ? "bg-green-50 text-green-700 border border-green-200"
-                  : "bg-red-50 text-red-700 border border-red-200"
-              }`}
-            >
-              {inlineMessage.text}
-            </div>
-          )}
-
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-6">
-            <h4 className="text-xl font-semibold tracking-tight">
-              Pending User Approvals -{" "}
-              <span className="text-gray-600 text-sm md:text-base font-normal">
-                Review and approve new user registrations
-              </span>
-            </h4>
-          </div>
-
-          {users.length === 0 ? (
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-6">
+          <h4 className="text-xl font-semibold tracking-tight">
+            Pending User Approvals - <span className="text-gray-600 text-sm md:text-base font-normal">
+               Review and approve new user registrations
+            </span>
+          </h4>
+        </div>
+         {users.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
               No pending users
             </div>
@@ -246,6 +229,14 @@ export default function PendingUsersPage() {
           )}
         </div>
       </div>
+
+      {/* Success/Error Modal */}
+      <SuccessModal
+        isOpen={modalState.isOpen}
+        title={modalState.title}
+        message={modalState.message}
+        onClose={() => setModalState({ isOpen: false, title: "", message: "" })}
+      />
     </div>
   );
 }

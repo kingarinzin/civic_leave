@@ -45,74 +45,109 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white px-4">
-      <div className="bg-white border border-gray-200 rounded-2xl p-8 w-full max-w-md">
-        <div className="flex justify-center items-center mb-6">
-          <Image
-            src="/civicleave-logo.svg"
-            alt="CivicLeave"
-            width={220}
-            height={64}
-            className="h-16 w-auto"
-            priority
-          />
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
+      <div className="w-full max-w-md">
+        {/* Card */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+  {/* Logo Section - no vertical padding */}
+  <div className="flex justify-center pt-4 pb-0">
+  <Image
+    src="/acc-insights.png"
+    alt="ACC Insights"
+    width={400}      // smaller width
+    height={267}     // maintains 640:427 aspect ratio
+    className="block -mt-15 -mb-15"
+    priority
+  />
+</div>
+  {/* Title - no top margin */}
+  <div className="text-center px-6">
+    <h4 className="text-lg font-semibold text-gray-900 mt-0">
+      Anti-Corruption Commission
+    </h4>
+    <p className="text-gray-500 text-sm mt-1">
+      Sign in to your account
+    </p>
+  </div>
+  {/* rest of your form, etc. */}
 
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-semibold text-black">Welcome Back</h1>
-          <p className="text-gray-500 mt-1">Sign in to your account</p>
-        </div>
+          {/* Session expired alert */}
+          {expired === "true" && (
+            <div className="mx-6 mt-4 bg-amber-50 border-l-4 border-amber-400 text-amber-700 px-4 py-3 rounded-md text-sm">
+              <strong>Session Expired:</strong> Your session has expired. Please
+              log in again.
+            </div>
+          )}
 
-        {expired === "true" && (
-          <div className="bg-gray-100 border border-gray-300 text-gray-800 px-4 py-3 rounded-md mb-4 text-sm">
-            <strong>Session Expired:</strong> Your session has expired. Please
-            log in again.
+          {/* Form */}
+          <form className="flex flex-col gap-5 px-6 pb-6 mt-6" onSubmit={handleSubmit}>
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                Email address
+              </label>
+              <input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                required
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                required
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-black text-white rounded-xl font-semibold hover:bg-gray-800 transition-all duration-200 cursor-pointer shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0"
+            >
+              Sign In
+            </button>
+          </form>
+
+          {/* Error message */}
+          {message && (
+            <div className="px-6 pb-2">
+              <p className="text-center text-red-500 text-sm bg-red-50 py-2 rounded-lg">
+                {message}
+              </p>
+            </div>
+          )}
+
+          {/* Links */}
+          <div className="px-6 pb-4 space-y-3 text-center">
+            <p className="text-sm">
+              <a href="/forgot-password" className="text-gray-600 hover:text-black hover:underline transition">
+                Forgot Password?
+              </a>
+            </p>
+
+            <p className="text-sm text-gray-500">
+              Don&apos;t have an account?{" "}
+              <a href="/signup" className="text-black font-medium hover:underline transition">
+                Sign Up
+              </a>
+            </p>
+
+            <p className="text-xs text-gray-400 pt-2">
+              © {new Date().getFullYear()} Anti-Corruption Commission
+            </p>
           </div>
-        )}
-
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            required
-            onChange={(e) => setEmail(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            required
-            onChange={(e) => setPassword(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-          <button
-            type="submit"
-            className="p-3 bg-black text-white rounded-md font-semibold hover:bg-gray-900 transition cursor-pointer"
-          >
-            Sign In
-          </button>
-        </form>
-
-        {message && <p className="text-center mt-4 text-red-500">{message}</p>}
-
-        <p className="text-center mt-4 text-sm">
-          <a href="/forgot-password" className="text-black hover:underline">
-            Forgot Password?
-          </a>
-        </p>
-
-        <p className="text-center mt-4 text-sm text-gray-500">
-          Don&apos;t have an account?{" "}
-          <a href="/signup" className="text-black hover:underline">
-            Sign Up
-          </a>
-        </p>
-
-        <p className="text-center mt-6 text-xs text-gray-400">
-          © {new Date().getFullYear()} Anti-Corruption Commission
-        </p>
+        </div>
       </div>
     </div>
   );
@@ -122,8 +157,8 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-white">
-          <div className="text-black">Loading...</div>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+          <div className="bg-white p-6 rounded-xl shadow-md text-black">Loading...</div>
         </div>
       }
     >

@@ -204,7 +204,7 @@ export default function AllUsersPage() {
               View and manage all registered users
             </span>
           </h4>
-</div>
+        </div>
 
         {/* Search & Rows */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-3 mb-5">

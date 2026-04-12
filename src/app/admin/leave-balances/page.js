@@ -164,7 +164,7 @@ export default function LeaveBalancesPage() {
         <button
           key={i}
           onClick={() => setCurrentPage(i)}
-          className={`px-3 py-1 border rounded ${
+          className={`px-2 py-0.5 border rounded text-xs ${
             currentPage === i ? "bg-black text-white" : "bg-white"
           }`}
         >
@@ -178,259 +178,219 @@ export default function LeaveBalancesPage() {
   const isBulkAllocationDisabled = !editData && hasBulkAllocationOccurred();
 
   return (
-    <div className="flex">
+    <div className="flex flex-col md:flex-row min-h-screen bg-gray-100">
       <Sidebar />
-      <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
-        {/* HEADER with Year Selector */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">Leave Balance List</h1>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">Year:</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="border rounded px-3 py-1 bg-white"
-              >
-                {[2024, 2025, 2026, 2027, 2028].map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </div>
+      <main className="flex-1 p-3 md:p-4 transition-all duration-300 md:ml-64 overflow-x-auto">
+        {/* Notification */}
+        {notification && (
+          <div
+            className={`fixed top-4 right-4 z-50 px-3 py-2 rounded-lg shadow-lg text-xs font-medium ${
+              notification.type === "error"
+                ? "bg-red-500 text-white"
+                : "bg-green-500 text-white"
+            }`}
+          >
+            {notification.message}
           </div>
+        )}
 
-          {!showForm && (
-            <button
-              onClick={() => {
-                setShowForm(true);
-                setEditData(null);
-                setFormData({});
-                setRemarks("");
-              }}
-              disabled={isBulkAllocationDisabled}
-              className={`flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium transition ${
-                isBulkAllocationDisabled
-                  ? "opacity-50 cursor-not-allowed"
-                  : "hover:border-black"
-              }`}
-              title={
-                isBulkAllocationDisabled
-                  ? `Bulk allocation already done for ${selectedYear}. Edit individual users instead.`
-                  : ""
-              }
-            >
-              <Plus size={14} /> Allocate Leave for {selectedYear}
-            </button>
-          )}
+        {/* Sticky Header with title fixed */}
+        <div className="sticky top-0 z-20 bg-gray-100 pt-2 pb-3 -mt-2 mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-lg md:text-xl font-bold whitespace-nowrap">Leave Balance List</h1>
+              <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-md shadow-sm">
+                <label className="text-xs font-medium">Year:</label>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="border rounded px-1 py-0.5 text-xs bg-white"
+                >
+                  {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {!showForm && (
+              <button
+                onClick={() => {
+                  setShowForm(true);
+                  setEditData(null);
+                  setFormData({});
+                  setRemarks("");
+                }}
+                disabled={isBulkAllocationDisabled}
+                className={`flex items-center gap-1 px-2 py-1 bg-white border rounded text-xs font-medium whitespace-nowrap shadow-sm ${
+                  isBulkAllocationDisabled
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:border-black"
+                }`}
+                title={isBulkAllocationDisabled ? `Bulk allocation already done for ${selectedYear}` : ""}
+              >
+                <Plus size={12} /> Allocate {selectedYear}
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* FORM (unchanged) */}
+        {/* Form */}
         {showForm && (
-          <div className="bg-white shadow rounded-xl p-6 mb-6">
-            <h2 className="text-lg font-semibold mb-4">
-              {editData ? "Edit Leave Allocation" : `Allocate Leave (All Users) – ${selectedYear}`}
+          <div className="bg-white shadow rounded-lg p-4 mb-4 border">
+            <h2 className="text-sm font-semibold mb-3">
+              {editData ? "Edit Leave Allocation" : `Allocate Leave – ${selectedYear}`}
             </h2>
-
             {editData && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <span className="font-medium">Editing leave for: </span>
-                <span className="text-blue-800 font-semibold">{editData.userName}</span>
+              <div className="mb-3 p-2 bg-blue-50 border rounded text-xs">
+                Editing: <span className="font-semibold">{editData.userName}</span>
               </div>
             )}
-
             {!editData && hasBulkAllocationOccurred() && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-yellow-800">
-                ⚠️ Leave has already been allocated for {selectedYear}. Bulk allocation can only be done once per year.
-                You can still edit individual users using the <strong>Edit</strong> button in the table.
+              <div className="mb-3 p-2 bg-yellow-50 border rounded text-xs text-yellow-800">
+                ⚠️ Bulk allocation already done for {selectedYear}. Edit individual users instead.
               </div>
             )}
-
             {!editData && !hasBulkAllocationOccurred() && (
-              <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-600">
-                ℹ️ This will allocate the same leave days to <strong>ALL users</strong> for the year {selectedYear}.
-                This action can only be performed once per year. After allocation, you may edit individual users.
+              <div className="mb-3 p-2 bg-gray-50 border rounded text-xs">
+                ℹ️ Allocates same leave days to ALL users for {selectedYear}. One-time action.
               </div>
             )}
-
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {leaveTypes.map((lt) => (
                 <div key={lt._id}>
-                  <label className="text-sm font-medium">{lt.name}</label>
+                  <label className="text-xs font-medium">{lt.name}</label>
                   <input
                     type="number"
                     value={formData[lt._id] || ""}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        [lt._id]: Number(e.target.value),
-                      })
+                      setFormData({ ...formData, [lt._id]: Number(e.target.value) })
                     }
-                    className="w-full border rounded px-3 py-2"
+                    className="w-full border rounded px-2 py-1 text-xs mt-1"
                   />
                 </div>
               ))}
             </div>
-
-            <div className="mt-4">
-              <label className="text-sm font-medium">Remarks</label>
+            <div className="mt-3">
+              <label className="text-xs font-medium">Remarks</label>
               <input
                 type="text"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className="w-full border rounded px-2 py-1 text-xs mt-1"
               />
             </div>
-
-            <div className="flex justify-end gap-3 mt-5">
+            <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setShowForm(false)}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                className="flex items-center gap-1 px-2 py-1 border rounded text-xs"
               >
-                <X size={14} /> Cancel
+                <X size={12} /> Cancel
               </button>
-
               <button
                 onClick={editData ? handleUpdate : handleAdd}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                className="flex items-center gap-1 px-2 py-1 border rounded text-xs bg-gray-50"
               >
-                {editData ? <Check size={14} /> : <Save size={14} />}
+                {editData ? <Check size={12} /> : <Save size={12} />}
                 {editData ? "Update" : "Save"}
               </button>
             </div>
           </div>
         )}
 
-        {/* SEARCH */}
-        <div className="mb-4">
+        {/* Search */}
+        <div className="mb-3">
           <input
             type="text"
             placeholder="Search user..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-64 px-4 py-2 border rounded"
+            className="w-full sm:w-64 px-3 py-1.5 border rounded text-sm"
           />
         </div>
 
-        {/* TABLE with Allocated / Used / Balance columns */}
-        <div className="bg-white shadow rounded-lg overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        {/* Responsive Table - horizontal scroll on small screens */}
+        <div className="bg-white shadow rounded-lg border overflow-x-auto">
+          <table className="min-w-[900px] w-full text-xs">
             <thead className="bg-gray-50">
-              {/* First header row: leave type names spanning 3 columns each */}
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  S/N
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  User
-                </th>
-                {leaveTypes.map((lt) => (
-                  <th
-                    key={lt._id}
-                    className="px-2 py-3 text-center text-sm font-medium uppercase"
-                    colSpan={3}
-                  >
-                    {lt.name}
-                  </th>
+                <th className="px-2 py-1.5 text-left sticky left-0 bg-gray-50 z-10" rowSpan={2}>#</th>
+                <th className="px-2 py-1.5 text-left sticky left-8 bg-gray-50 z-10" rowSpan={2}>User</th>
+                {leaveTypes.map(lt => (
+                  <th key={lt._id} className="px-1 py-1 text-center" colSpan={3}>{lt.name}</th>
                 ))}
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  Remarks
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase" rowSpan={2}>
-                  Actions
-                </th>
+                <th className="px-2 py-1.5 text-left" rowSpan={2}>Remarks</th>
+                <th className="px-2 py-1.5 text-left sticky right-0 bg-gray-50 z-10" rowSpan={2}>Actions</th>
               </tr>
-              {/* Second header row: sub-columns */}
               <tr>
-                {leaveTypes.map((lt) => (
+                {leaveTypes.map(lt => (
                   <React.Fragment key={lt._id}>
-                    <th className="px-2 py-1 text-xs font-medium text-center border">Alloc</th>
-                    <th className="px-2 py-1 text-xs font-medium text-center border">Used</th>
-                    <th className="px-2 py-1 text-xs font-medium text-center border">Balance</th>
+                    <th className="px-1 py-0.5 text-center border font-medium">Alloc</th>
+                    <th className="px-1 py-0.5 text-center border font-medium">Used</th>
+                    <th className="px-1 py-0.5 text-center border font-medium">Bal</th>
                   </React.Fragment>
                 ))}
               </tr>
             </thead>
-
-            <tbody className="divide-y divide-gray-200">
-              {paginated.map((row, index) => (
-                <tr key={row._id} className="hover:bg-gray-100">
-                  <td className="px-6 py-3">{startIndex + index + 1}</td>
-                  <td className="px-6 py-3">{row.userName}</td>
-
-                  {leaveTypes.map((lt) => {
-                    const leave = row.leaves?.find(
-                      (l) => l.leaveTypeId.toString() === lt._id.toString()
-                    );
+            <tbody className="divide-y">
+              {paginated.map((row, idx) => (
+                <tr key={row._id} className="hover:bg-gray-50">
+                  <td className="px-2 py-1.5 sticky left-0 bg-white">{startIndex + idx + 1}</td>
+                  <td className="px-2 py-1.5 sticky left-8 bg-white font-medium">{row.userName}</td>
+                  {leaveTypes.map(lt => {
+                    const leave = row.leaves?.find(l => l.leaveTypeId.toString() === lt._id.toString());
+                    const alloc = leave?.allocated || 0;
+                    const used = leave?.used || 0;
+                    const bal = alloc - used;
                     return (
                       <React.Fragment key={lt._id}>
-                        <td className="px-2 py-3 text-center border">{leave?.allocated || 0}</td>
-                        <td className="px-2 py-3 text-center border">{leave?.used || 0}</td>
-                        <td className="px-2 py-3 text-center border">{leave?.balance || 0}</td>
+                        <td className="px-1 py-1.5 text-center border">{alloc}</td>
+                        <td className="px-1 py-1.5 text-center border">{used}</td>
+                        <td className="px-1 py-1.5 text-center border">{bal}</td>
                       </React.Fragment>
                     );
                   })}
-
-                  <td className="px-6 py-3">{row.remarks}</td>
-                  <td className="px-6 py-3 flex gap-2">
-                    <button
-                      onClick={() => handleEdit(row)}
-                      className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                    >
-                      <Pencil size={14} /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(row)}
-                      className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                    >
-                      <Trash2 size={14} /> Delete
-                    </button>
+                  <td className="px-2 py-1.5 max-w-[120px] truncate">{row.remarks || "-"}</td>
+                  <td className="px-2 py-1.5 sticky right-0 bg-white">
+                    <div className="flex gap-1">
+                      <button onClick={() => handleEdit(row)} className="p-1 border rounded hover:border-black">
+                        <Pencil size={12} />
+                      </button>
+                      <button onClick={() => handleDelete(row)} className="p-1 border rounded hover:border-black">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
+              {paginated.length === 0 && (
+                <tr>
+                  <td colSpan={leaveTypes.length * 3 + 4} className="text-center py-4 text-gray-500">
+                    No data found
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* PAGINATION */}
-        <div className="flex justify-between items-center mt-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">Rows per page:</span>
+        {/* Pagination */}
+        <div className="flex flex-wrap justify-between items-center gap-3 mt-4">
+          <div className="flex items-center gap-2 text-xs">
+            <span>Rows:</span>
             <select
               value={rowsPerPage}
-              onChange={(e) => {
-                setRowsPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="border rounded px-2 py-1 text-sm"
+              onChange={(e) => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+              className="border rounded px-1 py-0.5 text-xs"
             >
-              {[5, 10, 20, 50].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
+              {[5, 10, 20, 50].map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-1 border rounded disabled:opacity-50"
-            >
-              Prev
-            </button>
+          <div className="flex items-center gap-1 flex-wrap">
+            <button onClick={() => setCurrentPage(p => Math.max(p-1,1))} disabled={currentPage===1} className="px-2 py-0.5 border rounded text-xs">Prev</button>
             {renderPageNumbers()}
-            <button
-              onClick={() =>
-                setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-              }
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="px-3 py-1 border rounded disabled:opacity-50"
-            >
-              Next
-            </button>
+            <button onClick={() => setCurrentPage(p => Math.min(p+1,totalPages))} disabled={currentPage===totalPages || totalPages===0} className="px-2 py-0.5 border rounded text-xs">Next</button>
           </div>
         </div>
       </main>

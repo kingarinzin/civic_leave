@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import SuccessModal from "@/components/SuccessModal";
 
 type Department = {
   _id: string;
@@ -49,8 +48,13 @@ function SignupForm() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
 
-  const [message, setMessage] = useState("");
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [inlineMessage, setInlineMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
+
+  // Clear inline message when user interacts with any field
+  const clearMessageOnInteraction = () => {
+    if (inlineMessage) setInlineMessage(null);
+  };
 
   useEffect(() => {
     const fetchDepartments = async () => {
@@ -125,9 +129,11 @@ function SignupForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    clearMessageOnInteraction();
 
+    // Validation
     if (password !== confirmPassword) {
-      setMessage("Passwords do not match");
+      setInlineMessage({ text: "Passwords do not match", type: "error" });
       return;
     }
 
@@ -140,9 +146,11 @@ function SignupForm() {
       !departmentId ||
       !divisionId
     ) {
-      setMessage("All fields are required");
+      setInlineMessage({ text: "All fields are required", type: "error" });
       return;
     }
+
+    setLoading(true);
 
     try {
       const res = await fetch("/api/auth/signup", {
@@ -163,187 +171,315 @@ function SignupForm() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.error || "Signup failed");
+        setInlineMessage({ text: data.error || "Signup failed", type: "error" });
+        setLoading(false);
         return;
       }
 
-      setShowSuccessModal(true);
+      // Success
+      setInlineMessage({
+        text: "Registration submitted successfully! Redirecting to login...",
+        type: "success",
+      });
+      setLoading(false);
+
+      // Redirect after 2 seconds
+      setTimeout(() => {
+        const loginPath = returnTo
+          ? `/login?returnTo=${encodeURIComponent(returnTo)}`
+          : "/login";
+        router.push(loginPath);
+      }, 2000);
     } catch {
-      setMessage("Server error");
+      setInlineMessage({ text: "Server error. Please try again.", type: "error" });
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white px-4 py-6">
-      <div className="bg-white border border-gray-200 rounded-2xl p-8 w-full max-w-md overflow-y-auto max-h-[95vh]">
-        <div className="flex justify-center items-center mb-6">
-          <Image
-            src="/civicleave-logo.svg"
-            alt="CivicLeave"
-            width={220}
-            height={64}
-            className="h-16 w-auto"
-            priority
-          />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4 py-6">
+      <div className="w-full max-w-md">
+        {/* Card */}
+        <div
+          className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden transition-all duration-300 hover:shadow-2xl"
+          onClick={clearMessageOnInteraction} // clears message on click anywhere inside card
+        >
+          {/* Title */}
+          <div className="text-center pt-6 pb-6 px-6">
+            <h1 className="text-lg font-semibold text-black">Sign up to get started</h1>
+          </div>
+
+          {/* Form */}
+          <form className="flex flex-col gap-5 px-6 pb-6" onSubmit={handleSubmit}>
+            {/* Personal Information Section */}
+            <div>
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                Personal Information
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                    Full Name
+                  </label>
+                  <input
+                    id="name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="cid" className="block text-sm font-medium text-gray-700 mb-1">
+                    CID Number
+                  </label>
+                  <input
+                    id="cid"
+                    type="text"
+                    placeholder="Enter your CID number"
+                    value={cid}
+                    onChange={(e) => {
+                      setCid(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="designation" className="block text-sm font-medium text-gray-700 mb-1">
+                    Designation
+                  </label>
+                  <input
+                    id="designation"
+                    type="text"
+                    placeholder="Your job title"
+                    value={designation}
+                    onChange={(e) => {
+                      setDesignation(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                    Phone Number
+                  </label>
+                  <input
+                    id="phone"
+                    type="tel"
+                    placeholder="Contact number"
+                    value={phone}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Organization Details Section */}
+            <div>
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                Organization Details
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">
+                    Department
+                  </label>
+                  <select
+                    id="department"
+                    value={departmentId}
+                    onChange={(e) => {
+                      setDepartmentId(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200 bg-white"
+                  >
+                    <option value="">
+                      {departments.length
+                        ? "Select Department"
+                        : "No departments available"}
+                    </option>
+                    {departments.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="division" className="block text-sm font-medium text-gray-700 mb-1">
+                    Division
+                  </label>
+                  <select
+                    id="division"
+                    value={divisionId}
+                    onChange={(e) => {
+                      setDivisionId(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    disabled={!departmentId || !divisions.length}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200 bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    <option value="">
+                      {!departmentId
+                        ? "Select Department First"
+                        : divisions.length
+                          ? "Select Division"
+                          : "No divisions found for selected department"}
+                    </option>
+                    {divisions.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Account Security Section */}
+            <div>
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                Account Security
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    name="newPassword"
+                    autoComplete="new-password"
+                    placeholder="Create a strong password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirm Password
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    name="confirmNewPassword"
+                    autoComplete="new-password"
+                    placeholder="Confirm your password"
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      clearMessageOnInteraction();
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-black text-white rounded-xl font-semibold hover:bg-gray-800 transition-all duration-200 cursor-pointer shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 mt-2 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {loading && (
+                <svg
+                  className="animate-spin h-5 w-5 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+              )}
+              {loading ? "Signing up..." : "Sign Up"}
+            </button>
+          </form>
+
+          {/* Inline Message (error or success) */}
+          {inlineMessage && (
+            <div className="px-6 pb-4">
+              <p
+                className={`text-center text-sm py-2 rounded-lg ${
+                  inlineMessage.type === "error"
+                    ? "text-red-500 bg-red-50"
+                    : "text-green-700 bg-green-50"
+                }`}
+              >
+                {inlineMessage.text}
+              </p>
+            </div>
+          )}
+
+          {/* Links */}
+          <div className="px-6 pb-6 space-y-3 text-center">
+            <p className="text-sm text-gray-500">
+              Already have an account?{" "}
+              <a
+                href={
+                  returnTo
+                    ? `/login?returnTo=${encodeURIComponent(returnTo)}`
+                    : "/login"
+                }
+                className="text-black font-medium hover:underline transition"
+              >
+                Login
+              </a>
+            </p>
+            <p className="text-xs text-gray-400">
+              © {new Date().getFullYear()} Anti-Corruption Commission
+            </p>
+          </div>
         </div>
-
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-semibold text-black">Create Account</h1>
-          <p className="text-gray-500 mt-1">Sign up to get started</p>
-        </div>
-
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-1">
-            Personal Information
-          </h2>
-
-          <input
-            type="text"
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-
-          <input
-            type="text"
-            placeholder="CID Number"
-            value={cid}
-            onChange={(e) => setCid(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-
-          <input
-            type="text"
-            placeholder="Designation"
-            value={designation}
-            onChange={(e) => setDesignation(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-
-          <input
-            type="tel"
-            placeholder="Phone Number"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-
-          <input
-            type="email"
-            placeholder="Email Address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-2">
-            Organization Details
-          </h2>
-
-          <select
-            value={departmentId}
-            onChange={(e) => setDepartmentId(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition bg-white"
-          >
-            <option value="">
-              {departments.length
-                ? "Select Department"
-                : "No departments available"}
-            </option>
-            {departments.map((d) => (
-              <option key={d._id} value={d._id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={divisionId}
-            onChange={(e) => setDivisionId(e.target.value)}
-            disabled={!departmentId || !divisions.length}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition bg-white disabled:bg-gray-100 disabled:text-gray-500"
-          >
-            <option value="">
-              {!departmentId
-                ? "Select Department First"
-                : divisions.length
-                  ? "Select Division"
-                  : "No divisions found for selected department"}
-            </option>
-            {divisions.map((d) => (
-              <option key={d._id} value={d._id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-2">
-            Account Security
-          </h2>
-
-          <input
-            type="password"
-            name="newPassword"
-            autoComplete="new-password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-
-          <input
-            type="password"
-            name="confirmNewPassword"
-            autoComplete="new-password"
-            placeholder="Confirm Password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="p-3 border border-gray-300 rounded-md focus:outline-none focus:border-black transition"
-          />
-
-          <button
-            type="submit"
-            className="p-3 bg-black text-white rounded-md font-semibold hover:bg-gray-900 transition"
-          >
-            Sign Up
-          </button>
-        </form>
-
-        {message && <p className="text-center mt-4 text-red-500">{message}</p>}
-
-        <p className="text-center mt-6 text-sm text-gray-500">
-          Already have an account?{" "}
-          <a
-            href={
-              returnTo
-                ? `/login?returnTo=${encodeURIComponent(returnTo)}`
-                : "/login"
-            }
-            className="text-black hover:underline"
-          >
-            Login
-          </a>
-        </p>
-
-        <p className="text-center mt-6 text-xs text-gray-400">
-          © {new Date().getFullYear()} Anti-Corruption Commission
-        </p>
       </div>
-
-      <SuccessModal
-        isOpen={showSuccessModal}
-        title="Registration Submitted!"
-        message="Your account has been sent for approval. You will receive an email notification once approved."
-        onClose={() => {
-          setShowSuccessModal(false);
-          const loginPath = returnTo
-            ? `/login?returnTo=${encodeURIComponent(returnTo)}`
-            : "/login";
-          router.push(loginPath);
-        }}
-        buttonText="Go to Login"
-      />
     </div>
   );
 }
@@ -352,8 +488,8 @@ export default function SignupPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-white">
-          <div className="text-black">Loading...</div>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+          <div className="bg-white p-6 rounded-xl shadow-md text-black">Loading...</div>
         </div>
       }
     >
