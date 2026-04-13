@@ -86,6 +86,8 @@ export async function GET(req: Request) {
         description: entry.description || "",
         approverName: entry.approverName || "-",
         approverRole: entry.approverRole || "-",
+        attachments: entry.attachments || [],
+        attachmentName: entry.attachmentName || "",
         createdAt: entry.createdAt,
         status: entry.status || "pending",
         approvedBy: entry.approvedBy || "",
