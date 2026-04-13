@@ -54,12 +54,13 @@ function LoginForm() {
   <Image
     src="/acc-insights.png"
     alt="ACC Insights"
-    width={400}      // smaller width
-    height={267}     // maintains 640:427 aspect ratio
-    className="block -mt-15 -mb-15"
+    width={280}      // smaller width
+    height={120}     // maintains 640:427 aspect ratio
+    className="block mt-4 mb-4"
     priority
   />
 </div>
+
   {/* Title - no top margin */}
   <div className="text-center px-6">
     <h4 className="text-[25px] font-semibold text-gray-900 mt-0">
