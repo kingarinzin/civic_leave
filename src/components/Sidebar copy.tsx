@@ -248,14 +248,6 @@ export default function Sidebar() {
                 >
                   Leave Balance
                 </button>
-                 <button
-                  onClick={() => router.push("/dashboard/leave/holidays")}
-                  className={navSubButtonClass(
-                    pathname === "/dashboard/leave/holidays",
-                  )}
-                >
-                  Holiday List
-                </button>
                 <button
                   onClick={() => router.push("/admin/commissioner-assignments")}
                   className={navSubButtonClass(
