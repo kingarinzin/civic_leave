@@ -14,10 +14,10 @@ export default function LeaveTypePage() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
   const [notification, setNotification] = useState(null);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    remarks: "",
-    skipApproval: false,
+  const [formData, setFormData] = useState({ 
+    name: "", 
+    remarks: "", 
+    skipApproval: false   // ✅ new field
   });
 
   // ================== FETCH LEAVE TYPES ==================
@@ -39,7 +39,7 @@ export default function LeaveTypePage() {
   // ================== HANDLERS ==================
   const handleFormChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
@@ -296,59 +296,35 @@ export default function LeaveTypePage() {
           </div>
         </div>
 
-        {/* Table - Improved UI matching Department List */}
+        {/* Table */}
         <div className="bg-white shadow rounded-lg overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  S/N
-                </th>
+                <th className="px-6 py-3 text-sm uppercase">S/N</th>
                 <th
                   onClick={() => handleSort("name")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "name" ? "bg-blue-100" : ""
-                  }`}
+                  className="px-6 py-3 text-sm uppercase cursor-pointer"
                 >
-                  Leave Type Name{" "}
-                  {sortConfig.key === "name"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
+                  Leave Type Name
                 </th>
                 <th
                   onClick={() => handleSort("remarks")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "remarks" ? "bg-blue-100" : ""
-                  }`}
+                  className="px-6 py-3 text-sm uppercase cursor-pointer"
                 >
-                  Remarks{" "}
-                  {sortConfig.key === "remarks"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
+                  Remarks
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Auto Approve
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Actions
-                </th>
+                <th className="px-6 py-3 text-sm uppercase">Auto Approve</th>
+                <th className="px-6 py-3 text-sm uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {paginated.length > 0 ? (
                 paginated.map((item, index) => (
-                  <tr key={item._id} className="hover:bg-gray-100 transition-colors">
-                    <td className="px-6 py-3 text-sm">
-                      {startIndex + index + 1}
-                    </td>
+                  <tr key={item._id} className="hover:bg-gray-100">
+                    <td className="px-6 py-3 text-sm">{startIndex + index + 1}</td>
                     <td className="px-6 py-3 text-sm">{item.name}</td>
-                    <td className="px-6 py-3 text-sm">
-                      {item.remarks || "—"}
-                    </td>
+                    <td className="px-6 py-3 text-sm">{item.remarks || "—"}</td>
                     <td className="px-6 py-3 text-sm">
                       {item.skipApproval ? "✅ Yes" : "❌ No"}
                     </td>
@@ -370,10 +346,7 @@ export default function LeaveTypePage() {
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan="5"
-                    className="text-center py-6 text-gray-500"
-                  >
+                  <td colSpan="5" className="text-center py-6 text-gray-500">
                     No records found
                   </td>
                 </tr>
@@ -388,25 +361,15 @@ export default function LeaveTypePage() {
             <button
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(currentPage - 1)}
-              className={`font-semibold text-lg ${
-                currentPage === 1
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
+              className={`font-semibold text-lg ${currentPage === 1 ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}
             >
               &lt;
             </button>
-            <span>
-              Page {currentPage} of {totalPages}
-            </span>
+            <span>Page {currentPage} of {totalPages}</span>
             <button
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(currentPage + 1)}
-              className={`font-semibold text-lg ${
-                currentPage === totalPages
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
+              className={`font-semibold text-lg ${currentPage === totalPages ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}
             >
               &gt;
             </button>

@@ -1,5 +1,5 @@
 import clientPromise from "@/lib/mongodb";
-import { ObjectId } from "mongodb";
+import { ObjectId } from "mongodb"; // ⚡ important
 
 // ================== GET ==================
 export async function GET() {
@@ -33,13 +33,14 @@ export async function POST(req) {
       throw new Error("Leave Type Name is required");
     }
 
-    const result = await db.collection("leave-types").insertOne({
-      name: body.name,
-      remarks: body.remarks || "",
-      skipApproval: body.skipApproval === true,   // ✅ new field
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    const result = await db
+      .collection("leave-types")
+      .insertOne({
+        name: body.name,
+        remarks: body.remarks || "",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
     // Sync new leave type into all existing leave_balances records for current year
     const year = new Date().getFullYear();
@@ -74,21 +75,22 @@ export async function PUT(req) {
     const client = await clientPromise;
     const db = client.db("civic_leave_db");
 
-    const { _id, name, remarks, skipApproval } = await req.json();
+    const { _id, name, remarks } = await req.json();
 
     if (!_id) throw new Error("ID is required for updating");
 
-    const updateData = {
-      name,
-      remarks,
-      skipApproval: skipApproval === true,   // ✅ new field
-      updatedAt: new Date(),
-    };
-
-    const result = await db.collection("leave-types").updateOne(
-      { _id: new ObjectId(_id) },
-      { $set: updateData }
-    );
+    const result = await db
+      .collection("leave-types")
+      .updateOne(
+        { _id: new ObjectId(_id) },
+        {
+          $set: {
+            name,
+            remarks,
+            updatedAt: new Date(),
+          },
+        }
+      );
 
     // Sync updated name into all leave_balances records
     if (name) {

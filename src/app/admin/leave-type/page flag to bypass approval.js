@@ -14,11 +14,7 @@ export default function LeaveTypePage() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
   const [notification, setNotification] = useState(null);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    remarks: "",
-    skipApproval: false,
-  });
+  const [formData, setFormData] = useState({ name: "", remarks: "" });
 
   // ================== FETCH LEAVE TYPES ==================
   const fetchLeaveTypes = async () => {
@@ -28,7 +24,6 @@ export default function LeaveTypePage() {
       setLeaveTypes(data);
     } catch (error) {
       console.error(error);
-      showNotification("Failed to load leave types", "error");
     }
   };
 
@@ -38,17 +33,8 @@ export default function LeaveTypePage() {
 
   // ================== HANDLERS ==================
   const handleFormChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  };
-
-  const resetForm = () => {
-    setFormData({ name: "", remarks: "", skipApproval: false });
-    setEditData(null);
-    setShowForm(false);
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
   };
 
   const handleAdd = async () => {
@@ -59,16 +45,13 @@ export default function LeaveTypePage() {
     try {
       const res = await fetch("/api/leave-types", {
         method: "POST",
-        body: JSON.stringify({
-          name: formData.name,
-          remarks: formData.remarks,
-          skipApproval: formData.skipApproval,
-        }),
+        body: JSON.stringify(formData),
         headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) throw new Error("Failed to add");
       await fetchLeaveTypes();
-      resetForm();
+      setFormData({ name: "", remarks: "" });
+      setShowForm(false);
       showNotification("Leave Type added successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
@@ -77,11 +60,7 @@ export default function LeaveTypePage() {
 
   const handleEdit = (item) => {
     setEditData(item);
-    setFormData({
-      name: item.name,
-      remarks: item.remarks || "",
-      skipApproval: item.skipApproval === true,
-    });
+    setFormData({ name: item.name, remarks: item.remarks });
     setShowForm(true);
   };
 
@@ -89,17 +68,14 @@ export default function LeaveTypePage() {
     try {
       const res = await fetch("/api/leave-types", {
         method: "PUT",
-        body: JSON.stringify({
-          _id: editData._id,
-          name: formData.name,
-          remarks: formData.remarks,
-          skipApproval: formData.skipApproval,
-        }),
+        body: JSON.stringify({ ...formData, _id: editData._id }),
         headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) throw new Error("Failed to update");
       await fetchLeaveTypes();
-      resetForm();
+      setFormData({ name: "", remarks: "" });
+      setEditData(null);
+      setShowForm(false);
       showNotification("Leave Type updated successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
@@ -179,7 +155,7 @@ export default function LeaveTypePage() {
               onClick={() => {
                 setShowForm(true);
                 setEditData(null);
-                setFormData({ name: "", remarks: "", skipApproval: false });
+                setFormData({ name: "", remarks: "" });
               }}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
@@ -201,7 +177,7 @@ export default function LeaveTypePage() {
           </div>
         )}
 
-        {/* Add/Edit Form */}
+        {/* Form */}
         {showForm && (
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             <div className="flex justify-between mb-4">
@@ -209,7 +185,7 @@ export default function LeaveTypePage() {
                 {editData ? "Edit Leave Type" : "Add Leave Type"}
               </h2>
               <button
-                onClick={() => resetForm()}
+                onClick={() => setShowForm(false)}
                 className="text-xl text-gray-500"
               >
                 ✕
@@ -225,7 +201,6 @@ export default function LeaveTypePage() {
                   value={formData.name}
                   onChange={handleFormChange}
                   className="w-full border rounded px-3 py-2"
-                  required
                 />
               </div>
               <div>
@@ -238,27 +213,15 @@ export default function LeaveTypePage() {
                   className="w-full border rounded px-3 py-2"
                 />
               </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  name="skipApproval"
-                  id="skipApproval"
-                  checked={formData.skipApproval}
-                  onChange={handleFormChange}
-                  className="w-4 h-4"
-                />
-                <label htmlFor="skipApproval" className="text-sm font-medium">
-                  Auto‑approve (skip hierarchy)
-                </label>
-              </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-5">
               <button
-                onClick={() => resetForm()}
+                onClick={() => setShowForm(false)}
                 className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
               >
-                <X size={14} /> Cancel
+                <X size={14} />
+                Cancel
               </button>
               <button
                 onClick={editData ? handleUpdate : handleAdd}
@@ -296,84 +259,58 @@ export default function LeaveTypePage() {
           </div>
         </div>
 
-        {/* Table - Improved UI matching Department List */}
+        {/* Table */}
         <div className="bg-white shadow rounded-lg overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  S/N
-                </th>
+                <th className="px-6 py-3 text-sm uppercase">S/N</th>
                 <th
                   onClick={() => handleSort("name")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "name" ? "bg-blue-100" : ""
-                  }`}
+                  className="px-6 py-3 text-sm uppercase cursor-pointer"
                 >
-                  Leave Type Name{" "}
-                  {sortConfig.key === "name"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
+                  Leave Type Name
                 </th>
                 <th
                   onClick={() => handleSort("remarks")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "remarks" ? "bg-blue-100" : ""
-                  }`}
+                  className="px-6 py-3 text-sm uppercase cursor-pointer"
                 >
-                  Remarks{" "}
-                  {sortConfig.key === "remarks"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
+                  Remarks
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Auto Approve
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Actions
-                </th>
+                <th className="px-6 py-3 text-sm uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {paginated.length > 0 ? (
                 paginated.map((item, index) => (
-                  <tr key={item._id} className="hover:bg-gray-100 transition-colors">
+                  <tr key={item._id} className="hover:bg-gray-100">
                     <td className="px-6 py-3 text-sm">
                       {startIndex + index + 1}
                     </td>
                     <td className="px-6 py-3 text-sm">{item.name}</td>
-                    <td className="px-6 py-3 text-sm">
-                      {item.remarks || "—"}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {item.skipApproval ? "✅ Yes" : "❌ No"}
-                    </td>
+                    <td className="px-6 py-3 text-sm">{item.remarks}</td>
                     <td className="px-6 py-3 text-sm flex gap-2">
                       <button
                         onClick={() => handleEdit(item)}
                         className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
-                        <Pencil size={14} /> Edit
+                        <Pencil size={14} className="text-blue-500 group-hover:text-blue-700" />
+                        Edit
                       </button>
+
                       <button
                         onClick={() => handleDelete(item)}
                         className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
-                        <Trash2 size={14} /> Delete
+                        <Trash2 size={14} className="text-red-500" />
+                        Delete
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan="5"
-                    className="text-center py-6 text-gray-500"
-                  >
+                  <td colSpan="4" className="text-center py-6 text-gray-500">
                     No records found
                   </td>
                 </tr>
@@ -388,11 +325,6 @@ export default function LeaveTypePage() {
             <button
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(currentPage - 1)}
-              className={`font-semibold text-lg ${
-                currentPage === 1
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
             >
               &lt;
             </button>
@@ -402,11 +334,6 @@ export default function LeaveTypePage() {
             <button
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(currentPage + 1)}
-              className={`font-semibold text-lg ${
-                currentPage === totalPages
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
             >
               &gt;
             </button>
@@ -416,3 +343,5 @@ export default function LeaveTypePage() {
     </div>
   );
 }
+
+
