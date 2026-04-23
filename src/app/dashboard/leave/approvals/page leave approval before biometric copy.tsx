@@ -13,6 +13,7 @@ import {
   Heading,
   Table,
   Text,
+  TextField,
 } from "@radix-ui/themes";
 import {
   FaFilePdf,
@@ -23,6 +24,7 @@ import {
   FaDownload,
 } from "react-icons/fa";
 
+// ---------- Types (same as before) ----------
 type ApprovalApplication = {
   _id: string;
   userName: string;
@@ -53,6 +55,7 @@ type SubordinateAttendance = {
   outColor: string;
 };
 
+// ---------- Helper functions ----------
 function getOriginalFileName(savedName: string): string {
   const firstDashIndex = savedName.indexOf("-");
   if (firstDashIndex === -1) return savedName;
@@ -62,22 +65,11 @@ function getOriginalFileName(savedName: string): string {
 function getFileIcon(filename: string) {
   const ext = filename.split(".").pop()?.toLowerCase();
   switch (ext) {
-    case "pdf":
-      return <FaFilePdf className="text-red-600" />;
-    case "doc":
-    case "docx":
-      return <FaFileWord className="text-blue-700" />;
-    case "xls":
-    case "xlsx":
-      return <FaFileExcel className="text-green-700" />;
-    case "jpg":
-    case "jpeg":
-    case "png":
-    case "gif":
-    case "webp":
-      return <FaFileImage className="text-purple-600" />;
-    default:
-      return <FaFileAlt className="text-gray-600" />;
+    case "pdf": return <FaFilePdf className="text-red-600" />;
+    case "doc": case "docx": return <FaFileWord className="text-blue-700" />;
+    case "xls": case "xlsx": return <FaFileExcel className="text-green-700" />;
+    case "jpg": case "jpeg": case "png": case "gif": case "webp": return <FaFileImage className="text-purple-600" />;
+    default: return <FaFileAlt className="text-gray-600" />;
   }
 }
 
@@ -171,9 +163,9 @@ export default function LeaveApprovalsPage() {
       if (!res.ok) throw new Error("Failed to fetch team attendance");
       const data = await res.json();
       setSubordinates(data.officers || []);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setAttError(err.message || "Unknown error");
+      setAttError(err.message);
       setSubordinates([]);
     } finally {
       setAttLoading(false);
@@ -215,7 +207,7 @@ export default function LeaveApprovalsPage() {
     URL.revokeObjectURL(url);
   };
 
-  // ---------- Leave approval actions ----------
+  // ---------- Leave approval actions (unchanged) ----------
   const handleAction = async (applicationId: string, action: "approve" | "reject") => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -239,12 +231,7 @@ export default function LeaveApprovalsPage() {
   };
 
   const filteredApplications = activeTab === "all" ? applications : applications.filter(item => item.status === activeTab);
-  const counts = {
-    all: applications.length,
-    pending: applications.filter(a => a.status === "pending").length,
-    approved: applications.filter(a => a.status === "approved").length,
-    rejected: applications.filter(a => a.status === "rejected").length,
-  };
+  const counts = { all: applications.length, pending: applications.filter(a => a.status === "pending").length, approved: applications.filter(a => a.status === "approved").length, rejected: applications.filter(a => a.status === "rejected").length };
 
   return (
     <div className="flex flex-col lg:flex-row bg-slate-50 min-h-screen">
@@ -258,7 +245,7 @@ export default function LeaveApprovalsPage() {
           <Button variant="soft" onClick={() => router.push("/dashboard/leave")}>Leave Dashboard</Button>
         </Flex>
 
-        {/* Supervisor Attendance Section */}
+        {/* ========== NEW: SUPERVISOR ATTENDANCE SECTION ========== */}
         <Card size="3" mb="5">
           <Heading size="4" mb="3">📅 Team Attendance Overview</Heading>
           <Flex justify="between" align="center" mb="4" wrap="wrap" gap="3">
@@ -337,7 +324,7 @@ export default function LeaveApprovalsPage() {
           )}
         </Card>
 
-        {/* Leave Approvals Section (unchanged) */}
+        {/* ========== EXISTING LEAVE APPROVALS SECTION ========== */}
         <Card size="3">
           <Flex gap="2" mb="4" wrap="wrap">
             {(["all", "pending", "approved", "rejected"] as const).map((tab) => (
