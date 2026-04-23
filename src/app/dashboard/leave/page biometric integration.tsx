@@ -128,10 +128,54 @@ export default function LeaveDashboardPage() {
   const [visibilityLabel, setVisibilityLabel] = useState("My Leaves");
   const [showAllLeaveTypes, setShowAllLeaveTypes] = useState(false);
 
-  // --- NEW: Biometric attendance state ---
-  const [biometricData, setBiometricData] = useState<any[]>([]);
-  const [attendanceLoading, setAttendanceLoading] = useState(true);
-  // -------------------------------------
+  const biometricData = useMemo(
+    () => [
+      {
+        date: "31 Mar 2026",
+        firstIn: "09:02",
+        lastOut: "17:10",
+        leaveType: null,
+        firstClass: "text-green-700",
+        lastClass: "text-green-700",
+        status: "Present",
+      },
+      {
+        date: "30 Mar 2026",
+        firstIn: "09:22",
+        lastOut: "18:00",
+        leaveType: null,
+        firstClass: "text-orange-600",
+        lastClass: "text-green-700",
+        status: "Late arrival",
+      },
+      {
+        date: "29 Mar 2026",
+        firstIn: null,
+        lastOut: null,
+        leaveType: "Sick Leave",
+        leaveTypeClass: "bg-red-100 text-red-700",
+        status: "On leave",
+      },
+      {
+        date: "28 Mar 2026",
+        firstIn: null,
+        lastOut: null,
+        leaveType: "Tour (Official)",
+        leaveTypeClass: "bg-sky-100 text-sky-700",
+        status: "On tour",
+      },
+      {
+        date: "27 Mar 2026",
+        firstIn: "09:05",
+        lastOut: "16:55",
+        leaveType: null,
+        firstClass: "text-green-700",
+        lastClass: "text-orange-600",
+        status: "Early departure",
+      },
+    ],
+    []
+  );
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -215,29 +259,6 @@ export default function LeaveDashboardPage() {
     loadData();
   }, [router]);
 
-  // --- NEW: Fetch biometric attendance data ---
-  useEffect(() => {
-    const fetchAttendance = async () => {
-      try {
-        setAttendanceLoading(true);
-        const token = localStorage.getItem("token");
-        const res = await fetch("/api/attendance?days=5", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed to fetch attendance");
-        const data = await res.json();
-        setBiometricData(data.attendance || []);
-      } catch (err) {
-        console.error("Attendance fetch error:", err);
-        // Optionally set an error state but keep dashboard usable
-      } finally {
-        setAttendanceLoading(false);
-      }
-    };
-    fetchAttendance();
-  }, []);
-  // -------------------------------------------
-
   const leaveAvailabilityRows = useMemo(() => {
     return [...leaveEntries]
       .filter((entry) => !!entry.leaveTypeName)
@@ -280,6 +301,7 @@ export default function LeaveDashboardPage() {
   return (
     <div className="flex bg-slate-50 min-h-screen">
       <Sidebar />
+      {/* Main content: responsive margin - no margin on small screens, margin on large */}
       <main className="flex-1 p-4 md:p-6 ml-0 lg:ml-64 w-full overflow-x-hidden">
         {/* HEADER */}
         <Flex align="center" justify="between" mb="5" wrap="wrap" gap="3">
@@ -308,13 +330,13 @@ export default function LeaveDashboardPage() {
           </Flex>
         </Flex>
 
-        {/* ========== BIOMETRIC ATTENDANCE CARD (REAL DATA) ========== */}
+        {/* ========== BIOMETRIC ATTENDANCE CARD ========== */}
         <Card size="3" mb="4">
           <Flex justify="between" align="center" mb="3" wrap="wrap" gap="2">
             <Heading size="4">📋 My Recent Activity</Heading>
             <Button
               variant="soft"
-              onClick={() => router.push("/dashboard/leave/attendance/history")}
+              onClick={() => alert("Full attendance history would open here")}
             >
               View all →
             </Button>
@@ -330,65 +352,51 @@ export default function LeaveDashboardPage() {
                 </Table.Row>
               </Table.Header>
               <Table.Body>
-                {attendanceLoading ? (
-                  <Table.Row>
-                    <Table.Cell colSpan={4} align="center">
-                      <Text size="2" color="gray">Loading attendance...</Text>
-                    </Table.Cell>
-                  </Table.Row>
-                ) : biometricData.length === 0 ? (
-                  <Table.Row>
-                    <Table.Cell colSpan={4} align="center">
-                      <Text size="2" color="gray">No attendance data found</Text>
-                    </Table.Cell>
-                  </Table.Row>
-                ) : (
-                  biometricData.map((day, idx) => (
-                    <Table.Row key={idx}>
-                      <Table.RowHeaderCell>{day.date}</Table.RowHeaderCell>
-                      {day.leaveType ? (
-                        <>
-                          <Table.Cell colSpan={2}>
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${day.leaveTypeClass}`}
-                            >
-                              📌 {day.leaveType}
+                {biometricData.map((day, idx) => (
+                  <Table.Row key={idx}>
+                    <Table.RowHeaderCell>{day.date}</Table.RowHeaderCell>
+                    {day.leaveType ? (
+                      <>
+                        <Table.Cell colSpan={2}>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${day.leaveTypeClass}`}
+                          >
+                            📌 {day.leaveType}
+                          </span>
+                        </Table.Cell>
+                        <Table.Cell>
+                          <span className="text-gray-500 text-xs">—</span>
+                        </Table.Cell>
+                      </>
+                    ) : (
+                      <>
+                        <Table.Cell>
+                          {day.firstIn ? (
+                            <span className={`font-medium ${day.firstClass}`}>
+                              {day.firstIn}
                             </span>
-                          </Table.Cell>
-                          <Table.Cell>
-                            <span className="text-gray-500 text-xs">—</span>
-                          </Table.Cell>
-                        </>
-                      ) : (
-                        <>
-                          <Table.Cell>
-                            {day.firstIn ? (
-                              <span className={`font-medium ${day.firstClass}`}>
-                                {day.firstIn}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {day.lastOut ? (
-                              <span className={`font-medium ${day.lastClass}`}>
-                                {day.lastOut}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </Table.Cell>
-                          <Table.Cell>
-                            <span className="bg-gray-100 px-2 py-0.5 rounded-full text-xs">
-                              {day.status}
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </Table.Cell>
+                        <Table.Cell>
+                          {day.lastOut ? (
+                            <span className={`font-medium ${day.lastClass}`}>
+                              {day.lastOut}
                             </span>
-                          </Table.Cell>
-                        </>
-                      )}
-                    </Table.Row>
-                  ))
-                )}
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <span className="bg-gray-100 px-2 py-0.5 rounded-full text-xs">
+                            {day.status}
+                          </span>
+                        </Table.Cell>
+                      </>
+                    )}
+                  </Table.Row>
+                ))}
               </Table.Body>
             </Table.Root>
           </div>
@@ -400,7 +408,7 @@ export default function LeaveDashboardPage() {
           </Text>
         </Card>
 
-        {/* LEAVE BALANCE CARD (unchanged) */}
+        {/* LEAVE BALANCE CARD */}
         <Card size="3" mb="4">
           <Heading size="4" mb="3">
             Leave Availability
@@ -447,7 +455,7 @@ export default function LeaveDashboardPage() {
           )}
         </Card>
 
-        {/* APPLICATIONS TABLE (unchanged) */}
+        {/* APPLICATIONS TABLE */}
         <Card size="3">
           <Flex align="center" justify="between" mb="4" wrap="wrap" gap="3">
             <Heading size="4">{visibilityLabel}</Heading>

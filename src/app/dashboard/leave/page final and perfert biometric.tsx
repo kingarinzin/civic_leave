@@ -314,7 +314,7 @@ export default function LeaveDashboardPage() {
             <Heading size="4">📋 My Recent Activity</Heading>
             <Button
               variant="soft"
-              onClick={() => router.push("/dashboard/leave/attendance/history")}
+              onClick={() => alert("Full attendance history would open here")}
             >
               View all →
             </Button>
