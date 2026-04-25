@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import {
   Card,
@@ -28,16 +28,20 @@ import {
 
 export default function AttendanceHistoryPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const targetUserId = searchParams.get("userId");
-  const targetEmpCode = searchParams.get("empCode");
-
   const [loading, setLoading] = useState(true);
   const [attendance, setAttendance] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewingUserName, setViewingUserName] = useState("");
+
+  // ✅ Get userId from URL (if any)
+  const [targetUserId, setTargetUserId] = useState(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const userId = params.get("userId");
+    setTargetUserId(userId);
+  }, []);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -52,26 +56,20 @@ export default function AttendanceHistoryPage() {
       const endStr = endDate.toISOString().split("T")[0];
       const token = localStorage.getItem("token");
 
+      // ✅ If targetUserId exists, add it as query param
       let url = `/api/attendance?startDate=${startStr}&endDate=${endStr}`;
-      if (targetEmpCode) {
-        url += `&empCode=${targetEmpCode}`;
-      } else if (targetUserId) {
+      if (targetUserId) {
         url += `&userId=${targetUserId}`;
       }
-
-      console.log("Fetching attendance with URL:", url);
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Failed to fetch: ${res.status} ${errText}`);
-      }
+      if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
-      console.log("Attendance data received:", data.attendance?.length || 0, "records");
 
-      if (data.userName) {
+      // ✅ If viewing another user, try to get their name (optional)
+      if (targetUserId && data.userName) {
         setViewingUserName(data.userName);
       } else if (targetUserId) {
         setViewingUserName("this officer");
@@ -81,7 +79,6 @@ export default function AttendanceHistoryPage() {
 
       setAttendance(data.attendance || []);
     } catch (err) {
-      console.error("History fetch error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -89,19 +86,23 @@ export default function AttendanceHistoryPage() {
   };
 
   useEffect(() => {
-    fetchAttendance();
-  }, [year, month, targetUserId, targetEmpCode]); // only re-fetch when month/year changes or target changes
+    if (targetUserId !== undefined) { // wait until we know if userId is present
+      fetchAttendance();
+    }
+  }, [year, month, targetUserId]);
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
   const goToCurrentMonth = () => setCurrentDate(new Date());
 
+  // Generate all days of the month
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const allDates = Array.from({ length: daysInMonth }, (_, i) => {
     const d = new Date(year, month, i + 1);
     return d.toISOString().split("T")[0];
   });
 
+  // Map attendance data by date
   const attendanceByDate = {};
   attendance.forEach((item) => {
     const dateObj = new Date(item.date);
@@ -109,6 +110,7 @@ export default function AttendanceHistoryPage() {
     attendanceByDate[key] = item;
   });
 
+  // Prepare chart data
   const chartData = [
     { name: "Present", value: 0, color: "#22c55e" },
     { name: "Late", value: 0, color: "#f97316" },
@@ -184,6 +186,7 @@ export default function AttendanceHistoryPage() {
           </Button>
         </Flex>
 
+        {/* Chart Dashboard */}
         <Card mb="4">
           <Flex justify="between" align="center" mb="3" wrap="wrap" gap="2">
             <Heading size="4">Attendance Summary for {monthName}</Heading>
@@ -218,6 +221,7 @@ export default function AttendanceHistoryPage() {
           )}
         </Card>
 
+        {/* Detailed Table with Filter */}
         <Card>
           <Flex justify="between" align="center" mb="4" wrap="wrap" gap="3">
             <Heading size="4">Daily Details</Heading>

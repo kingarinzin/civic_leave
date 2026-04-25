@@ -43,6 +43,7 @@ type ApprovalApplication = {
 
 type SubordinateAttendance = {
   userId: string;
+  empCode: string;      // 👈 add this line
   name: string;
   division: string;
   department: string;
@@ -321,7 +322,7 @@ export default function LeaveApprovalsPage() {
                         <Button
                           variant="soft"
                           size="1"
-                          onClick={() => router.push(`/dashboard/leave/attendance/history?userId=${officer.userId}`)}
+                          onClick={() => router.push(`/dashboard/leave/attendance/history?userId=${officer.userId}&empCode=${officer.empCode}`)}
                         >
                           View History
                         </Button>

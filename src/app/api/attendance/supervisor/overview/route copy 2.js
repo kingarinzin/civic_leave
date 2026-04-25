@@ -1,7 +1,7 @@
 // app/api/attendance/supervisor/overview/route.js
 import { NextResponse } from 'next/server';
 import { getSQLServerConnection } from '@/lib/sqlserver';
-import { connectToDatabase } from '@/lib/mongodb';
+import { connectToDatabase } from '@/lib/mongodb'; // 👈 your existing helper
 
 export async function GET(request) {
   try {
@@ -102,7 +102,6 @@ export async function GET(request) {
 
       officersWithAttendance.push({
         userId: officer._id.toString(),
-        empCode: empCode,                 // ✅ added for drill‑down
         name: officer.name,
         division: officer.divisionName || '-',
         department: officer.departmentName || '-',

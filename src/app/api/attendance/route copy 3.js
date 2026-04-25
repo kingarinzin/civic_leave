@@ -1,8 +1,6 @@
 // app/api/attendance/route.js
 import { NextResponse } from 'next/server';
 import { getSQLServerConnection } from '@/lib/sqlserver';
-import { connectToDatabase } from '@/lib/mongodb';
-import { ObjectId } from 'mongodb';
 
 export async function GET(request) {
   try {
@@ -12,32 +10,23 @@ export async function GET(request) {
     }
     const token = authHeader.split(' ')[1];
 
+    // Get target user if ?userId=...
     const { searchParams } = new URL(request.url);
-    const empCodeParam = searchParams.get('empCode');
     const targetUserId = searchParams.get('userId');
     let empCode;
-    let targetUserName = null;
 
-    if (empCodeParam) {
-      // Direct pass from supervisor overview (fastest)
-      empCode = empCodeParam;
-    } else if (targetUserId) {
-      // Fallback: fetch from MongoDB using userId
-      const { db } = await connectToDatabase();
-      const targetUser = await db.collection('users').findOne({ _id: new ObjectId(targetUserId) });
-      if (!targetUser) {
-        return NextResponse.json({ error: 'User not found' }, { status: 404 });
-      }
-      empCode = targetUser.cid;
-      targetUserName = targetUser.name;
+    if (targetUserId) {
+      const userRes = await fetch(`${process.env.APP_URL}/api/user/profile?userId=${targetUserId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!userRes.ok) return NextResponse.json({ error: 'Cannot view this user' }, { status: 403 });
+      const user = await userRes.json();
+      empCode = user.cid;
     } else {
-      // Self view
       const profileRes = await fetch(`${process.env.APP_URL}/api/user/profile`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!profileRes.ok) {
-        return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 401 });
-      }
+      if (!profileRes.ok) return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 401 });
       const profile = await profileRes.json();
       empCode = profile.cid;
     }
@@ -46,7 +35,6 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Employee code not found' }, { status: 400 });
     }
 
-    // Date range logic
     let startDateStr, endDateStr;
     const startParam = searchParams.get('startDate');
     const endParam = searchParams.get('endDate');
@@ -65,7 +53,6 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Missing date range' }, { status: 400 });
     }
 
-    // Generate full date list
     const dateList = [];
     let current = new Date(startDateStr);
     const end = new Date(endDateStr);
@@ -134,9 +121,6 @@ export async function GET(request) {
       };
     });
 
-    if (targetUserName) {
-      return NextResponse.json({ attendance, userName: targetUserName });
-    }
     return NextResponse.json({ attendance });
   } catch (error) {
     console.error('Attendance API error:', error);
