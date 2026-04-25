@@ -26,6 +26,9 @@ import {
   Cell,
 } from "recharts";
 
+// ✅ Force dynamic rendering – prevents static generation of this page
+export const dynamic = 'force-dynamic';
+
 export default function AttendanceHistoryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -90,7 +93,7 @@ export default function AttendanceHistoryPage() {
 
   useEffect(() => {
     fetchAttendance();
-  }, [year, month, targetUserId, targetEmpCode]); // only re-fetch when month/year changes or target changes
+  }, [year, month, targetUserId, targetEmpCode]);
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
