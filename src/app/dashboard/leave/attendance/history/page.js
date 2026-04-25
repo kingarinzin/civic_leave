@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Sidebar from "@/components/Sidebar";
 import {
   Card,
   Flex,
@@ -26,7 +25,7 @@ import {
   Cell,
 } from "recharts";
 
-export default function AttendanceHistoryPage() {
+export default function HistoryContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const targetUserId = searchParams.get("userId");
@@ -59,17 +58,11 @@ export default function AttendanceHistoryPage() {
         url += `&userId=${targetUserId}`;
       }
 
-      console.log("Fetching attendance with URL:", url);
-
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Failed to fetch: ${res.status} ${errText}`);
-      }
+      if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
-      console.log("Attendance data received:", data.attendance?.length || 0, "records");
 
       if (data.userName) {
         setViewingUserName(data.userName);
@@ -90,7 +83,7 @@ export default function AttendanceHistoryPage() {
 
   useEffect(() => {
     fetchAttendance();
-  }, [year, month, targetUserId, targetEmpCode]); // only re-fetch when month/year changes or target changes
+  }, [year, month, targetUserId, targetEmpCode]);
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
@@ -172,8 +165,7 @@ export default function AttendanceHistoryPage() {
 
   return (
     <div className="flex bg-slate-50 min-h-screen">
-      <Sidebar />
-      <main className="flex-1 p-4 md:p-6 ml-0 lg:ml-64">
+      <main className="flex-1 p-4 md:p-6">
         <Flex justify="between" align="center" mb="4" wrap="wrap" gap="3">
           <Heading size="6">
             📊 Biometric Attendance History
