@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import {
   Card,
@@ -28,23 +28,16 @@ import {
 
 export default function AttendanceHistoryPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const targetUserId = searchParams.get("userId");
+  const targetEmpCode = searchParams.get("empCode");
+
   const [loading, setLoading] = useState(true);
   const [attendance, setAttendance] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewingUserName, setViewingUserName] = useState("");
-  const [targetUserId, setTargetUserId] = useState(null);
-  const [targetEmpCode, setTargetEmpCode] = useState(null);
-
-  // Get userId and empCode from URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const userId = params.get("userId");
-    const empCode = params.get("empCode");
-    setTargetUserId(userId);
-    setTargetEmpCode(empCode);
-  }, []);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -61,22 +54,24 @@ export default function AttendanceHistoryPage() {
 
       let url = `/api/attendance?startDate=${startStr}&endDate=${endStr}`;
       if (targetEmpCode) {
-        // Direct employee code (fastest, used by supervisor drill‑down)
         url += `&empCode=${targetEmpCode}`;
       } else if (targetUserId) {
-        // Fallback: use userId (may still work if attendance API supports it)
         url += `&userId=${targetUserId}`;
       }
+
+      console.log("Fetching attendance with URL:", url);
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error("Failed to fetch");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to fetch: ${res.status} ${errText}`);
+      }
       const data = await res.json();
+      console.log("Attendance data received:", data.attendance?.length || 0, "records");
 
-      if (targetEmpCode && data.userName) {
-        setViewingUserName(data.userName);
-      } else if (targetUserId && data.userName) {
+      if (data.userName) {
         setViewingUserName(data.userName);
       } else if (targetUserId) {
         setViewingUserName("this officer");
@@ -86,6 +81,7 @@ export default function AttendanceHistoryPage() {
 
       setAttendance(data.attendance || []);
     } catch (err) {
+      console.error("History fetch error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -93,10 +89,8 @@ export default function AttendanceHistoryPage() {
   };
 
   useEffect(() => {
-    if (targetUserId !== undefined && targetEmpCode !== undefined) {
-      fetchAttendance();
-    }
-  }, [year, month, targetUserId, targetEmpCode]);
+    fetchAttendance();
+  }, [year, month, targetUserId, targetEmpCode]); // only re-fetch when month/year changes or target changes
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
