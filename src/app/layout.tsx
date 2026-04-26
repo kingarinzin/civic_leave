@@ -4,8 +4,8 @@ import "@radix-ui/themes/styles.css";
 import { Theme } from "@radix-ui/themes";
 
 export const metadata: Metadata = {
-  title: "CivicLeave",
-  description: "E-sign platform",
+  title: "Anti-Corruption Commission",
+  description: "Anti-Corruption Commission",
 };
 
 export default function RootLayout({

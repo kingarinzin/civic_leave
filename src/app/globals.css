@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+html {
+  zoom: 90%; /* or transform alternative */
+}
+
 :root {
   --background: #ffffff;
   --foreground: #111111;
