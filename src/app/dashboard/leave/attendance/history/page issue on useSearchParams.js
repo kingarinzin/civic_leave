@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import {
   Card,
@@ -36,18 +36,9 @@ const formatLocalDate = (date) => {
 
 export default function AttendanceHistoryPage() {
   const router = useRouter();
-  
-  // ✅ Read URL params without useSearchParams
-  const [targetUserId, setTargetUserId] = useState(null);
-  const [targetEmpCode, setTargetEmpCode] = useState(null);
-  const [paramsReady, setParamsReady] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setTargetUserId(params.get("userId"));
-    setTargetEmpCode(params.get("empCode"));
-    setParamsReady(true);
-  }, []);
+  const searchParams = useSearchParams();
+  const targetUserId = searchParams.get("userId");
+  const targetEmpCode = searchParams.get("empCode");
 
   const [loading, setLoading] = useState(true);
   const [attendance, setAttendance] = useState([]);
@@ -96,10 +87,8 @@ export default function AttendanceHistoryPage() {
   };
 
   useEffect(() => {
-    if (paramsReady) {
-      fetchAttendance();
-    }
-  }, [year, month, targetUserId, targetEmpCode, paramsReady]);
+    fetchAttendance();
+  }, [year, month, targetUserId, targetEmpCode]);
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
