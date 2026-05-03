@@ -22,8 +22,8 @@ import {
   FaFileImage,
   FaFileAlt,
   FaDownload,
-  FaTimes,
   FaSearch,
+  FaTimes,
 } from "react-icons/fa";
 
 type ApprovalApplication = {
@@ -131,12 +131,14 @@ export default function LeaveApprovalsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [attError, setAttError] = useState("");
 
-  // Pagination for Team Attendance
+  // Pagination & Search for Team Attendance
   const [teamSearch, setTeamSearch] = useState("");
+  const [teamSearchInput, setTeamSearchInput] = useState("");
   const [rowsPerPageTeam, setRowsPerPageTeam] = useState<number | "all">(10);
 
-  // Pagination for Leave Approvals
+  // NEW: Pagination & Search for Leave Approvals
   const [approvalSearch, setApprovalSearch] = useState("");
+  const [approvalSearchInput, setApprovalSearchInput] = useState("");
   const [rowsPerPageApproval, setRowsPerPageApproval] = useState<number | "all">(10);
 
   // ---------- Load leave approvals ----------
@@ -238,9 +240,14 @@ export default function LeaveApprovalsPage() {
     return filteredSubordinates.slice(0, rowsPerPageTeam);
   }, [filteredSubordinates, rowsPerPageTeam]);
 
-  const handleTeamClearSearch = () => setTeamSearch("");
+  const handleTeamSearch = () => setTeamSearch(teamSearchInput);
+  const handleTeamClearSearch = () => {
+    setTeamSearchInput("");
+    setTeamSearch("");
+  };
 
   // ---------- Leave Approvals filters & pagination ----------
+  // First filter by active tab, then by search term
   const tabFilteredApplications = useMemo(() => {
     if (activeTab === "all") return applications;
     return applications.filter((item) => item.status === activeTab);
@@ -266,7 +273,11 @@ export default function LeaveApprovalsPage() {
     return filteredApprovals.slice(0, rowsPerPageApproval);
   }, [filteredApprovals, rowsPerPageApproval]);
 
-  const handleApprovalClearSearch = () => setApprovalSearch("");
+  const handleApprovalSearch = () => setApprovalSearch(approvalSearchInput);
+  const handleApprovalClearSearch = () => {
+    setApprovalSearchInput("");
+    setApprovalSearch("");
+  };
 
   // Export CSV for team attendance
   const exportToCSV = () => {
@@ -432,13 +443,16 @@ export default function LeaveApprovalsPage() {
             </Flex>
 
             <Flex gap="2" align="center" wrap="wrap">
-              <FaSearch className="text-gray-400" />
               <TextField.Root
-                placeholder="Search..div,dep,status.."
-                value={teamSearch}
-                onChange={(e) => setTeamSearch(e.target.value)}
-                className="w-32 sm:w-40"
+                placeholder="Search by name, division, department..."
+                value={teamSearchInput}
+                onChange={(e) => setTeamSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleTeamSearch()}
+                className="w-full sm:w-auto"
               />
+              <Button variant="solid" onClick={handleTeamSearch}>
+                <FaSearch className="mr-1" /> Search
+              </Button>
               {teamSearch && (
                 <Button variant="soft" onClick={handleTeamClearSearch}>
                   <FaTimes className="mr-1" /> Clear
@@ -557,7 +571,7 @@ export default function LeaveApprovalsPage() {
             ))}
           </Flex>
 
-          {/* Pagination & instant search row for approvals */}
+          {/* Pagination & Search row for approvals */}
           <Flex
             direction={{ initial: "column", sm: "row" }}
             justify="between"
@@ -590,13 +604,16 @@ export default function LeaveApprovalsPage() {
             </Flex>
 
             <Flex gap="2" align="center" wrap="wrap">
-              <FaSearch className="text-gray-400" />
               <TextField.Root
-                placeholder="Search..user,staus.."
-                value={approvalSearch}
-                onChange={(e) => setApprovalSearch(e.target.value)}
-                className="w-32 sm:w-40"
+                placeholder="Search by applicant, leave type, status, dates..."
+                value={approvalSearchInput}
+                onChange={(e) => setApprovalSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleApprovalSearch()}
+                className="w-full sm:w-auto"
               />
+              <Button variant="solid" onClick={handleApprovalSearch}>
+                <FaSearch className="mr-1" /> Search
+              </Button>
               {approvalSearch && (
                 <Button variant="soft" onClick={handleApprovalClearSearch}>
                   <FaTimes className="mr-1" /> Clear
