@@ -104,34 +104,6 @@ const renderAttachments = (attachments?: string[]) => {
   );
 };
 
-// Helper: calculate total working hours from firstIn and lastOut times
-function calculateTotalHours(firstIn: string | null, lastOut: string | null): string {
-  if (!firstIn || !lastOut) return "-";
-  
-  const parseTime = (timeStr: string): Date => {
-    const today = new Date().toDateString();
-    const dateTime = new Date(`${today} ${timeStr}`);
-    if (isNaN(dateTime.getTime())) {
-      const [hours, minutes] = timeStr.split(':');
-      const date = new Date();
-      date.setHours(parseInt(hours), parseInt(minutes), 0);
-      return date;
-    }
-    return dateTime;
-  };
-  
-  const start = parseTime(firstIn);
-  const end = parseTime(lastOut);
-  if (end < start) return "-";
-  
-  const diffMs = end.getTime() - start.getTime();
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  
-  if (hours === 0 && minutes === 0) return "-";
-  return `${hours}h ${minutes}m`;
-}
-
 export default function LeaveDashboardPage() {
   const router = useRouter();
 
@@ -323,12 +295,6 @@ export default function LeaveDashboardPage() {
     return `${Math.round((value / total) * 100)}%`;
   };
 
-  // Calculate total working hours for the selected date
-  const totalWorkingHours = useMemo(() => {
-    if (!selectedDayRecord) return "-";
-    return calculateTotalHours(selectedDayRecord.firstIn, selectedDayRecord.lastOut);
-  }, [selectedDayRecord]);
-
   // Leave balances (only positive)
   const leaveBalancesList = useMemo(() => {
     return leaveEntries.filter(entry => entry.balance > 0).map(entry => ({
@@ -366,7 +332,7 @@ export default function LeaveDashboardPage() {
   const isLastDate = selectedDate === availableDates[availableDates.length - 1];
 
   return (
-    <div className="flex flex-col lg:flex-row bg-slate-50 min-h-screen overflow-x-hidden">
+    <div className="flex bg-slate-50 min-h-screen">
       <Sidebar />
       <main className="flex-1 p-4 md:p-6 ml-0 lg:ml-64 w-full overflow-x-hidden">
         {/* HEADER */}
@@ -385,7 +351,7 @@ export default function LeaveDashboardPage() {
           </Flex>
         </Flex>
 
-        {/* DASHBOARD CARD: Leave Balances + Attendance Summary (fully responsive) */}
+        {/* DASHBOARD CARD: Leave Balances + Attendance Summary (now fully linked to biometricData) */}
         <Card size="3" mb="4" className="border-t-4 border-t-blue-500">
           <Heading size="4" mb="3" className="text-blue-800">📊 My Leave Dashboard</Heading>
           <div className="flex flex-col md:flex-row gap-6">
@@ -406,7 +372,7 @@ export default function LeaveDashboardPage() {
               </Flex>
             </div>
 
-            {/* Attendance Summary – stack on mobile */}
+            {/* Attendance Summary – only shows dates that exist in the recent activity */}
             <div className="flex-1">
               <Flex justify="between" align="center" wrap="wrap" gap="2" mb="2">
                 <Text size="2" weight="bold" className="text-gray-700">
@@ -433,41 +399,26 @@ export default function LeaveDashboardPage() {
                 <div className="flex justify-center py-8"><Text size="2" color="gray">No attendance data for this date</Text></div>
               ) : (
                 <div className="flex flex-col items-center">
-                  {/* Gauge + hours card: stack on small screens */}
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-4 w-full">
-                    {/* Circular gauge */}
-                    <div className="relative w-32 h-32 flex-shrink-0">
-                      <svg viewBox="0 0 100 100" className="w-full h-full">
-                        <circle cx="50" cy="50" r="45" fill="none" stroke="#e5e7eb" strokeWidth="10" />
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="45"
-                          fill="none"
-                          stroke={attendanceRate >= 80 ? "#22c55e" : attendanceRate >= 50 ? "#f97316" : "#ef4444"}
-                          strokeWidth="10"
-                          strokeDasharray={`${(attendanceRate / 100) * 283} 283`}
-                          strokeDashoffset="0"
-                          transform="rotate(-90 50 50)"
-                        />
-                        <text x="50" y="55" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#1f2937">{attendanceRate}%</text>
-                      </svg>
-                    </div>
-
-                    {/* Total hours card */}
-                    <div className="bg-gray-50 rounded-xl p-4 text-center shadow-sm border border-gray-200 min-w-[120px] w-full sm:w-auto">
-                      <Text size="2" color="gray">Total Working Hours</Text>
-                      <Text size="6" weight="bold" className="text-blue-700 mt-1">{totalWorkingHours}</Text>
-                      {selectedDayRecord.leaveType && (
-                        <Text size="1" color="gray" className="mt-1">On leave</Text>
-                      )}
-                    </div>
+                  <div className="relative w-32 h-32">
+                    <svg viewBox="0 0 100 100" className="w-full h-full">
+                      <circle cx="50" cy="50" r="45" fill="none" stroke="#e5e7eb" strokeWidth="10" />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="45"
+                        fill="none"
+                        stroke={attendanceRate >= 80 ? "#22c55e" : attendanceRate >= 50 ? "#f97316" : "#ef4444"}
+                        strokeWidth="10"
+                        strokeDasharray={`${(attendanceRate / 100) * 283} 283`}
+                        strokeDashoffset="0"
+                        transform="rotate(-90 50 50)"
+                      />
+                      <text x="50" y="55" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#1f2937">{attendanceRate}%</text>
+                    </svg>
                   </div>
-
                   <Text size="3" weight="bold" className={`mt-2 ${concernLevel === "Good" ? "text-green-600" : concernLevel === "Moderate Concern" ? "text-orange-600" : "text-red-600"}`}>
                     {concernLevel}
                   </Text>
-
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 w-full">
                     <div className="bg-green-50 rounded-lg p-2 text-center shadow-sm">
                       <Text size="2" color="gray">Present</Text>
@@ -496,7 +447,7 @@ export default function LeaveDashboardPage() {
           </div>
         </Card>
 
-        {/* MY RECENT ACTIVITY – with Total Hrs column (already responsive) */}
+        {/* MY RECENT ACTIVITY – uses the same biometricData */}
         <Card size="3" mb="4">
           <Flex justify="between" align="center" mb="3" wrap="wrap" gap="2">
             <Heading size="4">📋 My Recent Activity</Heading>
@@ -509,25 +460,23 @@ export default function LeaveDashboardPage() {
                   <Table.ColumnHeaderCell>Date</Table.ColumnHeaderCell>
                   <Table.ColumnHeaderCell>First In</Table.ColumnHeaderCell>
                   <Table.ColumnHeaderCell>Last Out</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell>Total Hrs</Table.ColumnHeaderCell>
                   <Table.ColumnHeaderCell>Status / Leave</Table.ColumnHeaderCell>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
                 {attendanceLoading ? (
-                  <Table.Row><Table.Cell colSpan={5} align="center"><Text size="2" color="gray">Loading attendance...</Text></Table.Cell></Table.Row>
+                  <Table.Row><Table.Cell colSpan={4} align="center"><Text size="2" color="gray">Loading attendance...</Text></Table.Cell></Table.Row>
                 ) : biometricData.length === 0 ? (
-                  <Table.Row><Table.Cell colSpan={5} align="center"><Text size="2" color="gray">No attendance data found</Text></Table.Cell></Table.Row>
+                  <Table.Row><Table.Cell colSpan={4} align="center"><Text size="2" color="gray">No attendance data found</Text></Table.Cell></Table.Row>
                 ) : (
                   biometricData.map((day, idx) => {
                     const rowDate = day.date.split("T")[0];
-                    const totalHrs = calculateTotalHours(day.firstIn, day.lastOut);
                     return (
                       <Table.Row key={idx}>
                         <Table.RowHeaderCell>{rowDate}</Table.RowHeaderCell>
                         {day.leaveType ? (
                           <>
-                            <Table.Cell colSpan={3} align="center">
+                            <Table.Cell colSpan={2}>
                               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${day.leaveTypeClass || "bg-purple-100 text-purple-800"}`}>
                                 📌 {day.leaveType}
                               </span>
@@ -542,12 +491,7 @@ export default function LeaveDashboardPage() {
                             <Table.Cell>
                               {day.lastOut ? <span className={`font-medium ${day.lastClass || "text-green-700"}`}>{day.lastOut}</span> : <span className="text-gray-400">—</span>}
                             </Table.Cell>
-                            <Table.Cell>
-                              <span className="font-medium text-blue-700">{totalHrs}</span>
-                            </Table.Cell>
-                            <Table.Cell>
-                              <span className="bg-gray-100 px-2 py-0.5 rounded-full text-xs">{day.status || "Absent"}</span>
-                            </Table.Cell>
+                            <Table.Cell><span className="bg-gray-100 px-2 py-0.5 rounded-full text-xs">{day.status || "Absent"}</span></Table.Cell>
                           </>
                         )}
                       </Table.Row>
@@ -563,7 +507,7 @@ export default function LeaveDashboardPage() {
           </Text>
         </Card>
 
-        {/* APPLICATIONS TABLE (already responsive) */}
+        {/* APPLICATIONS TABLE (unchanged) */}
         <Card size="3">
           <Flex align="center" justify="between" mb="4" wrap="wrap" gap="3">
             <Heading size="4">{visibilityLabel}</Heading>

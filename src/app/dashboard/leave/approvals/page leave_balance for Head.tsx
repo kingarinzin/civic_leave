@@ -44,7 +44,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// -------------------- Types --------------------
+// -------------------- Types (unchanged) --------------------
 type ApprovalApplication = {
   _id: string;
   userName: string;
@@ -76,14 +76,7 @@ type SubordinateAttendance = {
   outColor: string;
 };
 
-type LeaveBalance = {
-  leaveTypeName: string;
-  allocated: number;
-  used: number;
-  balance: number;
-};
-
-// -------------------- Helper Functions --------------------
+// -------------------- Helper Functions (unchanged) --------------------
 function getOriginalFileName(savedName: string): string {
   const firstDashIndex = savedName.indexOf("-");
   if (firstDashIndex === -1) return savedName;
@@ -162,36 +155,6 @@ export default function LeaveApprovalsPage() {
   // Pagination for Leave Approvals
   const [approvalSearch, setApprovalSearch] = useState("");
   const [rowsPerPageApproval, setRowsPerPageApproval] = useState<number | "all">(10);
-
-  // ========== Leave balances for subordinates ==========
-  const [subordinateBalances, setSubordinateBalances] = useState<Record<string, LeaveBalance[]>>({});
-  const [balancesLoading, setBalancesLoading] = useState(false);
-
-  // Fetch balances for a single user
-  const fetchUserBalances = async (userId: string): Promise<LeaveBalance[]> => {
-    const token = localStorage.getItem("token");
-    if (!token) return [];
-    try {
-      const res = await fetch(`/api/leave-balances?userId=${userId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data?.leaves) ? data.leaves : [];
-    } catch (err) {
-      console.error(`Failed to fetch balances for ${userId}`, err);
-      return [];
-    }
-  };
-
-  // Helper: format balances with full leave type name and colon spacing
-  const formatBalances = (balances: LeaveBalance[]): string => {
-    if (!balances || balances.length === 0) return "—";
-    return balances
-      .filter(b => b.balance > 0)
-      .map(b => `${b.leaveTypeName}: ${b.balance}`)
-      .join(", ");
-  };
 
   // Date helpers
   const addDays = (dateStr: string, days: number): string => {
@@ -303,6 +266,7 @@ export default function LeaveApprovalsPage() {
   const attendanceRate = attendanceSummary.total === 0 ? 0 : (attendanceSummary.present / attendanceSummary.total) * 100;
   const kpiData = useMemo(() => {
     const months = ["July", "August", "September", "October", "November", "December"];
+    // Generate a realistic trend based on current rate with slight variation
     const baseRate = attendanceRate;
     const trend = months.map((month, idx) => {
       const fluctuation = Math.sin(idx) * 10 + (Math.random() * 5 - 2.5);
@@ -318,7 +282,7 @@ export default function LeaveApprovalsPage() {
     return trend;
   }, [attendanceRate]);
 
-  // ---------- Team Attendance filters & pagination ----------
+  // ---------- Team Attendance filters & pagination (unchanged) ----------
   const filteredSubordinates = useMemo(() => {
     let filtered = [...subordinates];
     if (statusFilter !== "all") {
@@ -348,33 +312,6 @@ export default function LeaveApprovalsPage() {
   }, [filteredSubordinates, rowsPerPageTeam]);
 
   const handleTeamClearSearch = () => setTeamSearch("");
-
-  // Fetch balances for displayed subordinates
-  useEffect(() => {
-    const missingUserIds = paginatedSubordinates
-      .map(o => o.userId)
-      .filter(id => id && !subordinateBalances[id]);
-    if (missingUserIds.length === 0) return;
-
-    const fetchAll = async () => {
-      setBalancesLoading(true);
-      const results = await Promise.all(
-        missingUserIds.map(async (userId) => ({
-          userId,
-          balances: await fetchUserBalances(userId),
-        }))
-      );
-      setSubordinateBalances(prev => {
-        const newState = { ...prev };
-        results.forEach(({ userId, balances }) => {
-          newState[userId] = balances;
-        });
-        return newState;
-      });
-      setBalancesLoading(false);
-    };
-    fetchAll();
-  }, [paginatedSubordinates, subordinateBalances]);
 
   // ---------- Leave Approvals filters & pagination ----------
   const tabFilteredApplications = useMemo(() => {
@@ -507,9 +444,9 @@ export default function LeaveApprovalsPage() {
               </Flex>
             </Flex>
 
-            {/* Five metric cards */}
+            {/* Four main metric cards: Total, Present, Late, Early, Absent? Instead, combine into two rows? We'll use 5 cards in a row on large screens */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              {/* Total, Present, Late, Early, Absent cards - unchanged */}
+              {/* Total */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center"><FaUsers className="text-blue-600 text-xl" /></div>
@@ -520,6 +457,7 @@ export default function LeaveApprovalsPage() {
                   <Text size="2" color="gray" className="block mt-1">Total Employees</Text>
                 </div>
               </div>
+              {/* Present */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center"><FaUserCheck className="text-green-600 text-xl" /></div>
@@ -530,6 +468,7 @@ export default function LeaveApprovalsPage() {
                   <Text size="2" color="gray" className="block mt-1">Present</Text>
                 </div>
               </div>
+              {/* Late */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center"><FaClock className="text-orange-600 text-xl" /></div>
@@ -540,6 +479,7 @@ export default function LeaveApprovalsPage() {
                   <Text size="2" color="gray" className="block mt-1">Late Arrival</Text>
                 </div>
               </div>
+              {/* Early Departure */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="h-10 w-10 rounded-full bg-yellow-100 flex items-center justify-center"><FaSun className="text-yellow-600 text-xl" /></div>
@@ -550,6 +490,7 @@ export default function LeaveApprovalsPage() {
                   <Text size="2" color="gray" className="block mt-1">Early Departure</Text>
                 </div>
               </div>
+              {/* Absent */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center"><FaUserSlash className="text-red-600 text-xl" /></div>
@@ -562,8 +503,9 @@ export default function LeaveApprovalsPage() {
               </div>
             </div>
 
-            {/* KPI Chart + Attendance Summary - unchanged */}
+            {/* KPI Chart + Attendance Summary (with late/early details) */}
             <div className="flex flex-col lg:flex-row gap-6 mt-2">
+              {/* KPI Metrics line chart */}
               <div className="flex-1 bg-white rounded-xl border border-gray-200 p-4">
                 <div className="flex justify-between items-center mb-2">
                   <Heading size="3">KPI Metrics</Heading>
@@ -591,6 +533,7 @@ export default function LeaveApprovalsPage() {
                 <Text size="1" color="gray" className="text-center mt-2">Attendance trend (last 6 months)</Text>
               </div>
 
+              {/* Attendance Summary Today (including late & early) */}
               <div className="lg:w-80 xl:w-96 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <Heading size="3" className="text-center">Attendance Summary Today</Heading>
                 <div className="flex flex-col items-center mt-2">
@@ -603,6 +546,7 @@ export default function LeaveApprovalsPage() {
                   </div>
                   <Text size="3" weight="bold" className={`mt-2 ${concernLevel === "Good" ? "text-green-600" : concernLevel === "Moderate Concern" ? "text-orange-600" : "text-red-600"}`}>{concernLevel}</Text>
                 </div>
+                {/* Four small cards: Present, Late, Early, Absent */}
                 <div className="grid grid-cols-2 gap-2 mt-4">
                   <div className="bg-green-50 rounded-lg p-2 text-center">
                     <Text size="2" color="gray">Present</Text>
@@ -630,7 +574,7 @@ export default function LeaveApprovalsPage() {
           </div>
         </Card>
 
-        {/* ==================== DETAILED TEAM ATTENDANCE TABLE (with Leave Balances column) ==================== */}
+        {/* ==================== DETAILED TEAM ATTENDANCE TABLE (unchanged) ==================== */}
         <Card size="3" mb="5" className="w-full">
           <Heading size="4" mb="3">📋 Detailed Team Attendance</Heading>
           <Flex direction={{ initial: "column", md: "row" }} justify="between" align={{ initial: "stretch", md: "center" }} mb="4" gap="3" wrap="wrap">
@@ -673,11 +617,10 @@ export default function LeaveApprovalsPage() {
           {attError && <Text color="red">{attError}</Text>}
           {!attLoading && !attError && (
             <div className="overflow-x-auto w-full">
-              <Table.Root variant="surface" className="min-w-[800px] md:min-w-0">
+              <Table.Root variant="surface" className="min-w-[700px] md:min-w-0">
                 <Table.Header>
                   <Table.Row>
                     <Table.ColumnHeaderCell>Name</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>Leave Balances</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>Division</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>Department</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>First In</Table.ColumnHeaderCell>
@@ -690,42 +633,19 @@ export default function LeaveApprovalsPage() {
                   {paginatedSubordinates.map((officer) => (
                     <Table.Row key={officer.userId}>
                       <Table.RowHeaderCell>{officer.name}</Table.RowHeaderCell>
-                      <Table.Cell>
-                        {balancesLoading && !subordinateBalances[officer.userId] ? (
-                          <span className="text-gray-400 text-xs">Loading...</span>
-                        ) : (
-                          <span className="text-xs font-medium text-gray-700">
-                            {formatBalances(subordinateBalances[officer.userId] || [])}
-                          </span>
-                        )}
-                      </Table.Cell>
                       <Table.Cell>{officer.division}</Table.Cell>
                       <Table.Cell>{officer.department}</Table.Cell>
+                      <Table.Cell>{officer.firstIn ? <span className={officer.inColor}>{officer.firstIn}</span> : <span className="text-gray-400">—</span>}</Table.Cell>
+                      <Table.Cell>{officer.lastOut ? <span className={officer.outColor}>{officer.lastOut}</span> : <span className="text-gray-400">—</span>}</Table.Cell>
                       <Table.Cell>
-                        {officer.firstIn ? <span className={officer.inColor}>{officer.firstIn}</span> : <span className="text-gray-400">—</span>}
+                        <Badge color={officer.status === "Present" ? "green" : officer.status.includes("Late") || officer.status.includes("Early") ? "orange" : "gray"} variant="soft">{officer.status}</Badge>
                       </Table.Cell>
                       <Table.Cell>
-                        {officer.lastOut ? <span className={officer.outColor}>{officer.lastOut}</span> : <span className="text-gray-400">—</span>}
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Badge color={officer.status === "Present" ? "green" : officer.status.includes("Late") || officer.status.includes("Early") ? "orange" : "gray"} variant="soft">
-                          {officer.status}
-                        </Badge>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Button variant="soft" size="1" onClick={() => router.push(`/dashboard/leave/attendance/history?userId=${officer.userId}&empCode=${officer.empCode}`)}>
-                          View History
-                        </Button>
+                        <Button variant="soft" size="1" onClick={() => router.push(`/dashboard/leave/attendance/history?userId=${officer.userId}&empCode=${officer.empCode}`)}>View History</Button>
                       </Table.Cell>
                     </Table.Row>
                   ))}
-                  {paginatedSubordinates.length === 0 && (
-                    <Table.Row>
-                      <Table.Cell colSpan={8} align="center">
-                        <Text color="gray">No team members found</Text>
-                      </Table.Cell>
-                    </Table.Row>
-                  )}
+                  {paginatedSubordinates.length === 0 && <Table.Row><Table.Cell colSpan={7} align="center"><Text color="gray">No team members found</Text></Table.Cell></Table.Row>}
                 </Table.Body>
               </Table.Root>
             </div>

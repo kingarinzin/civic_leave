@@ -19,7 +19,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 401 });
     }
     const supervisor = await profileRes.json();
-    const role = supervisor.role; // e.g., 'Admin', 'Commission', 'DepartmentHead', 'DivisionHead', 'Officer', etc.
+    const role = supervisor.role; // 'DivisionHead', 'DepartmentHead', 'Admin'
 
     // 2. Date from query (default today)
     const { searchParams } = new URL(request.url);
@@ -33,47 +33,23 @@ export async function GET(request) {
 
     // 4. Find subordinates based on role
     let subordinates = [];
-
     if (role === 'Admin') {
-      // Admin sees all regular officers
       subordinates = await db.collection('users').find({
+        isAdmin: { $ne: true },
         role: 'Officer',
       }).toArray();
-    }
-    else if (role === 'Commission') {
-      // Commission sees all Department Heads
-      // If you don't have a separate 'DepartmentHead' role, change this to 'DivisionHead'
+    } else if (role === 'DivisionHead') {
       subordinates = await db.collection('users').find({
-        role: 'DepartmentHead'
+        divisionId: supervisor.divisionId,
+        role: 'Officer',
       }).toArray();
-    }
-    else if (role === 'DepartmentHead') {
-      // Department Head sees Division Heads under the same departmentId
-      if (!supervisor.departmentId) {
-        subordinates = [];
-      } else {
-        subordinates = await db.collection('users').find({
-          role: 'DivisionHead',
-          departmentId: supervisor.departmentId
-        }).toArray();
-      }
-    }
-    else if (role === 'DivisionHead') {
-      // Division Head sees Officers under the same divisionId
-      if (!supervisor.divisionId) {
-        subordinates = [];
-      } else {
-        subordinates = await db.collection('users').find({
-          role: 'Officer',
-          divisionId: supervisor.divisionId
-        }).toArray();
-      }
-    }
-    else {
-      // For any other role (e.g., 'Officer'), return an empty array instead of a 403 error.
-      // This prevents the frontend from breaking while still respecting that they see nothing.
-      console.warn(`Unhandled role "${role}" – returning empty officers list.`);
-      return NextResponse.json({ officers: [] });
+    } else if (role === 'DepartmentHead') {
+      subordinates = await db.collection('users').find({
+        departmentId: supervisor.departmentId,
+        role: 'Officer',
+      }).toArray();
+    } else {
+      return NextResponse.json({ error: 'Not authorized to view team attendance' }, { status: 403 });
     }
 
     if (!subordinates.length) {
@@ -85,7 +61,7 @@ export async function GET(request) {
     const officersWithAttendance = [];
 
     for (const officer of subordinates) {
-      const empCode = officer.cid;
+      const empCode = officer.cid; // adjust field name if needed
       if (!empCode) continue;
 
       const sqlResult = await pool.request()
@@ -110,31 +86,26 @@ export async function GET(request) {
 
       if (inPunches.length) {
         firstIn = inPunches[0].pTime;
+        status = 'Late arrival';
         inColor = firstIn > '09:15' ? 'text-orange-600' : 'text-green-700';
       }
       if (outPunches.length) {
         lastOut = outPunches[outPunches.length - 1].pTime;
         outColor = lastOut < '17:00' ? 'text-orange-600' : 'text-green-700';
       }
-
-      // Determine final status
       if (firstIn && lastOut) {
         if (firstIn > '09:15' && lastOut < '17:00') status = 'Late & Early';
         else if (firstIn > '09:15') status = 'Late arrival';
         else if (lastOut < '17:00') status = 'Early departure';
         else status = 'Present';
-      } else if (firstIn && !lastOut) {
-        status = 'Missing OUT';
-      } else if (!firstIn && lastOut) {
-        status = 'Missing IN';
       }
 
       officersWithAttendance.push({
         userId: officer._id.toString(),
-        empCode: empCode,
+        empCode: empCode,                 // ✅ added for drill‑down
         name: officer.name,
-        division: officer.divisionName || officer.division || '-',
-        department: officer.departmentName || officer.department || '-',
+        division: officer.divisionName || '-',
+        department: officer.departmentName || '-',
         firstIn,
         lastOut,
         status,

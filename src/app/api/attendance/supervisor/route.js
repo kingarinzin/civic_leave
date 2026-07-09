@@ -19,7 +19,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 401 });
     }
     const supervisor = await profileRes.json();
-    const role = supervisor.role; // e.g., 'Admin', 'Commission', 'DepartmentHead', 'DivisionHead', 'Officer', etc.
+    const role = supervisor.role; // 'Commission', 'DepartmentHead', 'DivisionHead', 'Admin'
 
     // 2. Date from query (default today)
     const { searchParams } = new URL(request.url);
@@ -35,17 +35,19 @@ export async function GET(request) {
     let subordinates = [];
 
     if (role === 'Admin') {
-      // Admin sees all regular officers
+      // Admin sees all regular officers (adjust if needed)
       subordinates = await db.collection('users').find({
         role: 'Officer',
       }).toArray();
     }
     else if (role === 'Commission') {
       // Commission sees all Department Heads
-      // If you don't have a separate 'DepartmentHead' role, change this to 'DivisionHead'
+      // If you don't have a separate 'DepartmentHead' role, use 'DivisionHead' instead
       subordinates = await db.collection('users').find({
         role: 'DepartmentHead'
       }).toArray();
+      // Alternative if no DepartmentHead role:
+      // subordinates = await db.collection('users').find({ role: 'DivisionHead' }).toArray();
     }
     else if (role === 'DepartmentHead') {
       // Department Head sees Division Heads under the same departmentId
@@ -70,17 +72,14 @@ export async function GET(request) {
       }
     }
     else {
-      // For any other role (e.g., 'Officer'), return an empty array instead of a 403 error.
-      // This prevents the frontend from breaking while still respecting that they see nothing.
-      console.warn(`Unhandled role "${role}" – returning empty officers list.`);
-      return NextResponse.json({ officers: [] });
+      return NextResponse.json({ error: 'Not authorized to view team attendance' }, { status: 403 });
     }
 
     if (!subordinates.length) {
       return NextResponse.json({ officers: [] });
     }
 
-    // 5. For each subordinate, fetch attendance from SQL Server
+    // 5. For each subordinate, fetch attendance from SQL Server (unchanged)
     const pool = await getSQLServerConnection();
     const officersWithAttendance = [];
 

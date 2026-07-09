@@ -9,7 +9,6 @@ import { Badge, Box, Button, Card, Checkbox, Flex, Heading, Separator, Text, Tex
 type LeaveType = {
   _id: string;
   name: string;
-  skipApproval?: boolean; // NEW: added to support balance skip
 };
 
 type LeaveEntry = {
@@ -24,6 +23,14 @@ type Holiday = {
   end_date: string;
   type: string;
 };
+
+function getTodayLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 // Helper: check if a date falls inside any holiday range
 function isDateInHolidays(date: Date, holidays: Holiday[]): boolean {
@@ -58,6 +65,7 @@ function calculateLeaveDays(startDateStr: string, endDateStr: string, holidays: 
 
 export default function ApplyLeavePage() {
   const router = useRouter();
+  const minSelectableDate = getTodayLocalDateString();
 
   const [isHalfDay, setIsHalfDay] = useState(false);
   const [leaveTypeId, setLeaveTypeId] = useState("");
@@ -69,7 +77,7 @@ export default function ApplyLeavePage() {
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [leaveEntries, setLeaveEntries] = useState<LeaveEntry[]>([]);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]); // NEW
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -138,22 +146,14 @@ export default function ApplyLeavePage() {
     loadData();
   }, [router]);
 
-  // NEW: Determine if selected leave type skips balance & approval
-  const selectedLeaveType = useMemo(() => {
-    return leaveTypes.find(lt => lt._id === leaveTypeId);
-  }, [leaveTypes, leaveTypeId]);
-
-  const skipBalance = selectedLeaveType?.skipApproval === true;
-
   const selectedBalance = useMemo(() => {
-    if (skipBalance) return Infinity; // No limit
     const selected = leaveEntries.find(
       (entry) => entry.leaveTypeId?.toString() === leaveTypeId,
     );
     return Number(selected?.balance || 0);
-  }, [leaveEntries, leaveTypeId, skipBalance]);
+  }, [leaveEntries, leaveTypeId]);
 
-  // Calculate days automatically (excludes weekends & holidays)
+  // ✅ NEW: Calculate days automatically (excludes weekends & holidays)
   useEffect(() => {
     if (isHalfDay) {
       setDays("0.5");
@@ -209,10 +209,12 @@ export default function ApplyLeavePage() {
       return;
     }
 
-    // Past dates are now allowed (removed validation)
+    if (fromDate < minSelectableDate || toDate < minSelectableDate) {
+      setMessage("Past dates are not allowed. Please select today or future dates");
+      return;
+    }
 
-    // Balance check – only if the leave type requires a balance
-    if (!skipBalance && parsedDays > selectedBalance) {
+    if (parsedDays > selectedBalance) {
       setMessage("No. of days cannot exceed assigned leave balance");
       return;
     }
@@ -325,6 +327,7 @@ export default function ApplyLeavePage() {
                     type="date"
                     value={fromDate}
                     onChange={(e) => setFromDate(e.target.value)}
+                    min={minSelectableDate}
                     required
                     mt="1"
                   />
@@ -338,6 +341,7 @@ export default function ApplyLeavePage() {
                     type="date"
                     value={toDate}
                     onChange={(e) => setToDate(e.target.value)}
+                    min={fromDate || minSelectableDate}
                     required
                     mt="1"
                   />
@@ -351,15 +355,14 @@ export default function ApplyLeavePage() {
                     type="number"
                     step={isHalfDay ? "0.5" : "1"}
                     min={isHalfDay ? "0.5" : "1"}
-                    // Only set max if balance is NOT skipped
-                    max={skipBalance ? undefined : (selectedBalance || undefined)}
+                    max={selectedBalance || undefined}
                     value={days}
-                    readOnly
+                    readOnly   // ✅ Make it read-only to prevent manual mismatch
                     required
                     mt="1"
                   />
                   <Text size="1" color="gray" mt="1">
-                    Available balance: {skipBalance ? "Unlimited" : selectedBalance}
+                    Available balance: {selectedBalance}
                   </Text>
                   <Text size="1" color="gray">
                     (Excludes weekends & holidays)

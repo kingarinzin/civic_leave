@@ -51,6 +51,15 @@ function calculateLeaveDays(fromDate, toDate, isHalfDay) {
   return Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
+function isDateBeforeToday(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return false;
+  const inputDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return inputDate < today;
+}
+
 export async function GET(req) {
   try {
     const userId = getUserIdFromAuth(req);
@@ -115,6 +124,7 @@ async function saveUploadedFiles(files) {
   return savedFiles;
 }
 
+//====================POST Handler (updated with skipApproval)====================
 export async function POST(req) {
   try {
     const userId = getUserIdFromAuth(req);
@@ -130,6 +140,10 @@ export async function POST(req) {
 
     if (!leaveTypeId || !fromDate || !toDate || !daysRaw) {
       return NextResponse.json({ error: "Leave type, dates, and no. of days are required" }, { status: 400 });
+    }
+
+    if (isDateBeforeToday(fromDate) || isDateBeforeToday(toDate)) {
+      return NextResponse.json({ error: "Past dates are not allowed" }, { status: 400 });
     }
 
     const parsedDays = Number(daysRaw);
@@ -158,24 +172,19 @@ export async function POST(req) {
       return NextResponse.json({ error: "You already have a leave application covering some of these dates" }, { status: 400 });
     }
 
-    // Fetch leave type to check skipApproval
+    // ---------- Fetch leave type to check skipApproval ----------
     const leaveTypeDoc = await db.collection("leave-types").findOne({ _id: toObjectIdSafe(leaveTypeId) });
     if (!leaveTypeDoc) return NextResponse.json({ error: "Invalid leave type" }, { status: 400 });
     const skipApproval = leaveTypeDoc.skipApproval === true;
 
-    // ========== MODIFIED: Balance check only if NOT skipApproval ==========
-    let leaveTypeName = leaveTypeDoc.name;
-    if (!skipApproval) {
-      const leaveBalance = await db.collection("leave_balances").findOne({ userId: userObjectId, year });
-      if (!leaveBalance) return NextResponse.json({ error: "Leave balance not found" }, { status: 404 });
-      const leaveType = leaveBalance.leaves?.find(entry => entry.leaveTypeId?.toString() === leaveTypeId);
-      if (!leaveType) return NextResponse.json({ error: "Leave type not assigned to your balance" }, { status: 400 });
-      if (parsedDays > Number(leaveType.balance || 0)) {
-        return NextResponse.json({ error: "Insufficient leave balance" }, { status: 400 });
-      }
-      leaveTypeName = leaveType.leaveTypeName || leaveTypeDoc.name;
+    // Balance check
+    const leaveBalance = await db.collection("leave_balances").findOne({ userId: userObjectId, year });
+    if (!leaveBalance) return NextResponse.json({ error: "Leave balance not found" }, { status: 404 });
+    const leaveType = leaveBalance.leaves?.find(entry => entry.leaveTypeId?.toString() === leaveTypeId);
+    if (!leaveType) return NextResponse.json({ error: "Leave type not assigned" }, { status: 400 });
+    if (parsedDays > Number(leaveType.balance || 0)) {
+      return NextResponse.json({ error: "Insufficient leave balance" }, { status: 400 });
     }
-    // ====================================================================
 
     // Save attachments
     let savedFileNames = [];
@@ -211,7 +220,7 @@ export async function POST(req) {
       departmentId: applicantUser.departmentId || "",
       divisionId: applicantUser.divisionId || "",
       leaveTypeId,
-      leaveTypeName: leaveTypeName,
+      leaveTypeName: leaveType.leaveTypeName || "",
       fromDate,
       toDate,
       days: parsedDays,
@@ -233,15 +242,13 @@ export async function POST(req) {
 
     const result = await db.collection("leave_applications").insertOne(insertData);
 
-    // ========== MODIFIED: Only deduct balance if NOT skipApproval and approved ==========
-    if (finalStatus === "approved" && !skipApproval) {
+    if (finalStatus === "approved") {
       await db.collection("leave_balances").updateOne(
         { userId: userObjectId, year },
         { $inc: { [`leaves.$[elem].used`]: parsedDays } },
         { arrayFilters: [{ "elem.leaveTypeId": leaveTypeId }] }
       );
     }
-    // ===================================================================================
 
     const transporter = createTransporter();
     // Applicant email (always)
@@ -259,7 +266,7 @@ export async function POST(req) {
               <p>Your leave request has been ${statusText}.</p>
               <p><strong>Leave Details:</strong></p>
               <ul>
-                <li>Leave Type: ${leaveTypeName}</li>
+                <li>Leave Type: ${leaveType.leaveTypeName}</li>
                 <li>From: ${fromDate}</li>
                 <li>To: ${toDate}</li>
                 <li>Days: ${parsedDays}</li>
@@ -271,7 +278,7 @@ export async function POST(req) {
       } catch (err) { console.error("Applicant email failed:", err); }
     }
 
-    // Approver email & token only for pending (non-skipApproval)
+    // Approver email & token only for pending
     if (!skipApproval && resolvedApprover?.approverId) {
       await db.collection("leave_action_tokens").insertOne({
         token,
@@ -290,7 +297,7 @@ export async function POST(req) {
         <div style="font-family: Arial, sans-serif; padding: 20px;">
           <h2>Leave Approval Request</h2>
           <p><strong>Applicant:</strong> ${applicantUser.name || applicantUser.email}</p>
-          <p><strong>Leave Type:</strong> ${leaveTypeName}</p>
+          <p><strong>Leave Type:</strong> ${leaveType.leaveTypeName}</p>
           <p><strong>From:</strong> ${fromDate}</p>
           <p><strong>To:</strong> ${toDate}</p>
           <p><strong>Days:</strong> ${parsedDays}</p>

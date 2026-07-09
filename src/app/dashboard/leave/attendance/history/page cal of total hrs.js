@@ -13,7 +13,18 @@ import {
   Badge,
   Select,
 } from "@radix-ui/themes";
-import { FaDownload, FaCalendarAlt, FaClock } from "react-icons/fa";
+import { FaDownload, FaCalendarAlt } from "react-icons/fa";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 // Helper to format date as YYYY-MM-DD in local time
 const formatLocalDate = (date) => {
@@ -23,58 +34,10 @@ const formatLocalDate = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-// Helper: calculate total working hours from firstIn and lastOut times
-function calculateTotalHours(firstIn, lastOut) {
-  if (!firstIn || !lastOut) return 0; // return number for summation
-  
-  const parseTime = (timeStr) => {
-    timeStr = timeStr.trim().toUpperCase();
-    const hasAmPm = timeStr.includes('AM') || timeStr.includes('PM');
-    let hours = 0, minutes = 0;
-    if (hasAmPm) {
-      const parts = timeStr.split(' ');
-      const timePart = parts[0];
-      const ampm = parts[1];
-      let [h, m] = timePart.split(':').map(Number);
-      if (ampm === 'PM' && h !== 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      hours = h;
-      minutes = m;
-    } else {
-      const [h, m] = timeStr.split(':').map(Number);
-      hours = h;
-      minutes = m;
-    }
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    return date;
-  };
-  
-  try {
-    const start = parseTime(firstIn);
-    const end = parseTime(lastOut);
-    if (end < start) return 0;
-    const diffMs = end.getTime() - start.getTime();
-    const hours = diffMs / (1000 * 60 * 60);
-    return parseFloat(hours.toFixed(1)); // return decimal hours
-  } catch (e) {
-    return 0;
-  }
-}
-
-// Format hours for display (e.g., "8.5h")
-const formatHours = (hours) => {
-  if (hours === 0) return "0h";
-  const whole = Math.floor(hours);
-  const fraction = hours - whole;
-  if (fraction === 0) return `${whole}h`;
-  const minutes = Math.round(fraction * 60);
-  return `${whole}h ${minutes}m`;
-};
-
 export default function AttendanceHistoryPage() {
   const router = useRouter();
   
+  // ✅ Read URL params without useSearchParams
   const [targetUserId, setTargetUserId] = useState(null);
   const [targetEmpCode, setTargetEmpCode] = useState(null);
   const [paramsReady, setParamsReady] = useState(false);
@@ -155,34 +118,18 @@ export default function AttendanceHistoryPage() {
     attendanceByDate[key] = item;
   });
 
-  // Compute monthly statistics
-  let totalWorkingHours = 0;
-  let totalDaysWorked = 0;
-  let totalAbsent = 0;
-  let totalLate = 0;
-
-  allDates.forEach(dateStr => {
-    const day = attendanceByDate[dateStr];
-    if (!day || day.status === "No punch") {
-      totalAbsent++;
-    } else {
-      const hours = calculateTotalHours(day.firstIn, day.lastOut);
-      if (hours > 0) {
-        totalWorkingHours += hours;
-        totalDaysWorked++;
-      }
-      if (day.status === "Late arrival" || day.status === "Late & Early") totalLate++;
-    }
+  const chartData = [
+    { name: "Present", value: 0, color: "#22c55e" },
+    { name: "Late", value: 0, color: "#f97316" },
+    { name: "Early", value: 0, color: "#f97316" },
+    { name: "Absent", value: 0, color: "#94a3b8" },
+  ];
+  attendance.forEach((item) => {
+    if (item.status === "Present") chartData[0].value++;
+    else if (item.status === "Late arrival" || item.status === "Late & Early") chartData[1].value++;
+    else if (item.status === "Early departure") chartData[2].value++;
+    else if (item.status === "No punch") chartData[3].value++;
   });
-
-  const averageDailyHours = totalDaysWorked > 0 ? totalWorkingHours / totalDaysWorked : 0;
-  const totalWorkingHoursFormatted = formatHours(totalWorkingHours);
-  const averageDailyHoursFormatted = formatHours(averageDailyHours);
-
-  // Gauge: percentage of a 160h full-time month (8h/day * 20 working days approx)
-  const fullTimeTarget = 160; // standard monthly hours
-  const percentageOfTarget = Math.min(100, (totalWorkingHours / fullTimeTarget) * 100);
-  const gaugeColor = percentageOfTarget >= 90 ? "#22c55e" : percentageOfTarget >= 70 ? "#f97316" : "#ef4444";
 
   const monthName = currentDate.toLocaleDateString("en-GB", {
     month: "long",
@@ -190,19 +137,15 @@ export default function AttendanceHistoryPage() {
   });
 
   const exportToCSV = () => {
-    const headers = ["Date", "Day", "First In", "Last Out", "Total Hrs", "Status"];
+    const headers = ["Date", "First In", "Last Out", "Status"];
     const rows = allDates.map(dateStr => {
       const day = attendanceByDate[dateStr];
       const [y, m, d] = dateStr.split("-");
       const displayDate = new Date(Date.UTC(y, m-1, d)).toLocaleDateString("en-GB");
-      const weekday = getWeekday(dateStr);
-      const totalHrs = formatHours(calculateTotalHours(day?.firstIn, day?.lastOut));
       return [
         displayDate,
-        weekday,
         day?.firstIn || "-",
         day?.lastOut || "-",
-        totalHrs,
         day?.status || "No punch",
       ];
     });
@@ -252,10 +195,9 @@ export default function AttendanceHistoryPage() {
           </Button>
         </Flex>
 
-        {/* Monthly Summary Card with Circular Gauge */}
         <Card mb="4">
           <Flex justify="between" align="center" mb="3" wrap="wrap" gap="2">
-            <Heading size="4">Monthly Summary – {monthName}</Heading>
+            <Heading size="4">Attendance Summary for {monthName}</Heading>
             <Flex gap="2" align="center">
               <Button variant="soft" onClick={prevMonth} size="1">← Prev</Button>
               <Button variant="soft" onClick={nextMonth} size="1">Next →</Button>
@@ -267,65 +209,26 @@ export default function AttendanceHistoryPage() {
               </Button>
             </Flex>
           </Flex>
-
-          {loading && <Text>Loading monthly data...</Text>}
+          {loading && <Text>Loading chart data...</Text>}
           {error && <Text color="red">{error}</Text>}
           {!loading && !error && (
-            <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-              {/* Circular Gauge */}
-              <div className="flex flex-col items-center">
-                <div className="relative w-32 h-32">
-                  <svg viewBox="0 0 100 100" className="w-full h-full">
-                    <circle cx="50" cy="50" r="45" fill="none" stroke="#e5e7eb" strokeWidth="10" />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="45"
-                      fill="none"
-                      stroke={gaugeColor}
-                      strokeWidth="10"
-                      strokeDasharray={`${(percentageOfTarget / 100) * 283} 283`}
-                      strokeDashoffset="0"
-                      transform="rotate(-90 50 50)"
-                    />
-                    <text x="50" y="45" textAnchor="middle" fontSize="14" fontWeight="bold" fill="#1f2937">
-                      {Math.round(percentageOfTarget)}%
-                    </text>
-                    <text x="50" y="62" textAnchor="middle" fontSize="9" fill="#6b7280">
-                      of target
-                    </text>
-                  </svg>
-                </div>
-                <div className="mt-2 text-center">
-                  <Text size="2" color="gray">Total Working Hours</Text>
-                  <Text size="6" weight="bold" className="text-blue-700">{totalWorkingHoursFormatted}</Text>
-                </div>
-              </div>
-
-              {/* Summary Stats */}
-              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-green-50 rounded-lg p-3 text-center shadow-sm">
-                  <Text size="2" color="gray">Days Worked</Text>
-                  <Text size="5" weight="bold" className="text-green-700">{totalDaysWorked}</Text>
-                </div>
-                <div className="bg-orange-50 rounded-lg p-3 text-center shadow-sm">
-                  <Text size="2" color="gray">Late Arrivals</Text>
-                  <Text size="5" weight="bold" className="text-orange-700">{totalLate}</Text>
-                </div>
-                <div className="bg-red-50 rounded-lg p-3 text-center shadow-sm">
-                  <Text size="2" color="gray">Absent Days</Text>
-                  <Text size="5" weight="bold" className="text-red-700">{totalAbsent}</Text>
-                </div>
-                <div className="bg-blue-50 rounded-lg p-3 text-center shadow-sm">
-                  <Text size="2" color="gray">Avg Daily Hours</Text>
-                  <Text size="5" weight="bold" className="text-blue-700">{averageDailyHoursFormatted}</Text>
-                </div>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value">
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           )}
         </Card>
 
-        {/* Daily Details Table (unchanged except added Total Hrs column) */}
         <Card>
           <Flex justify="between" align="center" mb="4" wrap="wrap" gap="3">
             <Heading size="4">Daily Details</Heading>
@@ -364,7 +267,6 @@ export default function AttendanceHistoryPage() {
                     <Table.ColumnHeaderCell>Day</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>First In</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>Last Out</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>Total Hrs</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>Status</Table.ColumnHeaderCell>
                   </Table.Row>
                 </Table.Header>
@@ -379,7 +281,6 @@ export default function AttendanceHistoryPage() {
                     });
                     const weekday = getWeekday(dateStr);
                     const isWeekend = weekday === "Sat" || weekday === "Sun";
-                    const totalHrs = formatHours(calculateTotalHours(day?.firstIn, day?.lastOut));
                     return (
                       <Table.Row key={dateStr} style={isWeekend ? { backgroundColor: "#f8fafc" } : {}}>
                         <Table.RowHeaderCell>{displayDate}</Table.RowHeaderCell>
@@ -399,9 +300,6 @@ export default function AttendanceHistoryPage() {
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
-                        </Table.Cell>
-                        <Table.Cell>
-                          <span className="font-medium text-blue-700">{totalHrs}</span>
                         </Table.Cell>
                         <Table.Cell>
                           {day?.status ? (
@@ -425,7 +323,7 @@ export default function AttendanceHistoryPage() {
                   })}
                   {filteredDates.length === 0 && (
                     <Table.Row>
-                      <Table.Cell colSpan={6} align="center">
+                      <Table.Cell colSpan={5} align="center">
                         <Text size="2" color="gray">No records match the filter</Text>
                       </Table.Cell>
                     </Table.Row>

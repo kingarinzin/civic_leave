@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     }
 
     // ==============================
-    // ✅ Chairperson Restriction (only one)
+    // ✅ 2️⃣ Chairperson Restriction
     // ==============================
     if (role === "Chairperson") {
       const existingChair = await usersCollection.findOne({
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     }
 
     // ==================================
-    // ✅ Secretary Service Restriction (only one)
+    // ✅ 2b️⃣ Secretary Service Restriction
     // ==================================
     if (role === "SecretaryService") {
       const existingSecretaryService = await usersCollection.findOne({
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     }
 
     // ==================================
-    // ✅ Division Head Restriction (one per division)
+    // ✅ 3️⃣ Division Head Restriction
     // ==================================
     if (role === "DivisionHead") {
       if (!user.divisionId) {
@@ -115,7 +115,7 @@ export async function POST(req: Request) {
     }
 
     // ==================================
-    // ✅ Department Head Restriction (one per department)
+    // ✅ 4️⃣ Department Head Restriction
     // ==================================
     if (role === "DepartmentHead") {
       if (!user.departmentId) {
@@ -140,24 +140,24 @@ export async function POST(req: Request) {
     }
 
     // ==================================
-    // ✅ Maximum 3 Commissioners (updated from 2 to 3)
+    // ✅ 5️⃣ Maximum 2 Commissioners
     // ==================================
     if (role === "Commissioner") {
       const commissionerCount = await usersCollection.countDocuments({
         role: "Commissioner",
       });
 
-      // If user is already commissioner, allow the update
-      if (user.role !== "Commissioner" && commissionerCount >= 3) {
+      // If user is already commissioner, allow
+      if (user.role !== "Commissioner" && commissionerCount >= 2) {
         return NextResponse.json(
-          { error: "Maximum 3 Commissioners allowed" },
+          { error: "Maximum 2 Commissioners allowed" },
           { status: 400 }
         );
       }
     }
 
     // ==================================
-    // ✅ Update Role
+    // ✅ 6️⃣ Update Role
     // ==================================
     await usersCollection.updateOne(
       { _id: new ObjectId(userId) },
