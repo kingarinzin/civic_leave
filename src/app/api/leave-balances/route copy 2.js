@@ -3,14 +3,7 @@ import { ObjectId } from "mongodb";
 
 const getYear = () => new Date().getFullYear();
 
-// Helper: max total balance for each leave type
-const getMaxBalance = (leaveTypeName) => {
-  const name = leaveTypeName?.toLowerCase() || "";
-  if (name.includes("annual")) return 51;
-  return Infinity;
-};
-
-// ================= GET (unchanged) =================
+// ================= GET (show all users for a given year) =================
 export async function GET(req) {
   try {
     const client = await clientPromise;
@@ -144,7 +137,7 @@ export async function GET(req) {
   }
 }
 
-// ================= POST (unchanged) =================
+// ================= POST (Allocate / Reallocate All Users for a specific year) =================
 export async function POST(req) {
   try {
     const client = await clientPromise;
@@ -155,28 +148,11 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Year and allocation data are required" }), { status: 400 });
     }
 
-    const leaveTypes = await db.collection("leave-types").find({}).toArray();
-    const cappedInfo = [];
-
-    // Validate inputs
-    for (const lt of leaveTypes) {
-      const raw = Number(allocation[lt._id] || 0);
-      if (isNaN(raw) || raw < 0) {
-        return new Response(
-          JSON.stringify({ error: `Invalid number for ${lt.name}` }),
-          { status: 400 }
-        );
-      }
-    }
-
     const prevYear = year - 1;
     const users = await db.collection("users").find({}).toArray();
+    const leaveTypes = await db.collection("leave-types").find({}).toArray();
 
     for (const user of users) {
-      const existing = await db.collection("leave_balances").findOne({
-        userId: user._id,
-        year,
-      });
       const prev = await db.collection("leave_balances").findOne({
         userId: user._id,
         year: prevYear,
@@ -185,8 +161,9 @@ export async function POST(req) {
       const leaves = [];
 
       for (const lt of leaveTypes) {
-        const rawAllocation = Number(allocation[lt._id] || 0);
+        const newAllocation = Number(allocation[lt._id] || 0);
         let carry = 0;
+
         if (prev) {
           const prevLeave = prev.leaves?.find(
             (l) => l.leaveTypeId.toString() === lt._id.toString()
@@ -194,58 +171,26 @@ export async function POST(req) {
           if (prevLeave) carry = prevLeave.balance;
         }
 
-        let used = 0;
-        if (existing) {
-          const existingLeave = existing.leaves?.find(
-            (l) => l.leaveTypeId.toString() === lt._id.toString()
-          );
-          if (existingLeave) used = existingLeave.used || 0;
+        let finalBalance = newAllocation;
+
+        // Annual carry forward (max 51)
+        if (lt.name?.toLowerCase().includes("annual")) {
+          finalBalance = Math.min(carry + newAllocation, 51);
         }
 
-        const isAnnual = lt.name?.toLowerCase().includes("annual");
-        const isCasual = lt.name?.toLowerCase().includes("casual");
-        const isEOL = lt.name?.toLowerCase().includes("eol");
-
-        let finalBalance = 0;
-
-        if (isAnnual) {
-          // Balance = capped total (carry + allocated), no subtraction of used
-          const totalEntitlement = carry + rawAllocation;
-          const maxCap = getMaxBalance(lt.name);
-          let cappedTotal = totalEntitlement;
-          if (cappedTotal > maxCap) {
-            cappedInfo.push({
-              leaveType: lt.name,
-              originalTotal: totalEntitlement,
-              cappedTo: maxCap,
-            });
-            cappedTotal = maxCap;
-          }
-          finalBalance = cappedTotal;
-        } else if (isCasual || isEOL) {
-          // No carry, balance = raw allocation (no cap unless added)
-          finalBalance = rawAllocation;
-        } else {
-          // Other types – optional cap, no carry
-          const totalEntitlement = rawAllocation;
-          const maxCap = getMaxBalance(lt.name);
-          let cappedTotal = totalEntitlement;
-          if (cappedTotal > maxCap) {
-            cappedInfo.push({
-              leaveType: lt.name,
-              originalTotal: totalEntitlement,
-              cappedTo: maxCap,
-            });
-            cappedTotal = maxCap;
-          }
-          finalBalance = cappedTotal;
+        // Casual + EOL = no carry
+        if (
+          lt.name?.toLowerCase().includes("casual") ||
+          lt.name?.toLowerCase().includes("eol")
+        ) {
+          finalBalance = newAllocation;
         }
 
         leaves.push({
           leaveTypeId: lt._id,
           leaveTypeName: lt.name,
-          allocated: rawAllocation,
-          used: used,
+          allocated: newAllocation,
+          used: 0,
           balance: finalBalance,
         });
       }
@@ -269,16 +214,8 @@ export async function POST(req) {
       );
     }
 
-    let responseMessage = `Leave allocation completed for ${year}`;
-    if (cappedInfo.length > 0) {
-      const details = cappedInfo.map(
-        (c) => `${c.leaveType}: total ${c.originalTotal} → ${c.cappedTo} days`
-      ).join(", ");
-      responseMessage += ` (capped: ${details})`;
-    }
-
     return new Response(
-      JSON.stringify({ message: responseMessage, capped: cappedInfo }),
+      JSON.stringify({ message: `Leave allocation completed for ${year}` }),
       { status: 201 }
     );
   } catch (error) {
@@ -286,7 +223,7 @@ export async function POST(req) {
   }
 }
 
-// ================= PUT (FIXED – never produces negative balances) =================
+// ================= PUT (Edit Single User) =================
 export async function PUT(req) {
   try {
     const client = await clientPromise;
@@ -295,79 +232,10 @@ export async function PUT(req) {
     const { _id, leaves, remarks } = await req.json();
     if (!_id) throw new Error("ID required");
 
-    const existing = await db.collection("leave_balances").findOne({ _id: new ObjectId(_id) });
-    if (!existing) throw new Error("Record not found");
-
-    // Fetch previous year's record to get carry for each leave type
-    const year = existing.year;
-    const prevYear = year - 1;
-    const user = await db.collection("users").findOne({ _id: existing.userId });
-    if (!user) throw new Error("User not found");
-
-    const prevRecord = await db.collection("leave_balances").findOne({
-      userId: existing.userId,
-      year: prevYear,
-    });
-
-    const cappedInfo = [];
-    const updatedLeaves = [];
-
-    for (const newLeaf of leaves) {
-      const oldLeaf = existing.leaves.find(
-        (l) => l.leaveTypeId.toString() === newLeaf.leaveTypeId.toString()
-      );
-
-      const newAllocated = Number(newLeaf.allocated) || 0;
-      const isAnnual = newLeaf.leaveTypeName?.toLowerCase().includes("annual");
-
-      let used = 0;
-      if (oldLeaf) used = Number(oldLeaf.used) || 0;
-
-      let balance = 0;
-      let carry = 0;
-
-      if (isAnnual) {
-        // ✅ CORRECT: get carry from previous year's balance
-        if (prevRecord) {
-          const prevLeave = prevRecord.leaves?.find(
-            (l) => l.leaveTypeId.toString() === newLeaf.leaveTypeId.toString()
-          );
-          if (prevLeave) carry = Number(prevLeave.balance) || 0;
-        }
-        const total = carry + newAllocated;
-        const maxCap = getMaxBalance(newLeaf.leaveTypeName); // 51
-        if (total > maxCap) {
-          cappedInfo.push({
-            leaveType: newLeaf.leaveTypeName,
-            originalTotal: total,
-            cappedTo: maxCap,
-          });
-          balance = maxCap;
-        } else {
-          balance = total;
-        }
-      } else {
-        // Non-annual: no carry, balance = allocated (optional cap)
-        balance = newAllocated;
-        const maxCap = getMaxBalance(newLeaf.leaveTypeName);
-        if (balance > maxCap) {
-          cappedInfo.push({
-            leaveType: newLeaf.leaveTypeName,
-            originalTotal: balance,
-            cappedTo: maxCap,
-          });
-          balance = maxCap;
-        }
-      }
-
-      updatedLeaves.push({
-        leaveTypeId: newLeaf.leaveTypeId,
-        leaveTypeName: newLeaf.leaveTypeName,
-        allocated: newAllocated,
-        used: used, // preserved, never subtracted
-        balance: balance,
-      });
-    }
+    const updatedLeaves = leaves.map((l) => ({
+      ...l,
+      balance: Number(l.allocated) - Number(l.used || 0),
+    }));
 
     await db.collection("leave_balances").updateOne(
       { _id: new ObjectId(_id) },
@@ -380,24 +248,13 @@ export async function PUT(req) {
       }
     );
 
-    let responseMessage = "Updated successfully";
-    if (cappedInfo.length > 0) {
-      const details = cappedInfo.map(
-        (c) => `${c.leaveType}: total ${c.originalTotal} → ${c.cappedTo} days`
-      ).join(", ");
-      responseMessage += ` (capped: ${details})`;
-    }
-
-    return new Response(
-      JSON.stringify({ message: responseMessage, capped: cappedInfo }),
-      { status: 200 }
-    );
+    return new Response(JSON.stringify({ message: "Updated successfully" }), { status: 200 });
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 }
 
-// ================= DELETE (unchanged) =================
+// ================= DELETE =================
 export async function DELETE(req) {
   try {
     const client = await clientPromise;

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Trash2, Pencil, Save, Check, X, Plus, Download } from "lucide-react";
+import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 // Helper: max total balance for each leave type (display only)
@@ -51,68 +51,6 @@ export default function LeaveBalancesPageContent() {
     return data.some((user) =>
       user.leaves?.some((leave) => (leave.allocated || 0) > 0)
     );
-  };
-
-  // ================= EXPORT TO CSV =================
-  const exportToCSV = () => {
-    if (!data || data.length === 0) {
-      showNotification("No data to export", "error");
-      return;
-    }
-
-    // Build header row
-    const headers = ["#", "User"];
-    leaveTypes.forEach((lt) => {
-      headers.push(`${lt.name} Alloc`);
-      headers.push(`${lt.name} Used`);
-      headers.push(`${lt.name} Bal`);
-    });
-    headers.push("Remarks");
-
-    // Build rows
-    const rows = data.map((row, idx) => {
-      const rowData = [(idx + 1).toString(), row.userName || ""];
-      leaveTypes.forEach((lt) => {
-        const leave = row.leaves?.find(
-          (l) => l.leaveTypeId.toString() === lt._id.toString()
-        );
-        rowData.push(leave?.allocated ?? 0);
-        rowData.push(leave?.used ?? 0);
-        rowData.push(leave?.balance ?? 0);
-      });
-      rowData.push(row.remarks || "");
-      return rowData;
-    });
-
-    // Escape fields that contain commas, quotes, or newlines
-    const escapeCSV = (field) => {
-      if (field === null || field === undefined) return "";
-      const str = String(field);
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
-    // Build CSV string
-    const csvRows = [
-      headers.map(escapeCSV).join(","),
-      ...rows.map((row) => row.map(escapeCSV).join(",")),
-    ];
-    const csvContent = csvRows.join("\n");
-
-    // Download
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.href = url;
-    link.setAttribute("download", `leave_balances_${selectedYear}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    showNotification(`Exported ${data.length} records for ${selectedYear}`);
   };
 
   // ================= ADD =================
@@ -287,36 +225,23 @@ export default function LeaveBalancesPageContent() {
               </div>
             </div>
             {!showForm && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={exportToCSV}
-                  className="flex items-center gap-1 px-2 py-1 bg-white border rounded text-xs font-medium hover:border-black shadow-sm"
-                  title="Download CSV backup"
-                >
-                  <Download size={12} /> Export CSV
-                </button>
-                <button
-                  onClick={() => {
-                    setShowForm(true);
-                    setEditData(null);
-                    setFormData({});
-                    setRemarks("");
-                  }}
-                  disabled={isBulkAllocationDisabled}
-                  className={`flex items-center gap-1 px-2 py-1 bg-white border rounded text-xs font-medium whitespace-nowrap shadow-sm ${
-                    isBulkAllocationDisabled
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:border-black"
-                  }`}
-                  title={
-                    isBulkAllocationDisabled
-                      ? `Bulk allocation already done for ${selectedYear}`
-                      : ""
-                  }
-                >
-                  <Plus size={12} /> Allocate {selectedYear}
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  setShowForm(true);
+                  setEditData(null);
+                  setFormData({});
+                  setRemarks("");
+                }}
+                disabled={isBulkAllocationDisabled}
+                className={`flex items-center gap-1 px-2 py-1 bg-white border rounded text-xs font-medium whitespace-nowrap shadow-sm ${
+                  isBulkAllocationDisabled
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:border-black"
+                }`}
+                title={isBulkAllocationDisabled ? `Bulk allocation already done for ${selectedYear}` : ""}
+              >
+                <Plus size={12} /> Allocate {selectedYear}
+              </button>
             )}
           </div>
         </div>
@@ -441,7 +366,7 @@ export default function LeaveBalancesPageContent() {
                     );
                     const alloc = leave?.allocated || 0;
                     const used = leave?.used || 0;
-                    const bal = leave?.balance || 0;
+                    const bal = leave?.balance || 0; // ✅ Balance is stored capped total
                     return (
                       <React.Fragment key={lt._id}>
                         <td className="px-1 py-1.5 text-center border">{alloc}</td>
