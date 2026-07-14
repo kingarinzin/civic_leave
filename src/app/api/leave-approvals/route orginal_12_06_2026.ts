@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import jwt from "jsonwebtoken";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
-import { createTransporter } from "@/lib/mailer";
 
-// ========== Helper functions ==========
+// ========== Helper functions (keep as they are) ==========
+const getYear = () => new Date().getFullYear();
 
-function getTokenUserId(req: NextRequest): string {
+function getTokenUserId(req: Request): string {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     throw new Error("Unauthorized");
@@ -22,7 +21,7 @@ function normalizeId(value: unknown): string {
   if (typeof value === "string") return value;
   if (value instanceof ObjectId) return value.toString();
   if (typeof value === "object" && value !== null) {
-    const obj = value as { _id?: unknown };
+    const obj = value as any;
     if (obj._id instanceof ObjectId) return obj._id.toString();
     if (typeof obj.toString === "function") {
       const str = obj.toString();
@@ -32,8 +31,8 @@ function normalizeId(value: unknown): string {
   return "";
 }
 
-// ========== GET handler ==========
-export async function GET(req: NextRequest) {
+// ========== GET handler (unchanged) ==========
+export async function GET(req: Request) {
   try {
     const currentUserId = getTokenUserId(req);
     const client = await clientPromise;
@@ -106,12 +105,10 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ========== POST handler ==========
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     const currentUserId = getTokenUserId(req);
-    const body = await req.json();
-    const { applicationId, action, remarks } = body;
+    const { applicationId, action, remarks } = await req.json();
 
     if (!applicationId || !["approve", "reject"].includes(action)) {
       return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
@@ -153,69 +150,76 @@ export async function POST(req: NextRequest) {
 
     const newStatus = action === "approve" ? "approved" : "rejected";
 
-    // ========== BALANCE DEDUCTION (skipBalance-aware) ==========
-    if (newStatus === "approved") {
-      const leaveType = await db.collection("leave-types").findOne({
-        _id: new ObjectId(leaveApplication.leaveTypeId),
-      });
-      const shouldDeductBalance = leaveType?.skipBalance !== true;
+    // ========== BALANCE DEDUCTION ON APPROVAL (SAFE VERSION) ==========
+    // ========== BALANCE DEDUCTION ON APPROVAL (simpler, no aggregation) ==========
+if (newStatus === "approved") {
+  const leaveYear = new Date(leaveApplication.fromDate).getFullYear();
+  const applicantObjectId = new ObjectId(leaveApplication.userId);
+  const leaveTypeIdObj = new ObjectId(leaveApplication.leaveTypeId);
+  const daysToDeduct = Number(leaveApplication.days);
 
-      if (shouldDeductBalance) {
-        const leaveYear = new Date(leaveApplication.fromDate).getFullYear();
-        const applicantObjectId = new ObjectId(leaveApplication.userId);
-        const leaveTypeIdObj = new ObjectId(leaveApplication.leaveTypeId);
-        const daysToDeduct = Number(leaveApplication.days);
+  // Fetch current leave balance document
+  const balanceDoc = await db.collection("leave_balances").findOne({
+    userId: applicantObjectId,
+    year: leaveYear,
+  });
 
-        const balanceDoc = await db.collection("leave_balances").findOne({
-          userId: applicantObjectId,
-          year: leaveYear,
-        });
+  if (!balanceDoc) {
+    return NextResponse.json(
+      { error: "Leave balance record not found for this user/year" },
+      { status: 404 }
+    );
+  }
 
-        if (!balanceDoc) {
-          return NextResponse.json(
-            { error: "Leave balance record not found for this user/year" },
-            { status: 404 }
-          );
-        }
+  // Find the specific leave type entry
+  const leaveIndex = balanceDoc.leaves.findIndex(
+    (l: any) => l.leaveTypeId.toString() === leaveTypeIdObj.toString()
+  );
 
-        // Find the specific leave type in the balance array
-        const leaveIndex = balanceDoc.leaves.findIndex(
-          (l: any) => l.leaveTypeId.toString() === leaveTypeIdObj.toString()
-        );
+  if (leaveIndex === -1) {
+    return NextResponse.json(
+      { error: "Leave type not found in balance record" },
+      { status: 404 }
+    );
+  }
 
-        if (leaveIndex === -1) {
-          return NextResponse.json(
-            { error: "Leave type not found in balance record" },
-            { status: 404 }
-          );
-        }
+  const currentUsed = Number(balanceDoc.leaves[leaveIndex].used) || 0;
+  const allocated = Number(balanceDoc.leaves[leaveIndex].allocated);
+  const remainingBalance = allocated - currentUsed;
 
-        const currentUsed = Number(balanceDoc.leaves[leaveIndex].used) || 0;
-        const allocated = Number(balanceDoc.leaves[leaveIndex].allocated);
-        const remainingBalance = allocated - currentUsed;
+  if (daysToDeduct > remainingBalance) {
+    return NextResponse.json(
+      { error: "Insufficient leave balance (balance changed after application)" },
+      { status: 400 }
+    );
+  }
 
-        if (daysToDeduct > remainingBalance) {
-          return NextResponse.json(
-            { error: "Insufficient leave balance (balance changed after application)" },
-            { status: 400 }
-          );
-        }
+  // Update used and balance
+  const newUsed = currentUsed + daysToDeduct;
+  const newBalance = allocated - newUsed;
 
-        const newUsed = currentUsed + daysToDeduct;
-        const newBalance = allocated - newUsed;
-
-        await db.collection("leave_balances").updateOne(
-          { _id: balanceDoc._id },
-          {
-            $set: {
-              [`leaves.${leaveIndex}.used`]: newUsed,
-              [`leaves.${leaveIndex}.balance`]: newBalance,
-              updatedAt: new Date(),
-            },
-          }
-        );
-      }
+  // Update only the specific leave entry using $set with array index
+  const updateQuery = {
+    $set: {
+      [`leaves.${leaveIndex}.used`]: newUsed,
+      [`leaves.${leaveIndex}.balance`]: newBalance,
+      updatedAt: new Date()
     }
+  };
+
+  const updateResult = await db.collection("leave_balances").updateOne(
+    { _id: balanceDoc._id },
+    updateQuery
+  );
+
+  if (updateResult.matchedCount === 0) {
+    return NextResponse.json(
+      { error: "Failed to update leave balance" },
+      { status: 500 }
+    );
+  }
+}
+    // =============================================================
 
     // Update application status
     await db.collection("leave_applications").updateOne(
@@ -235,43 +239,6 @@ export async function POST(req: NextRequest) {
         },
       }
     );
-
-    // ========== SEND EMAIL TO APPLICANT ==========
-    const applicantUser = await db.collection("users").findOne({
-      _id: new ObjectId(leaveApplication.userId),
-    });
-    if (applicantUser?.email) {
-      try {
-        const transporter = createTransporter();
-        const statusText = newStatus === "approved" ? "Approved" : "Rejected";
-        const color = newStatus === "approved" ? "#28a745" : "#dc3545";
-        const mailHtml = `
-          <div style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2 style="color:${color};">Leave ${statusText}</h2>
-            <p>Hi ${applicantUser.name || "User"},</p>
-            <p>Your leave request has been <strong>${statusText}</strong> by ${currentUser.name || "Admin"}.</p>
-            <p><strong>Leave Details:</strong></p>
-            <ul>
-              <li>Leave Type: ${leaveApplication.leaveTypeName || "—"}</li>
-              <li>From: ${leaveApplication.fromDate}</li>
-              <li>To: ${leaveApplication.toDate}</li>
-              <li>Days: ${leaveApplication.days}</li>
-            </ul>
-            ${remarks ? `<p><strong>Remarks:</strong> ${remarks}</p>` : ""}
-          </div>
-        `;
-
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: applicantUser.email,
-          subject: `Leave ${statusText}`,
-          html: mailHtml,
-        });
-      } catch (emailErr) {
-        console.error("Failed to send email to applicant:", emailErr);
-        // Do not fail the approval; log the error
-      }
-    }
 
     return NextResponse.json({
       success: true,

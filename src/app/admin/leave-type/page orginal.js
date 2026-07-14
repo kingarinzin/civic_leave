@@ -18,7 +18,6 @@ export default function LeaveTypePage() {
     name: "",
     remarks: "",
     skipApproval: false,
-    skipBalance: false, // NEW
   });
 
   // ================== FETCH LEAVE TYPES ==================
@@ -47,7 +46,7 @@ export default function LeaveTypePage() {
   };
 
   const resetForm = () => {
-    setFormData({ name: "", remarks: "", skipApproval: false, skipBalance: false });
+    setFormData({ name: "", remarks: "", skipApproval: false });
     setEditData(null);
     setShowForm(false);
   };
@@ -64,7 +63,6 @@ export default function LeaveTypePage() {
           name: formData.name,
           remarks: formData.remarks,
           skipApproval: formData.skipApproval,
-          skipBalance: formData.skipBalance, // NEW
         }),
         headers: { "Content-Type": "application/json" },
       });
@@ -83,7 +81,6 @@ export default function LeaveTypePage() {
       name: item.name,
       remarks: item.remarks || "",
       skipApproval: item.skipApproval === true,
-      skipBalance: item.skipBalance === true, // NEW
     });
     setShowForm(true);
   };
@@ -97,7 +94,6 @@ export default function LeaveTypePage() {
           name: formData.name,
           remarks: formData.remarks,
           skipApproval: formData.skipApproval,
-          skipBalance: formData.skipBalance, // NEW
         }),
         headers: { "Content-Type": "application/json" },
       });
@@ -183,7 +179,7 @@ export default function LeaveTypePage() {
               onClick={() => {
                 setShowForm(true);
                 setEditData(null);
-                setFormData({ name: "", remarks: "", skipApproval: false, skipBalance: false });
+                setFormData({ name: "", remarks: "", skipApproval: false });
               }}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
@@ -255,20 +251,6 @@ export default function LeaveTypePage() {
                   Auto‑approve (skip hierarchy)
                 </label>
               </div>
-              {/* NEW: Skip Balance checkbox */}
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  name="skipBalance"
-                  id="skipBalance"
-                  checked={formData.skipBalance}
-                  onChange={handleFormChange}
-                  className="w-4 h-4"
-                />
-                <label htmlFor="skipBalance" className="text-sm font-medium">
-                  Skip balance deduction (unlimited balance)
-                </label>
-              </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-5">
@@ -314,7 +296,7 @@ export default function LeaveTypePage() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Table - Improved UI matching Department List */}
         <div className="bg-white shadow rounded-lg overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -351,10 +333,6 @@ export default function LeaveTypePage() {
                 <th className="px-6 py-3 text-left text-sm font-medium uppercase">
                   Auto Approve
                 </th>
-                {/* NEW: Skip Balance column */}
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Skip Balance
-                </th>
                 <th className="px-6 py-3 text-left text-sm font-medium uppercase">
                   Actions
                 </th>
@@ -373,10 +351,6 @@ export default function LeaveTypePage() {
                     </td>
                     <td className="px-6 py-3 text-sm">
                       {item.skipApproval ? "✅ Yes" : "❌ No"}
-                    </td>
-                    {/* NEW: display skipBalance */}
-                    <td className="px-6 py-3 text-sm">
-                      {item.skipBalance ? "✅ Yes" : "❌ No"}
                     </td>
                     <td className="px-6 py-3 text-sm flex gap-2">
                       <button
@@ -397,7 +371,7 @@ export default function LeaveTypePage() {
               ) : (
                 <tr>
                   <td
-                    colSpan="6" // increased column count
+                    colSpan="5"
                     className="text-center py-6 text-gray-500"
                   >
                     No records found

@@ -36,8 +36,7 @@ export async function POST(req) {
     const result = await db.collection("leave-types").insertOne({
       name: body.name,
       remarks: body.remarks || "",
-      skipApproval: body.skipApproval === true,
-      skipBalance: body.skipBalance === true,   // NEW
+      skipApproval: body.skipApproval === true,   // ✅ new field
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -75,15 +74,14 @@ export async function PUT(req) {
     const client = await clientPromise;
     const db = client.db("civic_leave_db");
 
-    const { _id, name, remarks, skipApproval, skipBalance } = await req.json();
+    const { _id, name, remarks, skipApproval } = await req.json();
 
     if (!_id) throw new Error("ID is required for updating");
 
     const updateData = {
       name,
       remarks,
-      skipApproval: skipApproval === true,
-      skipBalance: skipBalance === true,   // NEW
+      skipApproval: skipApproval === true,   // ✅ new field
       updatedAt: new Date(),
     };
 

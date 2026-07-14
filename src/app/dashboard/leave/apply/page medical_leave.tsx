@@ -9,8 +9,7 @@ import { Badge, Box, Button, Card, Checkbox, Flex, Heading, Separator, Text, Tex
 type LeaveType = {
   _id: string;
   name: string;
-  skipApproval?: boolean;   // for auto‑approval
-  skipBalance?: boolean;    // NEW: if true, leave does NOT consume balance
+  skipApproval?: boolean; // NEW: added to support balance skip
 };
 
 type LeaveEntry = {
@@ -139,12 +138,12 @@ export default function ApplyLeavePage() {
     loadData();
   }, [router]);
 
-  // Determine if selected leave type skips balance deduction
+  // NEW: Determine if selected leave type skips balance & approval
   const selectedLeaveType = useMemo(() => {
     return leaveTypes.find(lt => lt._id === leaveTypeId);
   }, [leaveTypes, leaveTypeId]);
 
-  const skipBalance = selectedLeaveType?.skipBalance === true; // NEW: dedicated field
+  const skipBalance = selectedLeaveType?.skipApproval === true;
 
   const selectedBalance = useMemo(() => {
     if (skipBalance) return Infinity; // No limit
@@ -210,7 +209,9 @@ export default function ApplyLeavePage() {
       return;
     }
 
-    // Balance check – only if the leave type requires a balance (skipBalance === false)
+    // Past dates are now allowed (removed validation)
+
+    // Balance check – only if the leave type requires a balance
     if (!skipBalance && parsedDays > selectedBalance) {
       setMessage("No. of days cannot exceed assigned leave balance");
       return;
@@ -350,6 +351,7 @@ export default function ApplyLeavePage() {
                     type="number"
                     step={isHalfDay ? "0.5" : "1"}
                     min={isHalfDay ? "0.5" : "1"}
+                    // Only set max if balance is NOT skipped
                     max={skipBalance ? undefined : (selectedBalance || undefined)}
                     value={days}
                     readOnly

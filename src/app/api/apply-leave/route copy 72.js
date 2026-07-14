@@ -158,15 +158,14 @@ export async function POST(req) {
       return NextResponse.json({ error: "You already have a leave application covering some of these dates" }, { status: 400 });
     }
 
-    // Fetch leave type to check skipApproval and skipBalance
+    // Fetch leave type to check skipApproval
     const leaveTypeDoc = await db.collection("leave-types").findOne({ _id: toObjectIdSafe(leaveTypeId) });
     if (!leaveTypeDoc) return NextResponse.json({ error: "Invalid leave type" }, { status: 400 });
-    const skipApproval = leaveTypeDoc.skipApproval === true;   // auto‑approve
-    const skipBalance = leaveTypeDoc.skipBalance === true;     // skip balance deduction
+    const skipApproval = leaveTypeDoc.skipApproval === true;
 
-    // Balance check only if NOT skipBalance
+    // ========== MODIFIED: Balance check only if NOT skipApproval ==========
     let leaveTypeName = leaveTypeDoc.name;
-    if (!skipBalance) {
+    if (!skipApproval) {
       const leaveBalance = await db.collection("leave_balances").findOne({ userId: userObjectId, year });
       if (!leaveBalance) return NextResponse.json({ error: "Leave balance not found" }, { status: 404 });
       const leaveType = leaveBalance.leaves?.find(entry => entry.leaveTypeId?.toString() === leaveTypeId);
@@ -176,6 +175,7 @@ export async function POST(req) {
       }
       leaveTypeName = leaveType.leaveTypeName || leaveTypeDoc.name;
     }
+    // ====================================================================
 
     // Save attachments
     let savedFileNames = [];
@@ -233,14 +233,15 @@ export async function POST(req) {
 
     const result = await db.collection("leave_applications").insertOne(insertData);
 
-    // Deduct balance only if NOT skipBalance and status is approved
-    if (finalStatus === "approved" && !skipBalance) {
+    // ========== MODIFIED: Only deduct balance if NOT skipApproval and approved ==========
+    if (finalStatus === "approved" && !skipApproval) {
       await db.collection("leave_balances").updateOne(
         { userId: userObjectId, year },
         { $inc: { [`leaves.$[elem].used`]: parsedDays } },
         { arrayFilters: [{ "elem.leaveTypeId": leaveTypeId }] }
       );
     }
+    // ===================================================================================
 
     const transporter = createTransporter();
     // Applicant email (always)

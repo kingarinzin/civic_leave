@@ -42,8 +42,9 @@ export async function GET(req) {
       return new NextResponse("Unauthorized approver", { status: 403 });
     }
 
-    // Skip if already processed
+    // ========== CRITICAL: Skip if already processed ==========
     if (leave.status !== "pending") {
+      // Mark token as used if not already
       if (!tokenRecord.used) {
         await db.collection("leave_action_tokens").updateOne(
           { _id: tokenRecord._id },
@@ -64,7 +65,7 @@ export async function GET(req) {
       return new NextResponse(message, { headers: { "Content-Type": "text/html" } });
     }
 
-    // 4. Process approval/rejection
+    // 4. Process approval/rejection (only if pending)
     const normalizedAction = action.toLowerCase();
     let newStatus;
     if (normalizedAction === "approve") {
@@ -75,58 +76,51 @@ export async function GET(req) {
       return new NextResponse("Invalid action", { status: 400 });
     }
 
-    // ========== DEDUCT BALANCE (skipBalance-aware) ==========
+    // Deduct balance only on approval
     if (newStatus === "approved") {
-      const leaveType = await db.collection("leave-types").findOne({
-        _id: new ObjectId(leave.leaveTypeId),
+      const leaveYear = new Date(leave.fromDate).getFullYear();
+      const applicantObjectId = new ObjectId(leave.userId);
+      const leaveTypeIdObj = new ObjectId(leave.leaveTypeId);
+      const daysToDeduct = Number(leave.days);
+
+      const balanceDoc = await db.collection("leave_balances").findOne({
+        userId: applicantObjectId,
+        year: leaveYear,
       });
-      const shouldDeductBalance = leaveType?.skipBalance !== true;
 
-      if (shouldDeductBalance) {
-        const leaveYear = new Date(leave.fromDate).getFullYear();
-        const applicantObjectId = new ObjectId(leave.userId);
-        const leaveTypeIdObj = new ObjectId(leave.leaveTypeId);
-        const daysToDeduct = Number(leave.days);
-
-        const balanceDoc = await db.collection("leave_balances").findOne({
-          userId: applicantObjectId,
-          year: leaveYear,
-        });
-
-        if (!balanceDoc) {
-          return new NextResponse("Leave balance record not found", { status: 404 });
-        }
-
-        const leaveIndex = balanceDoc.leaves.findIndex(
-          (l) => l.leaveTypeId.toString() === leaveTypeIdObj.toString()
-        );
-
-        if (leaveIndex === -1) {
-          return new NextResponse("Leave type not found in balance record", { status: 404 });
-        }
-
-        const currentUsed = Number(balanceDoc.leaves[leaveIndex].used) || 0;
-        const allocated = Number(balanceDoc.leaves[leaveIndex].allocated);
-        const remainingBalance = allocated - currentUsed;
-
-        if (daysToDeduct > remainingBalance) {
-          return new NextResponse("Insufficient leave balance", { status: 400 });
-        }
-
-        const newUsed = currentUsed + daysToDeduct;
-        const newBalance = allocated - newUsed;
-
-        await db.collection("leave_balances").updateOne(
-          { _id: balanceDoc._id },
-          {
-            $set: {
-              [`leaves.${leaveIndex}.used`]: newUsed,
-              [`leaves.${leaveIndex}.balance`]: newBalance,
-              updatedAt: new Date(),
-            },
-          }
-        );
+      if (!balanceDoc) {
+        return new NextResponse("Leave balance record not found", { status: 404 });
       }
+
+      const leaveIndex = balanceDoc.leaves.findIndex(
+        (l) => l.leaveTypeId.toString() === leaveTypeIdObj.toString()
+      );
+
+      if (leaveIndex === -1) {
+        return new NextResponse("Leave type not found in balance record", { status: 404 });
+      }
+
+      const currentUsed = Number(balanceDoc.leaves[leaveIndex].used) || 0;
+      const allocated = Number(balanceDoc.leaves[leaveIndex].allocated);
+      const remainingBalance = allocated - currentUsed;
+
+      if (daysToDeduct > remainingBalance) {
+        return new NextResponse("Insufficient leave balance", { status: 400 });
+      }
+
+      const newUsed = currentUsed + daysToDeduct;
+      const newBalance = allocated - newUsed;
+
+      await db.collection("leave_balances").updateOne(
+        { _id: balanceDoc._id },
+        {
+          $set: {
+            [`leaves.${leaveIndex}.used`]: newUsed,
+            [`leaves.${leaveIndex}.balance`]: newBalance,
+            updatedAt: new Date(),
+          },
+        }
+      );
     }
 
     // Update leave status
@@ -146,37 +140,20 @@ export async function GET(req) {
       { $set: { used: true, usedAt: new Date() } }
     );
 
-    // ========== SEND EMAIL TO APPLICANT (rich template, with approver name) ==========
+    // Send email to applicant (optional)
     const applicantUser = await db.collection("users").findOne({ _id: new ObjectId(leave.userId) });
     if (applicantUser?.email) {
-      // Fetch the approver's name from the token (the person who clicked the link)
-      const approverUser = await db.collection("users").findOne({ _id: new ObjectId(tokenRecord.approverId) });
-      const approverName = approverUser?.name || "Approver";
-
       const transporter = createTransporter();
-      const statusText = newStatus === "approved" ? "Approved" : "Rejected";
-      const color = newStatus === "approved" ? "#28a745" : "#dc3545";
-      const mailHtml = `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2 style="color:${color};">Leave ${statusText}</h2>
-          <p>Hi ${applicantUser.name || "User"},</p>
-          <p>Your leave request has been <strong>${statusText}</strong> by ${approverName}.</p>
-          <p><strong>Leave Details:</strong></p>
-          <ul>
-            <li>Leave Type: ${leave.leaveTypeName || "—"}</li>
-            <li>From: ${leave.fromDate}</li>
-            <li>To: ${leave.toDate}</li>
-            <li>Days: ${leave.days}</li>
-          </ul>
-          <p style="color: #666; font-size: 0.9em;">This is an automated notification.</p>
-        </div>
-      `;
+      const applicantMailHtml =
+        newStatus === "approved"
+          ? `<div><h2 style="color:#28a745;">Leave Approved</h2><p>Hi ${applicantUser.name}, your leave has been approved.</p><p>From: ${leave.fromDate}<br>To: ${leave.toDate}</p></div>`
+          : `<div><h2 style="color:#dc3545;">Leave Rejected</h2><p>Hi ${applicantUser.name}, your leave has been rejected.</p><p>From: ${leave.fromDate}<br>To: ${leave.toDate}</p></div>`;
 
       await transporter.sendMail({
         from: process.env.EMAIL_USER,
         to: applicantUser.email,
-        subject: `Leave ${statusText}`,
-        html: mailHtml,
+        subject: `Leave ${newStatus}`,
+        html: applicantMailHtml,
       });
     }
 
