@@ -276,14 +276,6 @@ export default function Sidebar() {
             </button>
 
             <button
-              onClick={() => router.push("/dashboard/weekly-plan")}
-              className={navButtonClass(pathname === "/dashboard/weekly-plan")}
-            >
-              <Clock size={18} />
-              Weekly Plan
-            </button>
-
-            <button
               onClick={() => router.push("/admin/all-users")}
               className={navButtonClass(pathname === "/admin/all-users")}
             >
