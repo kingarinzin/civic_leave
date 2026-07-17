@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import {
@@ -14,7 +14,7 @@ import {
   TextField,
   Separator,
 } from '@radix-ui/themes';
-import { FaArrowLeft, FaEdit, FaSave, FaTrash, FaCopy, FaPlus, FaTimes, FaSearch, FaChevronDown } from 'react-icons/fa';
+import { FaArrowLeft, FaEdit, FaSave, FaTrash, FaCopy, FaPlus, FaTimes } from 'react-icons/fa';
 
 // ============================================
 // TYPES
@@ -28,7 +28,6 @@ interface Meeting {
   location: string;
   division: string;
   department: string;
-  divisionName: string;
   stakeholders: string;
   description: string;
 }
@@ -48,28 +47,14 @@ interface WeekPlan {
   updatedAt: string;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
 const DAYS: string[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const DIVISIONS: string[] = [
-  'Commission meeting',
-  'Commisison meeting on case',
-  'CEC',
-  'HRC',
-  'Finance Committe meeting',
-  'Endowment Committee meeting',
-  'CM on ATR apprisal',
-  'CM on complaints, IE, & ATR',
-  'CM on Judgment Appraisal',
-];
+const DIVISIONS: string[] = ['Administration', 'IT', 'Finance', 'HR', 'Operations', 'Legal', 'Communications'];
 
 const LOCATION_OPTIONS = [
-  'Druk Dradhir Khang',
-  'Chungchen Phurkhang',
-  'Taagtshang Sherab Jorden Khang',
-  'Meeting Room adjacent to PPD',
-  'Chhoesham',
+  'Druk Dradhir Khang1',
+  'Druk Dradhir Khang2',
+  'Druk Dradhir Khang3',
+  'Druk Dradhir Khang4',
   'Others',
 ];
 
@@ -82,32 +67,6 @@ const DIVISION_COLORS: Record<string, string> = {
   Legal: '#607d8b',
   Communications: '#00bcd4',
 };
-
-// =========================================================
-// TIME HELPER FUNCTIONS
-// =========================================================
-function parseTimeTo12(time24: string): { hour: number; minute: string; ampm: string } {
-  if (!time24) return { hour: 9, minute: '00', ampm: 'AM' };
-  const [h, m] = time24.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h % 12 || 12;
-  return { hour: hour12, minute: String(m).padStart(2, '0'), ampm };
-}
-
-function formatTimeTo24(hour: number, minute: string, ampm: string): string {
-  let h = hour;
-  if (ampm === 'PM' && h !== 12) h += 12;
-  if (ampm === 'AM' && h === 12) h = 0;
-  return `${String(h).padStart(2, '0')}:${minute}`;
-}
-
-function formatTimeDisplay(time: string): string {
-  if (!time) return 'All Day';
-  const [h, m] = time.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h % 12 || 12;
-  return `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
-}
 
 // =========================================================
 // Helper: Get formatted date for a given day (ordinal + month)
@@ -129,211 +88,6 @@ function getDateForDay(startDateStr: string, dayName: string): string {
   return `${ordinal(day)} ${month}`;
 }
 
-// =========================================================
-// SEARCHABLE DROPDOWN COMPONENTS (same as Add page)
-// =========================================================
-
-// Single-select searchable dropdown
-function SearchableSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  className,
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  options: string[];
-  placeholder: string;
-  className?: string;
-}) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const filteredOptions = options.filter((opt) =>
-    opt.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  return (
-    <div ref={containerRef} className={`relative ${className || ''}`}>
-      <div
-        className="flex items-center border border-slate-300 rounded px-3 py-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200 cursor-text"
-        onClick={() => setIsOpen(true)}
-      >
-        <FaSearch className="text-slate-400 mr-2 flex-shrink-0" size={14} />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setIsOpen(true);
-          }}
-          onFocus={() => setIsOpen(true)}
-          placeholder={value || placeholder}
-          className="flex-1 outline-none bg-transparent text-sm"
-        />
-        <FaChevronDown
-          className={`text-slate-400 ml-2 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          size={12}
-        />
-      </div>
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-48 overflow-y-auto">
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-slate-500">No options found</div>
-          ) : (
-            filteredOptions.map((opt) => (
-              <div
-                key={opt}
-                className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${value === opt ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-700'}`}
-                onClick={() => {
-                  onChange(opt);
-                  setSearchTerm('');
-                  setIsOpen(false);
-                }}
-              >
-                {opt}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Multi-select searchable dropdown
-function SearchableMultiSelect({
-  selected,
-  onChange,
-  options,
-  placeholder,
-  className,
-}: {
-  selected: string[];
-  onChange: (selected: string[]) => void;
-  options: string[];
-  placeholder: string;
-  className?: string;
-}) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const filteredOptions = options.filter((opt) =>
-    opt.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const toggleOption = (opt: string) => {
-    if (selected.includes(opt)) {
-      onChange(selected.filter((s) => s !== opt));
-    } else {
-      onChange([...selected, opt]);
-    }
-    setIsOpen(false);
-  };
-
-  const removeOption = (opt: string) => {
-    onChange(selected.filter((s) => s !== opt));
-  };
-
-  return (
-    <div ref={containerRef} className={`relative ${className || ''}`}>
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-1">
-          {selected.map((s) => (
-            <Badge
-              key={s}
-              variant="soft"
-              color="blue"
-              size="1"
-              className="flex items-center gap-1"
-            >
-              {s}
-              <button
-                type="button"
-                onClick={() => removeOption(s)}
-                className="text-blue-600 hover:text-blue-800 hover:bg-blue-200 rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none"
-              >
-                ✕
-              </button>
-            </Badge>
-          ))}
-        </div>
-      )}
-
-      <div
-        className="flex items-center border border-slate-300 rounded px-3 py-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200 cursor-text"
-        onClick={() => setIsOpen(true)}
-      >
-        <FaSearch className="text-slate-400 mr-2 flex-shrink-0" size={14} />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setIsOpen(true);
-          }}
-          onFocus={() => setIsOpen(true)}
-          placeholder={selected.length > 0 ? '' : placeholder}
-          className="flex-1 outline-none bg-transparent text-sm"
-        />
-        <FaChevronDown
-          className={`text-slate-400 ml-2 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          size={12}
-        />
-      </div>
-
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-48 overflow-y-auto">
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-slate-500">No options found</div>
-          ) : (
-            filteredOptions.map((opt) => (
-              <div
-                key={opt}
-                className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 flex items-center gap-2 ${
-                  selected.includes(opt) ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-700'
-                }`}
-                onClick={() => toggleOption(opt)}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(opt)}
-                  onChange={() => {}}
-                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                />
-                {opt}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ============================================
 // COMPONENT
 // ============================================
@@ -347,12 +101,14 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [saving, setSaving] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
 
+  // Custom location map (for existing meetings with custom locations)
   const [customLocation, setCustomLocation] = useState<Record<string, string>>({});
+
+  // Departments
   const [departments, setDepartments] = useState<string[]>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState<boolean>(true);
-  const [divisions, setDivisions] = useState<string[]>([]);
-  const [divisionsLoading, setDivisionsLoading] = useState<boolean>(true);
 
+  // Email sending states
   const [isSendingTestEmail, setIsSendingTestEmail] = useState<boolean>(false);
   const [isSendingMassEmail, setIsSendingMassEmail] = useState<boolean>(false);
 
@@ -360,42 +116,24 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   // DRAWER STATE
   // =========================================================
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [isAllDay, setIsAllDay] = useState<boolean>(false);
-
+  const [editingIndex, setEditingIndex] = useState<number | null>(null); // null = add mode
   const [formData, setFormData] = useState<Meeting>({
     _id: '',
     day: '',
-    timeStart: '',
-    timeEnd: '',
+    timeStart: '09:00',
+    timeEnd: '10:00',
     title: '',
     location: '',
-    division: '',
+    division: 'Administration',
     department: '',
-    divisionName: '',
     stakeholders: '',
     description: '',
   });
-
-  const [timeStart12, setTimeStart12] = useState({ hour: 9, minute: '00', ampm: 'AM' });
-  const [timeEnd12, setTimeEnd12] = useState({ hour: 10, minute: '00', ampm: 'AM' });
-
   const [customLocationDrawer, setCustomLocationDrawer] = useState<string>('');
   const [stakeholderInputDrawer, setStakeholderInputDrawer] = useState<string>('');
 
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
-  const [showCustomDepartment, setShowCustomDepartment] = useState<boolean>(false);
-  const [customDepartmentInput, setCustomDepartmentInput] = useState<string>('');
-
-  useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
-      department: selectedDepartments.join(', '),
-    }));
-  }, [selectedDepartments]);
-
   // =========================================================
-  // FETCH DEPARTMENTS & DIVISIONS
+  // FETCH DEPARTMENTS
   // =========================================================
   useEffect(() => {
     const fetchDepartments = async () => {
@@ -414,25 +152,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       }
     };
     fetchDepartments();
-  }, []);
-
-  useEffect(() => {
-    const fetchDivisions = async () => {
-      try {
-        setDivisionsLoading(true);
-        const res = await fetch('/api/divisions');
-        if (res.ok) {
-          const data = await res.json();
-          const divisionNames = data.map((div: any) => div.name).filter(Boolean);
-          setDivisions(divisionNames);
-        }
-      } catch (error) {
-        console.error('Error fetching divisions:', error);
-      } finally {
-        setDivisionsLoading(false);
-      }
-    };
-    fetchDivisions();
   }, []);
 
   // =========================================================
@@ -471,7 +190,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   };
 
   // =========================================================
-  // SAVE PLAN (including tasks & legend)
+  // MAIN SAVE (Plan-wide)
   // =========================================================
   const handleSave = async (): Promise<void> => {
     if (!plan) return;
@@ -553,57 +272,35 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   };
 
   // =========================================================
-  // DRAWER HANDLERS (unchanged)
+  // DRAWER HANDLERS
   // =========================================================
+
+  // Open drawer for adding a new meeting
   const openDrawerForAdd = (day: string) => {
     setEditingIndex(null);
-    setIsAllDay(false);
-    const defaultStart = { hour: 9, minute: '00', ampm: 'AM' };
-    const defaultEnd = { hour: 10, minute: '00', ampm: 'AM' };
-    setTimeStart12(defaultStart);
-    setTimeEnd12(defaultEnd);
     setFormData({
       _id: '',
       day: day,
-      timeStart: '',
-      timeEnd: '',
+      timeStart: '09:00',
+      timeEnd: '10:00',
       title: '',
       location: '',
-      division: '',
+      division: 'Administration',
       department: '',
-      divisionName: '',
       stakeholders: '',
       description: '',
     });
-    setSelectedDepartments([]);
-    setShowCustomDepartment(false);
-    setCustomDepartmentInput('');
     setCustomLocationDrawer('');
     setStakeholderInputDrawer('');
     setDrawerOpen(true);
   };
 
+  // Open drawer for editing an existing meeting
   const openDrawerForEdit = (index: number) => {
     const meeting = plan!.meetings[index];
     setEditingIndex(index);
-    const isAllDayMeeting = !meeting.timeStart || !meeting.timeEnd;
-    setIsAllDay(isAllDayMeeting);
     setFormData({ ...meeting });
-    const depts = meeting.department ? meeting.department.split(',').map(s => s.trim()).filter(Boolean) : [];
-    setSelectedDepartments(depts);
-    setShowCustomDepartment(false);
-    setCustomDepartmentInput('');
-    if (!isAllDayMeeting && meeting.timeStart) {
-      const start12 = parseTimeTo12(meeting.timeStart);
-      const end12 = parseTimeTo12(meeting.timeEnd);
-      setTimeStart12(start12);
-      setTimeEnd12(end12);
-    } else {
-      const defaultStart = { hour: 9, minute: '00', ampm: 'AM' };
-      const defaultEnd = { hour: 10, minute: '00', ampm: 'AM' };
-      setTimeStart12(defaultStart);
-      setTimeEnd12(defaultEnd);
-    }
+    // Check if location is custom (not in LOCATION_OPTIONS)
     if (meeting.location && !LOCATION_OPTIONS.includes(meeting.location)) {
       setCustomLocationDrawer(meeting.location);
     } else {
@@ -618,14 +315,9 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setEditingIndex(null);
   };
 
+  // Save meeting from drawer (updates local state)
   const saveMeetingFromDrawer = () => {
-    let start24 = '';
-    let end24 = '';
-    if (!isAllDay) {
-      start24 = formatTimeTo24(timeStart12.hour, timeStart12.minute, timeStart12.ampm);
-      end24 = formatTimeTo24(timeEnd12.hour, timeEnd12.minute, timeEnd12.ampm);
-    }
-
+    // Build final location
     let finalLocation = formData.location;
     if (formData.location === 'Others') {
       finalLocation = customLocationDrawer || '';
@@ -633,27 +325,27 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
 
     const newMeeting: Meeting = {
       ...formData,
-      timeStart: start24,
-      timeEnd: end24,
       location: finalLocation,
-      department: selectedDepartments.join(', '),
     };
 
+    // Validate required fields
     if (!newMeeting.title.trim()) {
-      alert('Meeting title is required.');
+      alert('Meeting Title is required.');
       return;
     }
     if (!newMeeting.division) {
-      alert('Meeting type is required.');
+      alert('Meeting Type is required.');
       return;
     }
 
+    // If editingIndex is not null, update existing meeting; else add new
     const currentMeetings = plan!.meetings;
     let updatedMeetings;
     if (editingIndex !== null) {
       updatedMeetings = [...currentMeetings];
       updatedMeetings[editingIndex] = newMeeting;
     } else {
+      // New meeting – generate a temporary _id
       newMeeting._id = `temp-${Date.now()}`;
       updatedMeetings = [...currentMeetings, newMeeting];
     }
@@ -661,6 +353,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     closeDrawer();
   };
 
+  // Delete meeting from drawer (only when editing)
   const deleteMeetingFromDrawer = () => {
     if (editingIndex === null) return;
     if (!window.confirm('Delete this meeting?')) return;
@@ -669,6 +362,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     closeDrawer();
   };
 
+  // Clone and delete from card (quick actions)
   const cloneMeeting = (index: number) => {
     const meeting = plan!.meetings[index];
     const cloned: Meeting = {
@@ -683,11 +377,13 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
 
   const deleteMeetingFromCard = async (meetingId: string) => {
     if (!window.confirm('Delete this meeting?')) return;
+    // If it's a temporary meeting (startswith 'temp-'), just remove locally
     if (meetingId.startsWith('temp-')) {
       const updated = plan!.meetings.filter((m) => m._id !== meetingId);
       setPlan({ ...plan!, meetings: updated });
       return;
     }
+    // Otherwise, call API to delete from server
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/weekly-plans/${id}?meetingId=${meetingId}`, {
@@ -697,6 +393,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       if (res.ok) {
         const result = await res.json();
         setPlan(result.plan);
+        // Update customLocation map
         const newCustomLoc = { ...customLocation };
         delete newCustomLoc[meetingId];
         setCustomLocation(newCustomLoc);
@@ -725,42 +422,23 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     }
   };
 
+  // Department multi-select
   const getDepartmentArray = (departmentsStr: string): string[] => {
     if (!departmentsStr) return [];
     return departmentsStr.split(',').map((d) => d.trim()).filter(Boolean);
   };
 
-  const handleDepartmentSelect = (selected: string[]) => {
-    const prev = selectedDepartments;
-    const added = selected.find(s => !prev.includes(s));
-    if (added === 'Others') {
-      setShowCustomDepartment(true);
-      setSelectedDepartments(prev);
-      return;
-    }
-    setSelectedDepartments(selected);
+  const handleDepartmentChange = (selected: string[]) => {
+    setFormData({ ...formData, department: selected.join(', ') });
   };
 
-  const addCustomDepartment = () => {
-    const val = customDepartmentInput.trim();
-    if (!val) return;
-    if (selectedDepartments.includes(val)) {
-      alert('Department already added.');
-      return;
-    }
-    setSelectedDepartments([...selectedDepartments, val]);
-    setCustomDepartmentInput('');
+  const removeDepartment = (deptToRemove: string) => {
+    const current = getDepartmentArray(formData.department);
+    const updated = current.filter((d) => d !== deptToRemove);
+    setFormData({ ...formData, department: updated.join(', ') });
   };
 
-  const cancelCustomDepartment = () => {
-    setShowCustomDepartment(false);
-    setCustomDepartmentInput('');
-  };
-
-  const handleDivisionNameChange = (selected: string[]) => {
-    setFormData({ ...formData, divisionName: selected.join(', ') });
-  };
-
+  // Stakeholder handlers
   const getStakeholderArray = (stakeholdersStr: string): string[] => {
     if (!stakeholdersStr) return [];
     return stakeholdersStr.split(',').map((s) => s.trim()).filter(Boolean);
@@ -786,54 +464,13 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   };
 
   // =========================================================
-  // TASKS & LEGEND EDIT HANDLERS
-  // =========================================================
-  const addTask = () => {
-    if (!plan) return;
-    setPlan({ ...plan, tasks: [...(plan.tasks || []), ''] });
-  };
-
-  const updateTask = (index: number, value: string) => {
-    if (!plan) return;
-    const updated = [...(plan.tasks || [])];
-    updated[index] = value;
-    setPlan({ ...plan, tasks: updated });
-  };
-
-  const deleteTask = (index: number) => {
-    if (!plan) return;
-    if (!window.confirm('Delete this task?')) return;
-    const updated = (plan.tasks || []).filter((_, i) => i !== index);
-    setPlan({ ...plan, tasks: updated });
-  };
-
-  const addLegendItem = () => {
-    if (!plan) return;
-    setPlan({ ...plan, legend: [...(plan.legend || []), { key: '', value: '' }] });
-  };
-
-  const updateLegendItem = (index: number, field: 'key' | 'value', value: string) => {
-    if (!plan) return;
-    const updated = [...(plan.legend || [])];
-    updated[index][field] = value;
-    setPlan({ ...plan, legend: updated });
-  };
-
-  const deleteLegendItem = (index: number) => {
-    if (!plan) return;
-    if (!window.confirm('Delete this legend item?')) return;
-    const updated = (plan.legend || []).filter((_, i) => i !== index);
-    setPlan({ ...plan, legend: updated });
-  };
-
-  // =========================================================
-  // GET MEETINGS BY DAY (with grouping for parallel display)
+  // GET MEETINGS BY DAY
   // =========================================================
   const getMeetingsForDay = (day: string): Meeting[] => {
     if (!plan) return [];
     return plan.meetings
       .filter((m) => m.day === day)
-      .sort((a, b) => (a.timeStart || '').localeCompare(b.timeStart || ''));
+      .sort((a, b) => a.timeStart.localeCompare(b.timeStart));
   };
 
   // =========================================================
@@ -982,7 +619,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
         </Card>
 
         {/* ========================================================= */}
-        {/* MEETINGS GRID */}
+        {/* MEETINGS GRID – with compact cards and drawer */}
         {/* ========================================================= */}
         <Card size="3">
           <Flex align="center" justify="between" mb="3">
@@ -999,13 +636,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
               const dayMeetings = getMeetingsForDay(day);
               const hasMeetings = dayMeetings.length > 0;
               const dateDisplay = plan?.startDate ? getDateForDay(plan.startDate, day) : '';
-
-              const grouped = dayMeetings.reduce((acc, meeting) => {
-                const key = meeting.timeStart || 'All Day';
-                if (!acc[key]) acc[key] = [];
-                acc[key].push(meeting);
-                return acc;
-              }, {} as Record<string, Meeting[]>);
 
               return (
                 <div
@@ -1033,121 +663,96 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   </div>
 
                   <div className="space-y-2">
-                    {Object.entries(grouped).map(([timeKey, meetingsInGroup]) => {
-                      const count = meetingsInGroup.length;
-                      const flexBasis = count > 1 ? `calc(${100 / count}% - 4px)` : '100%';
-
+                    {dayMeetings.map((meeting, index) => {
+                      const realIndex = plan.meetings.indexOf(meeting);
                       return (
-                        <div key={timeKey} className="flex flex-wrap gap-1">
-                          {meetingsInGroup.map((meeting) => {
-                            const realIndex = plan.meetings.indexOf(meeting);
-                            const displayTime = formatTimeDisplay(meeting.timeStart);
-                            return (
-                              <div
-                                key={meeting._id}
-                                className={`bg-white border border-slate-200 rounded-lg p-2 shadow-sm relative ${
-                                  isEditing ? 'hover:shadow-md cursor-pointer' : ''
-                                }`}
-                                style={{
-                                  flex: `0 0 ${flexBasis}`,
-                                  borderLeft: `4px solid ${DIVISION_COLORS[meeting.division] || '#888'}`,
-                                }}
-                                onClick={() => {
-                                  if (isEditing) {
-                                    openDrawerForEdit(realIndex);
-                                  }
-                                }}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <Text size="2" weight="bold">
-                                    {displayTime}
-                                  </Text>
-                                  {isEditing && (
-                                    <div className="flex gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          cloneMeeting(realIndex);
-                                        }}
-                                        className="text-slate-400 hover:text-slate-600 text-xs p-1"
-                                        title="Clone meeting"
-                                      >
-                                        <FaCopy size={12} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          deleteMeetingFromCard(meeting._id);
-                                        }}
-                                        className="text-red-400 hover:text-red-600 text-xs p-1"
-                                        title="Delete meeting"
-                                      >
-                                        <FaTrash size={12} />
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-
-                                <Text size="2" weight="medium" className="mt-0.5">
-                                  {meeting.title || '(Untitled)'}
-                                </Text>
-
-                                <Text size="1" color="gray">
-                                  🏢 {meeting.division}
-                                </Text>
-
-                                {meeting.location && (
-                                  <Text size="1" color="gray">
-                                    📍 {meeting.location}
-                                  </Text>
-                                )}
-
-                                {meeting.department && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {meeting.department.split(',').map((d) => (
-                                      <Badge key={d.trim()} variant="soft" color="blue" size="1">
-                                        {d.trim()}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {meeting.divisionName && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {meeting.divisionName.split(',').map((d) => (
-                                      <Badge key={d.trim()} variant="soft" color="green" size="1">
-                                        {d.trim()}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {meeting.stakeholders && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {meeting.stakeholders.split(',').map((s) => (
-                                      <Badge
-                                        key={s.trim()}
-                                        variant="solid"
-                                        color="purple"
-                                        size="1"
-                                        style={{
-                                          background: '#7c3aed',
-                                          color: 'white',
-                                          padding: '2px 8px',
-                                          borderRadius: '4px',
-                                          fontSize: '10px',
-                                        }}
-                                      >
-                                        👤 {s.trim()}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
+                        <div
+                          key={meeting._id}
+                          className={`bg-white border border-slate-200 rounded-lg p-2 shadow-sm relative ${
+                            isEditing ? 'hover:shadow-md cursor-pointer' : ''
+                          }`}
+                          style={{
+                            borderLeft: `4px solid ${DIVISION_COLORS[meeting.division] || '#888'}`,
+                          }}
+                          onClick={() => {
+                            if (isEditing) {
+                              openDrawerForEdit(realIndex);
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <Text size="2" weight="bold">
+                              {meeting.timeStart} - {meeting.timeEnd}
+                            </Text>
+                            {isEditing && (
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    cloneMeeting(realIndex);
+                                  }}
+                                  className="text-slate-400 hover:text-slate-600 text-xs p-1"
+                                  title="Clone meeting"
+                                >
+                                  <FaCopy size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteMeetingFromCard(meeting._id);
+                                  }}
+                                  className="text-red-400 hover:text-red-600 text-xs p-1"
+                                  title="Delete meeting"
+                                >
+                                  <FaTrash size={12} />
+                                </button>
                               </div>
-                            );
-                          })}
+                            )}
+                          </div>
+
+                          <Text size="2" weight="medium" className="mt-0.5">
+                            {meeting.title || '(Untitled)'}
+                          </Text>
+                          <Text size="1" color="gray">
+                            🏢 {meeting.division}
+                          </Text>
+                          {meeting.location && (
+                            <Text size="1" color="gray">
+                              📍 {meeting.location}
+                            </Text>
+                          )}
+                          {meeting.department && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {meeting.department.split(',').map((d) => (
+                                <Badge key={d.trim()} variant="soft" color="blue" size="1">
+                                  {d.trim()}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          {meeting.stakeholders && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {meeting.stakeholders.split(',').map((s) => (
+                                <Badge
+                                  key={s.trim()}
+                                  variant="solid"
+                                  color="purple"
+                                  size="1"
+                                  style={{
+                                    background: '#7c3aed',
+                                    color: 'white',
+                                    padding: '2px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '10px',
+                                  }}
+                                >
+                                  👤 {s.trim()}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1165,137 +770,46 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
         </Card>
 
         {/* ========================================================= */}
-        {/* TASKS SECTION – Editable when in edit mode */}
+        {/* TASKS & LEGEND SECTIONS (unchanged) */}
         {/* ========================================================= */}
-        <Card size="3" mt="4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-          <Flex align="center" justify="between" mb="2">
-            <Flex align="center" gap="2">
+        {plan.tasks && plan.tasks.length > 0 && (
+          <Card size="3" mt="4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+            <Flex align="center" gap="2" mb="2">
               <Text size="3" weight="bold">📌 Week-long Tasks</Text>
               <Badge variant="solid" color="orange" size="1">
-                {plan.tasks?.length || 0}
+                {plan.tasks.length}
               </Badge>
             </Flex>
-            {isEditing && (
-              <Button type="button" variant="soft" size="1" onClick={addTask}>
-                <FaPlus /> Add Task
-              </Button>
-            )}
-          </Flex>
-
-          {isEditing ? (
-            <div className="space-y-2">
-              {(plan.tasks || []).map((task, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={task}
-                    onChange={(e) => updateTask(index, e.target.value)}
-                    placeholder="Enter task description..."
-                    className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => deleteTask(index)}
-                    className="text-red-400 hover:text-red-600 p-1"
-                    title="Delete task"
-                  >
-                    <FaTrash size={14} />
-                  </button>
-                </div>
-              ))}
-              {(!plan.tasks || plan.tasks.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No tasks added yet. Click "Add Task" to create one.
-                </Text>
-              )}
-            </div>
-          ) : (
             <div className="space-y-1">
-              {(plan.tasks || []).map((task, index) => (
+              {plan.tasks.map((task, index) => (
                 <Text key={index} size="2" className="text-slate-700 py-0.5 flex items-start gap-2">
                   <span className="text-orange-500">•</span>
                   {task}
                 </Text>
               ))}
-              {(!plan.tasks || plan.tasks.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No tasks added.
-                </Text>
-              )}
             </div>
-          )}
-        </Card>
+          </Card>
+        )}
 
-        {/* ========================================================= */}
-        {/* LEGEND SECTION – Editable when in edit mode */}
-        {/* ========================================================= */}
-        <Card size="3" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
-          <Flex align="center" justify="between" mb="2">
-            <Flex align="center" gap="2">
+        {plan.legend && plan.legend.length > 0 && (
+          <Card size="3" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
+            <Flex align="center" gap="2" mb="2">
               <Text size="3" weight="bold">📖 Legend</Text>
               <Badge variant="solid" color="blue" size="1">
-                {plan.legend?.length || 0}
+                {plan.legend.length}
               </Badge>
             </Flex>
-            {isEditing && (
-              <Button type="button" variant="soft" size="1" onClick={addLegendItem}>
-                <FaPlus /> Add Legend Entry
-              </Button>
-            )}
-          </Flex>
-
-          {isEditing ? (
-            <div className="space-y-2">
-              {(plan.legend || []).map((item, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={item.key}
-                    onChange={(e) => updateLegendItem(index, 'key', e.target.value)}
-                    placeholder="Acronym (e.g., ACC)"
-                    className="w-32 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <span className="text-slate-400">→</span>
-                  <input
-                    type="text"
-                    value={item.value}
-                    onChange={(e) => updateLegendItem(index, 'value', e.target.value)}
-                    placeholder="Full form (e.g., Anti-Corruption Commission)"
-                    className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => deleteLegendItem(index)}
-                    className="text-red-400 hover:text-red-600 p-1"
-                    title="Delete legend item"
-                  >
-                    <FaTrash size={14} />
-                  </button>
-                </div>
-              ))}
-              {(!plan.legend || plan.legend.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No legend entries added yet. Click "Add Legend Entry" to create one.
-                </Text>
-              )}
-            </div>
-          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-              {(plan.legend || []).map((item, index) => (
+              {plan.legend.map((item, index) => (
                 <div key={index} className="flex items-center gap-2 text-sm bg-white rounded px-3 py-1.5 border border-slate-100">
                   <span className="font-medium text-slate-700">{item.key}</span>
                   <span className="text-slate-400">→</span>
                   <span className="text-slate-600">{item.value}</span>
                 </div>
               ))}
-              {(!plan.legend || plan.legend.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2 col-span-full">
-                  No legend entries.
-                </Text>
-              )}
             </div>
-          )}
-        </Card>
+          </Card>
+        )}
 
         {/* Public Link */}
         <Card size="2" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
@@ -1436,16 +950,19 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       </main>
 
       {/* ========================================================= */}
-      {/* SLIDE-IN DRAWER – unchanged */}
+      {/* SLIDE-IN DRAWER (Right Panel) */}
       {/* ========================================================= */}
       {drawerOpen && (
         <>
+          {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black bg-opacity-40 z-40 transition-opacity"
             onClick={closeDrawer}
           />
+          {/* Drawer */}
           <div className="fixed top-0 right-0 w-full sm:w-[500px] md:w-[550px] h-full bg-white shadow-2xl z-50 overflow-y-auto transition-transform duration-300 ease-in-out">
             <div className="p-6">
+              {/* Drawer Header */}
               <div className="flex justify-between items-center mb-4">
                 <Heading size="5">
                   {editingIndex !== null ? 'Edit Meeting' : 'Add Meeting'}
@@ -1461,7 +978,9 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
 
               <Separator className="mb-4" />
 
+              {/* Form Fields */}
               <div className="space-y-4">
+                {/* Day (disabled, read-only) */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Day
@@ -1473,210 +992,143 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="allDayToggleEdit"
-                    checked={isAllDay}
-                    onChange={(e) => {
-                      setIsAllDay(e.target.checked);
-                      if (e.target.checked) {
-                        setFormData({ ...formData, timeStart: '', timeEnd: '' });
-                      } else {
-                        setTimeStart12({ hour: 9, minute: '00', ampm: 'AM' });
-                        setTimeEnd12({ hour: 10, minute: '00', ampm: 'AM' });
-                      }
-                    }}
-                    className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-                  />
-                  <Text as="label" htmlFor="allDayToggleEdit" size="2" weight="medium">
-                    All Day
-                  </Text>
+                {/* Time */}
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1">
+                    <Text as="label" size="2" weight="medium" className="block mb-1">
+                      Start Time
+                    </Text>
+                    <input
+                      type="time"
+                      value={formData.timeStart}
+                      onChange={(e) => handleFormChange('timeStart', e.target.value)}
+                      className="w-full border border-slate-300 rounded px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                  <span className="text-lg text-slate-400 mt-5">–</span>
+                  <div className="flex-1">
+                    <Text as="label" size="2" weight="medium" className="block mb-1">
+                      End Time
+                    </Text>
+                    <input
+                      type="time"
+                      value={formData.timeEnd}
+                      onChange={(e) => handleFormChange('timeEnd', e.target.value)}
+                      className="w-full border border-slate-300 rounded px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
                 </div>
 
-                {!isAllDay && (
-                  <div>
-                    <Text as="label" size="2" weight="medium" className="block mb-1">
-                      Time
-                    </Text>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 flex items-center gap-1">
-                        <select
-                          value={timeStart12.hour}
-                          onChange={(e) =>
-                            setTimeStart12({ ...timeStart12, hour: Number(e.target.value) })
-                          }
-                          className="w-16 border border-slate-300 rounded px-2 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        >
-                          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                            <option key={h} value={h}>{h}</option>
-                          ))}
-                        </select>
-                        <span className="text-slate-500">:</span>
-                        <select
-                          value={timeStart12.minute}
-                          onChange={(e) =>
-                            setTimeStart12({ ...timeStart12, minute: e.target.value })
-                          }
-                          className="w-16 border border-slate-300 rounded px-2 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        >
-                          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={timeStart12.ampm}
-                          onChange={(e) =>
-                            setTimeStart12({ ...timeStart12, ampm: e.target.value })
-                          }
-                          className="w-16 border border-slate-300 rounded px-2 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        >
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
-                      </div>
-                      <span className="text-slate-400">–</span>
-                      <div className="flex-1 flex items-center gap-1">
-                        <select
-                          value={timeEnd12.hour}
-                          onChange={(e) =>
-                            setTimeEnd12({ ...timeEnd12, hour: Number(e.target.value) })
-                          }
-                          className="w-16 border border-slate-300 rounded px-2 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        >
-                          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                            <option key={h} value={h}>{h}</option>
-                          ))}
-                        </select>
-                        <span className="text-slate-500">:</span>
-                        <select
-                          value={timeEnd12.minute}
-                          onChange={(e) =>
-                            setTimeEnd12({ ...timeEnd12, minute: e.target.value })
-                          }
-                          className="w-16 border border-slate-300 rounded px-2 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        >
-                          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={timeEnd12.ampm}
-                          onChange={(e) =>
-                            setTimeEnd12({ ...timeEnd12, ampm: e.target.value })
-                          }
-                          className="w-16 border border-slate-300 rounded px-2 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        >
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
+                {/* Title */}
                 <div>
-                  <textarea
+                  <Text as="label" size="2" weight="medium" className="block mb-1">
+                    Title <span className="text-red-500">*</span>
+                  </Text>
+                  <input
+                    type="text"
                     value={formData.title}
                     onChange={(e) => handleFormChange('title', e.target.value)}
-                    placeholder="Meeting title"
-                    rows={2}
-                    className="w-full border border-slate-300 rounded px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 resize-y"
+                    placeholder="Enter meeting title..."
+                    className="w-full border border-slate-300 rounded px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                   />
                 </div>
 
+                {/* Location */}
                 <div>
-                  <SearchableSelect
+                  <Text as="label" size="2" weight="medium" className="block mb-1">
+                    Location
+                  </Text>
+                  <select
                     value={formData.location}
-                    onChange={(val) => handleLocationChange(val)}
-                    options={LOCATION_OPTIONS}
-                    placeholder="Meeting Venue"
-                  />
+                    onChange={(e) => handleLocationChange(e.target.value)}
+                    className="w-full border border-slate-300 rounded px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value="">No Location</option>
+                    {LOCATION_OPTIONS.map((loc) => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                  </select>
                   {formData.location === 'Others' && (
                     <input
                       type="text"
                       value={customLocationDrawer}
                       onChange={(e) => setCustomLocationDrawer(e.target.value)}
-                      placeholder="Enter custom venue..."
+                      placeholder="Enter custom location..."
                       className="w-full border-2 border-blue-300 rounded px-3 py-2 mt-2 bg-blue-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   )}
                 </div>
 
+                {/* Division */}
                 <div>
-                  <SearchableSelect
-                    value={formData.division}
-                    onChange={(val) => handleFormChange('division', val)}
-                    options={DIVISIONS}
-                    placeholder="Meeting type"
-                  />
-                </div>
-
-                <div>
-                  <Text size="3" weight="bold" className="block mb-2">
-                    Internal Attendees
+                  <Text as="label" size="2" weight="medium" className="block mb-1">
+                    Meeting Type <span className="text-red-500">*</span>
                   </Text>
-
-                  <div className="mb-3">
-                    <Text as="label" size="2" weight="medium" className="block mb-1">
-                      Department
-                    </Text>
-                    <SearchableMultiSelect
-                      selected={selectedDepartments}
-                      onChange={handleDepartmentSelect}
-                      options={[...departments, 'Others']}
-                      placeholder="Search departments..."
-                    />
-                    {departmentsLoading && (
-                      <Text size="1" color="gray" className="mt-1">Loading departments...</Text>
-                    )}
-                    {showCustomDepartment && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={customDepartmentInput}
-                          onChange={(e) => setCustomDepartmentInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              addCustomDepartment();
-                            }
-                          }}
-                          placeholder="Enter custom department..."
-                          className="flex-1 border border-slate-300 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                        />
-                        <Button type="button" size="1" onClick={addCustomDepartment}>
-                          Add
-                        </Button>
-                        <Button type="button" size="1" variant="soft" color="gray" onClick={cancelCustomDepartment}>
-                          Cancel
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <Text as="label" size="2" weight="medium" className="block mb-1">
-                      Division
-                    </Text>
-                    <SearchableMultiSelect
-                      selected={getDepartmentArray(formData.divisionName)}
-                      onChange={handleDivisionNameChange}
-                      options={divisions}
-                      placeholder="Search divisions..."
-                    />
-                    {divisionsLoading && (
-                      <Text size="1" color="gray" className="mt-1">Loading divisions...</Text>
-                    )}
-                    {!divisionsLoading && divisions.length === 0 && (
-                      <Text size="1" color="orange" className="mt-1">
-                        No divisions found. Please add divisions in the system.
-                      </Text>
-                    )}
-                  </div>
+                  <select
+                    value={formData.division}
+                    onChange={(e) => handleFormChange('division', e.target.value)}
+                    className="w-full border border-slate-300 rounded px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  >
+                    {DIVISIONS.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
                 </div>
 
+                {/* Departments */}
                 <div>
+                  <Text as="label" size="2" weight="medium" className="block mb-1">
+                    Departments (hold Ctrl/Cmd to select multiple)
+                  </Text>
+                  <select
+                    multiple
+                    value={getDepartmentArray(formData.department)}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, (opt) => opt.value);
+                      handleDepartmentChange(selected);
+                    }}
+                    className="w-full border border-slate-300 rounded px-3 py-2 min-h-[80px] focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    size={4}
+                  >
+                    {departmentsLoading ? (
+                      <option value="" disabled>Loading...</option>
+                    ) : departments.length === 0 ? (
+                      <option value="" disabled>No departments found</option>
+                    ) : (
+                      departments.map((dept) => (
+                        <option key={dept} value={dept}>{dept}</option>
+                      ))
+                    )}
+                  </select>
+                  {getDepartmentArray(formData.department).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {getDepartmentArray(formData.department).map((dept) => (
+                        <Badge
+                          key={dept}
+                          variant="soft"
+                          color="blue"
+                          size="1"
+                          className="flex items-center gap-1"
+                        >
+                          {dept}
+                          <button
+                            type="button"
+                            onClick={() => removeDepartment(dept)}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-200 rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none"
+                          >
+                            ✕
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Stakeholders */}
+                <div>
+                  <Text as="label" size="2" weight="medium" className="block mb-1">
+                    Stakeholders (External)
+                  </Text>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -1688,7 +1140,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                           addStakeholder();
                         }
                       }}
-                      placeholder="External Attendees"
+                      placeholder="Type stakeholder name..."
                       className="flex-1 border border-slate-300 rounded px-3 py-2 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                     />
                     <button
@@ -1730,6 +1182,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   )}
                 </div>
 
+                {/* Description */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Description (optional)
@@ -1743,6 +1196,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
+                {/* Actions */}
                 <div className="flex gap-3 pt-2 border-t border-slate-200">
                   {editingIndex !== null && (
                     <Button

@@ -1,11 +1,11 @@
-
+// lib/weekly-plan-service.ts
 import { connectToDatabase } from './mongodb';
 import { COLLECTIONS } from './collections';
 import { ObjectId } from 'mongodb';
-import { createTransporter } from './mailer';
+import { createTransporter } from './mailer'; // ✅ Import mailer
 
 // ============================================
-// TYPES
+// TYPES (unchanged)
 // ============================================
 export interface Meeting {
   _id?: string | ObjectId;
@@ -16,7 +16,7 @@ export interface Meeting {
   location: string;
   division: string;
   department: string;
-  stakeholders?: string;
+  stakeholders?: string; // Added to support stakeholders field
   description: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -30,8 +30,6 @@ export interface WeeklyPlan {
   endDate: Date | string;
   weekLabel: string;
   meetings: Meeting[];
-  tasks?: string[];
-  legend?: { key: string; value: string }[];
   status: 'draft' | 'sent' | 'updated';
   version: number;
   sentAt?: Date;
@@ -40,16 +38,15 @@ export interface WeeklyPlan {
 }
 
 // ============================================
-// HELPERS
+// HELPERS (unchanged)
 // ============================================
 function toObjectId(id: string | ObjectId): ObjectId {
   return typeof id === 'string' ? new ObjectId(id) : id;
 }
 
 // ============================================
-// SERVICE FUNCTIONS
+// SERVICE FUNCTIONS (unchanged)
 // ============================================
-
 export async function createWeekPlan(
   planData: Omit<WeeklyPlan, '_id' | 'createdAt' | 'updatedAt' | 'status' | 'version'>
 ): Promise<WeeklyPlan> {
@@ -191,10 +188,13 @@ export async function deleteWeekPlan(id: string | ObjectId): Promise<boolean> {
   return result.deletedCount === 1;
 }
 
-// =========================================================
-// ✅ SIMPLIFIED EMAIL – Only header, button, footer
-// =========================================================
+// ============================================
+// 🆕 EMAIL FUNCTIONS (REPLACES PLACEHOLDER)
+// ============================================
 
+/**
+ * Send a beautifully formatted HTML email for a week plan to a single recipient.
+ */
 export async function sendWeekPlanEmail(
   planId: string | ObjectId,
   recipientEmail: string
@@ -207,7 +207,31 @@ export async function sendWeekPlanEmail(
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const planLink = `${baseUrl}/weekly-plan/${planId}`;
 
-  // ✅ SIMPLIFIED HTML – Only what the user requested
+  // Build meetings summary for email
+  const meetingsByDay = plan.meetings.reduce((acc, m) => {
+    if (!acc[m.day]) acc[m.day] = [];
+    acc[m.day].push(m);
+    return acc;
+  }, {} as Record<string, typeof plan.meetings>);
+
+  let meetingsHtml = '';
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  for (const day of days) {
+    const dayMeetings = meetingsByDay[day] || [];
+    if (dayMeetings.length === 0) continue;
+    meetingsHtml += `<h4 style="margin: 8px 0 4px 0; color: #1976d2;">${day}</h4>`;
+    for (const meeting of dayMeetings) {
+      meetingsHtml += `
+        <div style="background: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 6px; border-left: 4px solid #1976d2;">
+          <strong>${meeting.timeStart} - ${meeting.timeEnd}</strong> &nbsp;|&nbsp; ${meeting.title}<br/>
+          <span style="font-size: 0.9em; color: #555;">🏢 ${meeting.division} ${meeting.department ? `(${meeting.department})` : ''}</span>
+          ${meeting.location ? `<br/><span style="font-size: 0.9em; color: #555;">📍 ${meeting.location}</span>` : ''}
+          ${meeting.stakeholders ? `<br/><span style="font-size: 0.9em; color: #555;">👤 ${meeting.stakeholders}</span>` : ''}
+        </div>
+      `;
+    }
+  }
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -217,18 +241,14 @@ export async function sendWeekPlanEmail(
     </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9;">
       <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-        
-        <!-- Week Label -->
         <h1 style="color: #1976d2; margin-bottom: 4px;">📅 ${plan.weekLabel}</h1>
-        
-        <!-- Version & Meeting Count -->
-        <p style="color: #666; margin-top: 0;">
-          Version ${plan.version} • ${plan.meetings.length} meetings
-        </p>
-        
+        <p style="color: #666; margin-top: 0;">Version ${plan.version} &bull; ${plan.meetings.length} meetings</p>
         <hr style="border: none; border-top: 2px solid #e0e0e0; margin: 16px 0;" />
 
-        <!-- View Full Schedule Button -->
+        <div style="margin: 16px 0;">
+          ${meetingsHtml}
+        </div>
+
         <div style="text-align: center; margin: 24px 0;">
           <a href="${planLink}" style="display: inline-block; padding: 12px 24px; background: #1976d2; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">
             View Full Schedule
@@ -239,8 +259,6 @@ export async function sendWeekPlanEmail(
         </div>
 
         <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 16px 0;" />
-        
-        <!-- Footer -->
         <p style="font-size: 0.8em; color: #999; text-align: center;">
           This is an automated email from the Planning Office.
         </p>
@@ -257,13 +275,14 @@ export async function sendWeekPlanEmail(
     html,
   });
 
-  // Update status to 'sent'
+  // Optionally update status to 'sent' when email is sent
   await updateWeekPlan(planId, { status: 'sent', sentAt: new Date() });
 }
 
-// =========================================================
-// LEGACY PLACEHOLDER – Kept for backward compatibility
-// =========================================================
+/**
+ * Legacy placeholder replaced – now actually sends email.
+ * Kept for backward compatibility but delegates to sendWeekPlanEmail.
+ */
 export async function sendWeekPlanNotification(
   planId: string | ObjectId,
   recipientEmail?: string

@@ -17,7 +17,7 @@ import {
 import { FaArrowLeft, FaEdit, FaSave, FaTrash, FaCopy, FaPlus, FaTimes, FaSearch, FaChevronDown } from 'react-icons/fa';
 
 // ============================================
-// TYPES
+// TYPES (updated to match Add page)
 // ============================================
 interface Meeting {
   _id: string;
@@ -26,9 +26,9 @@ interface Meeting {
   timeEnd: string;
   title: string;
   location: string;
-  division: string;
-  department: string;
-  divisionName: string;
+  division: string;        // Meeting Type (single-select)
+  department: string;      // Department (multi-select with "Others")
+  divisionName: string;    // Division (multi-select from API)
   stakeholders: string;
   description: string;
 }
@@ -251,6 +251,7 @@ function SearchableMultiSelect({
     } else {
       onChange([...selected, opt]);
     }
+    // close dropdown after selection
     setIsOpen(false);
   };
 
@@ -260,6 +261,7 @@ function SearchableMultiSelect({
 
   return (
     <div ref={containerRef} className={`relative ${className || ''}`}>
+      {/* Selected badges */}
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-1">
           {selected.map((s) => (
@@ -347,17 +349,23 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [saving, setSaving] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
 
+  // Custom location map (for existing meetings with custom locations)
   const [customLocation, setCustomLocation] = useState<Record<string, string>>({});
+
+  // Departments (for Department multi-select)
   const [departments, setDepartments] = useState<string[]>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState<boolean>(true);
+
+  // Divisions (for Division multi-select)
   const [divisions, setDivisions] = useState<string[]>([]);
   const [divisionsLoading, setDivisionsLoading] = useState<boolean>(true);
 
+  // Email sending states
   const [isSendingTestEmail, setIsSendingTestEmail] = useState<boolean>(false);
   const [isSendingMassEmail, setIsSendingMassEmail] = useState<boolean>(false);
 
   // =========================================================
-  // DRAWER STATE
+  // DRAWER STATE (enhanced with Department "Others" and Division)
   // =========================================================
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -377,16 +385,19 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     description: '',
   });
 
+  // 12-hour time selection state
   const [timeStart12, setTimeStart12] = useState({ hour: 9, minute: '00', ampm: 'AM' });
   const [timeEnd12, setTimeEnd12] = useState({ hour: 10, minute: '00', ampm: 'AM' });
 
   const [customLocationDrawer, setCustomLocationDrawer] = useState<string>('');
   const [stakeholderInputDrawer, setStakeholderInputDrawer] = useState<string>('');
 
+  // Department multi‑select state (with "Others" support)
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [showCustomDepartment, setShowCustomDepartment] = useState<boolean>(false);
   const [customDepartmentInput, setCustomDepartmentInput] = useState<string>('');
 
+  // Synchronise selectedDepartments with formData.department
   useEffect(() => {
     setFormData((prev) => ({
       ...prev,
@@ -395,7 +406,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   }, [selectedDepartments]);
 
   // =========================================================
-  // FETCH DEPARTMENTS & DIVISIONS
+  // FETCH DEPARTMENTS
   // =========================================================
   useEffect(() => {
     const fetchDepartments = async () => {
@@ -416,6 +427,9 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     fetchDepartments();
   }, []);
 
+  // =========================================================
+  // FETCH DIVISIONS (new)
+  // =========================================================
   useEffect(() => {
     const fetchDivisions = async () => {
       try {
@@ -471,7 +485,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   };
 
   // =========================================================
-  // SAVE PLAN (including tasks & legend)
+  // MAIN SAVE (Plan-wide)
   // =========================================================
   const handleSave = async (): Promise<void> => {
     if (!plan) return;
@@ -553,8 +567,10 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   };
 
   // =========================================================
-  // DRAWER HANDLERS (unchanged)
+  // DRAWER HANDLERS
   // =========================================================
+
+  // Open drawer for adding a new meeting
   const openDrawerForAdd = (day: string) => {
     setEditingIndex(null);
     setIsAllDay(false);
@@ -583,12 +599,14 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setDrawerOpen(true);
   };
 
+  // Open drawer for editing an existing meeting
   const openDrawerForEdit = (index: number) => {
     const meeting = plan!.meetings[index];
     setEditingIndex(index);
     const isAllDayMeeting = !meeting.timeStart || !meeting.timeEnd;
     setIsAllDay(isAllDayMeeting);
     setFormData({ ...meeting });
+    // Populate selected departments
     const depts = meeting.department ? meeting.department.split(',').map(s => s.trim()).filter(Boolean) : [];
     setSelectedDepartments(depts);
     setShowCustomDepartment(false);
@@ -618,6 +636,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setEditingIndex(null);
   };
 
+  // Save meeting from drawer
   const saveMeetingFromDrawer = () => {
     let start24 = '';
     let end24 = '';
@@ -636,9 +655,10 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       timeStart: start24,
       timeEnd: end24,
       location: finalLocation,
-      department: selectedDepartments.join(', '),
+      department: selectedDepartments.join(', '), // ensure department is from selectedDepartments
     };
 
+    // Validate required fields
     if (!newMeeting.title.trim()) {
       alert('Meeting title is required.');
       return;
@@ -648,6 +668,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       return;
     }
 
+    // Update plan meetings
     const currentMeetings = plan!.meetings;
     let updatedMeetings;
     if (editingIndex !== null) {
@@ -661,6 +682,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     closeDrawer();
   };
 
+  // Delete meeting from drawer (only when editing)
   const deleteMeetingFromDrawer = () => {
     if (editingIndex === null) return;
     if (!window.confirm('Delete this meeting?')) return;
@@ -669,6 +691,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     closeDrawer();
   };
 
+  // Clone and delete from card (quick actions)
   const cloneMeeting = (index: number) => {
     const meeting = plan!.meetings[index];
     const cloned: Meeting = {
@@ -730,6 +753,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     return departmentsStr.split(',').map((d) => d.trim()).filter(Boolean);
   };
 
+  // Department multi-select with "Others"
   const handleDepartmentSelect = (selected: string[]) => {
     const prev = selectedDepartments;
     const added = selected.find(s => !prev.includes(s));
@@ -757,10 +781,12 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setCustomDepartmentInput('');
   };
 
+  // Division multi-select
   const handleDivisionNameChange = (selected: string[]) => {
     setFormData({ ...formData, divisionName: selected.join(', ') });
   };
 
+  // Stakeholder handlers
   const getStakeholderArray = (stakeholdersStr: string): string[] => {
     if (!stakeholdersStr) return [];
     return stakeholdersStr.split(',').map((s) => s.trim()).filter(Boolean);
@@ -783,47 +809,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     const current = getStakeholderArray(formData.stakeholders);
     const updated = current.filter((s) => s !== stakeholderToRemove);
     setFormData({ ...formData, stakeholders: updated.join(', ') });
-  };
-
-  // =========================================================
-  // TASKS & LEGEND EDIT HANDLERS
-  // =========================================================
-  const addTask = () => {
-    if (!plan) return;
-    setPlan({ ...plan, tasks: [...(plan.tasks || []), ''] });
-  };
-
-  const updateTask = (index: number, value: string) => {
-    if (!plan) return;
-    const updated = [...(plan.tasks || [])];
-    updated[index] = value;
-    setPlan({ ...plan, tasks: updated });
-  };
-
-  const deleteTask = (index: number) => {
-    if (!plan) return;
-    if (!window.confirm('Delete this task?')) return;
-    const updated = (plan.tasks || []).filter((_, i) => i !== index);
-    setPlan({ ...plan, tasks: updated });
-  };
-
-  const addLegendItem = () => {
-    if (!plan) return;
-    setPlan({ ...plan, legend: [...(plan.legend || []), { key: '', value: '' }] });
-  };
-
-  const updateLegendItem = (index: number, field: 'key' | 'value', value: string) => {
-    if (!plan) return;
-    const updated = [...(plan.legend || [])];
-    updated[index][field] = value;
-    setPlan({ ...plan, legend: updated });
-  };
-
-  const deleteLegendItem = (index: number) => {
-    if (!plan) return;
-    if (!window.confirm('Delete this legend item?')) return;
-    const updated = (plan.legend || []).filter((_, i) => i !== index);
-    setPlan({ ...plan, legend: updated });
   };
 
   // =========================================================
@@ -982,7 +967,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
         </Card>
 
         {/* ========================================================= */}
-        {/* MEETINGS GRID */}
+        {/* MEETINGS GRID – with parallel grouping and updated card order */}
         {/* ========================================================= */}
         <Card size="3">
           <Flex align="center" justify="between" mb="3">
@@ -1000,6 +985,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
               const hasMeetings = dayMeetings.length > 0;
               const dateDisplay = plan?.startDate ? getDateForDay(plan.startDate, day) : '';
 
+              // Group meetings by timeStart
               const grouped = dayMeetings.reduce((acc, meeting) => {
                 const key = meeting.timeStart || 'All Day';
                 if (!acc[key]) acc[key] = [];
@@ -1090,20 +1076,24 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                                   )}
                                 </div>
 
+                                {/* 1. Meeting Title */}
                                 <Text size="2" weight="medium" className="mt-0.5">
                                   {meeting.title || '(Untitled)'}
                                 </Text>
 
+                                {/* 2. Meeting Type */}
                                 <Text size="1" color="gray">
                                   🏢 {meeting.division}
                                 </Text>
 
+                                {/* 3. Venue */}
                                 {meeting.location && (
                                   <Text size="1" color="gray">
                                     📍 {meeting.location}
                                   </Text>
                                 )}
 
+                                {/* 4. Department (blue badges) */}
                                 {meeting.department && (
                                   <div className="flex flex-wrap gap-1 mt-1">
                                     {meeting.department.split(',').map((d) => (
@@ -1114,6 +1104,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                                   </div>
                                 )}
 
+                                {/* 5. Division (green badges) */}
                                 {meeting.divisionName && (
                                   <div className="flex flex-wrap gap-1 mt-1">
                                     {meeting.divisionName.split(',').map((d) => (
@@ -1124,6 +1115,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                                   </div>
                                 )}
 
+                                {/* Stakeholders (always last) */}
                                 {meeting.stakeholders && (
                                   <div className="flex flex-wrap gap-1 mt-1">
                                     {meeting.stakeholders.split(',').map((s) => (
@@ -1165,137 +1157,46 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
         </Card>
 
         {/* ========================================================= */}
-        {/* TASKS SECTION – Editable when in edit mode */}
+        {/* TASKS & LEGEND SECTIONS (unchanged) */}
         {/* ========================================================= */}
-        <Card size="3" mt="4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-          <Flex align="center" justify="between" mb="2">
-            <Flex align="center" gap="2">
+        {plan.tasks && plan.tasks.length > 0 && (
+          <Card size="3" mt="4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+            <Flex align="center" gap="2" mb="2">
               <Text size="3" weight="bold">📌 Week-long Tasks</Text>
               <Badge variant="solid" color="orange" size="1">
-                {plan.tasks?.length || 0}
+                {plan.tasks.length}
               </Badge>
             </Flex>
-            {isEditing && (
-              <Button type="button" variant="soft" size="1" onClick={addTask}>
-                <FaPlus /> Add Task
-              </Button>
-            )}
-          </Flex>
-
-          {isEditing ? (
-            <div className="space-y-2">
-              {(plan.tasks || []).map((task, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={task}
-                    onChange={(e) => updateTask(index, e.target.value)}
-                    placeholder="Enter task description..."
-                    className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => deleteTask(index)}
-                    className="text-red-400 hover:text-red-600 p-1"
-                    title="Delete task"
-                  >
-                    <FaTrash size={14} />
-                  </button>
-                </div>
-              ))}
-              {(!plan.tasks || plan.tasks.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No tasks added yet. Click "Add Task" to create one.
-                </Text>
-              )}
-            </div>
-          ) : (
             <div className="space-y-1">
-              {(plan.tasks || []).map((task, index) => (
+              {plan.tasks.map((task, index) => (
                 <Text key={index} size="2" className="text-slate-700 py-0.5 flex items-start gap-2">
                   <span className="text-orange-500">•</span>
                   {task}
                 </Text>
               ))}
-              {(!plan.tasks || plan.tasks.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No tasks added.
-                </Text>
-              )}
             </div>
-          )}
-        </Card>
+          </Card>
+        )}
 
-        {/* ========================================================= */}
-        {/* LEGEND SECTION – Editable when in edit mode */}
-        {/* ========================================================= */}
-        <Card size="3" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
-          <Flex align="center" justify="between" mb="2">
-            <Flex align="center" gap="2">
+        {plan.legend && plan.legend.length > 0 && (
+          <Card size="3" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
+            <Flex align="center" gap="2" mb="2">
               <Text size="3" weight="bold">📖 Legend</Text>
               <Badge variant="solid" color="blue" size="1">
-                {plan.legend?.length || 0}
+                {plan.legend.length}
               </Badge>
             </Flex>
-            {isEditing && (
-              <Button type="button" variant="soft" size="1" onClick={addLegendItem}>
-                <FaPlus /> Add Legend Entry
-              </Button>
-            )}
-          </Flex>
-
-          {isEditing ? (
-            <div className="space-y-2">
-              {(plan.legend || []).map((item, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={item.key}
-                    onChange={(e) => updateLegendItem(index, 'key', e.target.value)}
-                    placeholder="Acronym (e.g., ACC)"
-                    className="w-32 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <span className="text-slate-400">→</span>
-                  <input
-                    type="text"
-                    value={item.value}
-                    onChange={(e) => updateLegendItem(index, 'value', e.target.value)}
-                    placeholder="Full form (e.g., Anti-Corruption Commission)"
-                    className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => deleteLegendItem(index)}
-                    className="text-red-400 hover:text-red-600 p-1"
-                    title="Delete legend item"
-                  >
-                    <FaTrash size={14} />
-                  </button>
-                </div>
-              ))}
-              {(!plan.legend || plan.legend.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No legend entries added yet. Click "Add Legend Entry" to create one.
-                </Text>
-              )}
-            </div>
-          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-              {(plan.legend || []).map((item, index) => (
+              {plan.legend.map((item, index) => (
                 <div key={index} className="flex items-center gap-2 text-sm bg-white rounded px-3 py-1.5 border border-slate-100">
                   <span className="font-medium text-slate-700">{item.key}</span>
                   <span className="text-slate-400">→</span>
                   <span className="text-slate-600">{item.value}</span>
                 </div>
               ))}
-              {(!plan.legend || plan.legend.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2 col-span-full">
-                  No legend entries.
-                </Text>
-              )}
             </div>
-          )}
-        </Card>
+          </Card>
+        )}
 
         {/* Public Link */}
         <Card size="2" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
@@ -1436,7 +1337,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       </main>
 
       {/* ========================================================= */}
-      {/* SLIDE-IN DRAWER – unchanged */}
+      {/* SLIDE-IN DRAWER – Enhanced with Department "Others" and Division */}
       {/* ========================================================= */}
       {drawerOpen && (
         <>
@@ -1462,6 +1363,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
               <Separator className="mb-4" />
 
               <div className="space-y-4">
+                {/* Day (disabled) */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Day
@@ -1473,6 +1375,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
+                {/* All Day Toggle */}
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -1494,6 +1397,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   </Text>
                 </div>
 
+                {/* Time */}
                 {!isAllDay && (
                   <div>
                     <Text as="label" size="2" weight="medium" className="block mb-1">
@@ -1575,6 +1479,9 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   </div>
                 )}
 
+                {/* ========================================================= */}
+                {/* ✅ MEETING TITLE – Changed from <input> to <textarea> */}
+                {/* ========================================================= */}
                 <div>
                   <textarea
                     value={formData.title}
@@ -1585,6 +1492,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
+                {/* Meeting Venue */}
                 <div>
                   <SearchableSelect
                     value={formData.location}
@@ -1603,6 +1511,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   )}
                 </div>
 
+                {/* Meeting Type */}
                 <div>
                   <SearchableSelect
                     value={formData.division}
@@ -1612,11 +1521,15 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
+                {/* ========================================================= */}
+                {/* INTERNAL ATTENDEES SECTION – Department + Division */}
+                {/* ========================================================= */}
                 <div>
                   <Text size="3" weight="bold" className="block mb-2">
                     Internal Attendees
                   </Text>
 
+                  {/* Department – with "Others" support */}
                   <div className="mb-3">
                     <Text as="label" size="2" weight="medium" className="block mb-1">
                       Department
@@ -1655,6 +1568,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                     )}
                   </div>
 
+                  {/* Division – multi-select from API */}
                   <div>
                     <Text as="label" size="2" weight="medium" className="block mb-1">
                       Division
@@ -1676,6 +1590,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   </div>
                 </div>
 
+                {/* Stakeholders */}
                 <div>
                   <div className="flex gap-2">
                     <input
@@ -1730,6 +1645,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   )}
                 </div>
 
+                {/* Description */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Description (optional)
@@ -1743,6 +1659,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
+                {/* Actions */}
                 <div className="flex gap-3 pt-2 border-t border-slate-200">
                   {editingIndex !== null && (
                     <Button

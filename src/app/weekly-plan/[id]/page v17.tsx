@@ -285,7 +285,7 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
     <div className="min-h-screen bg-slate-50 w-full max-w-full">
       <Card size="3" className="w-full max-w-full rounded-none shadow-none">
         {/* ========================================================= */}
-        {/* HEADER – Live Schedule badge removed, but heading stays centered */}
+        {/* HEADER */}
         {/* ========================================================= */}
         <div className="px-4 md:px-6 pt-4">
           <Flex align="center" justify="between" mb="2" wrap="wrap">
@@ -299,8 +299,11 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
                 Weekly Work Plan <span className="font-normal text-slate-500">({dateRange})</span>
               </Heading>
             </Box>
-            {/* Empty box to balance flex and keep heading centered */}
-            <Box className="flex-1 min-w-[140px]" />
+            <Box className="flex-1 flex justify-end min-w-[140px]">
+              <Badge variant="solid" color="green" size="2">
+                ✅ Live Schedule
+              </Badge>
+            </Box>
           </Flex>
 
           <Flex gap="2" mt="1" align="center" wrap="wrap">
@@ -314,7 +317,7 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
         </div>
 
         {/* ========================================================= */}
-        {/* MEETINGS GRID – with centered vertical labels (larger font) */}
+        {/* MEETINGS GRID – with VERTICAL UPRIGHT LABELS on LEFT */}
         {/* ========================================================= */}
         <Card size="3" className="mx-2 sm:mx-4 md:mx-6 p-2 sm:p-4 mt-4">
           <Flex align="center" justify="between" mb="3" wrap="wrap">
@@ -328,35 +331,33 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
 
           {/* MAIN GRID: Label Column + Day Columns */}
           <div className="flex gap-2">
-            {/* ----- LEFT LABEL COLUMN (centered labels, larger font) ----- */}
-            <div className="flex flex-col min-w-[24px] max-w-[24px]">
-              {/* Morning label – fixed height to match morning block, centered */}
-              <div className="flex items-center justify-center h-[350px] text-sm font-bold text-amber-600 tracking-tight leading-[1.1]">
-                <div className="flex flex-col items-center justify-center">
-                  <span>M</span>
-                  <span>O</span>
-                  <span>R</span>
-                  <span>N</span>
-                  <span>I</span>
-                  <span>N</span>
-                  <span>G</span>
-                </div>
+            {/* ----- LEFT LABEL COLUMN ----- */}
+            <div className="flex flex-col items-center justify-start gap-2 min-w-[24px] max-w-[24px] pt-1">
+              {/* MORNING label – upright, stacked vertical */}
+              <div className="flex flex-col items-center justify-start text-xs font-bold text-amber-600 tracking-tight leading-[1.1]">
+                <span>M</span>
+                <span>O</span>
+                <span>R</span>
+                <span>N</span>
+                <span>I</span>
+                <span>N</span>
+                <span>G</span>
               </div>
-              {/* Separator gap (matches the separator in day columns) */}
-              <div className="h-1 bg-slate-100"></div>
-              {/* Afternoon label – takes remaining height, centered */}
-              <div className="flex-1 flex items-center justify-center text-sm font-bold text-blue-600 tracking-tight leading-[1.1]">
-                <div className="flex flex-col items-center justify-center">
-                  <span>A</span>
-                  <span>F</span>
-                  <span>T</span>
-                  <span>E</span>
-                  <span>R</span>
-                  <span>N</span>
-                  <span>O</span>
-                  <span>O</span>
-                  <span>N</span>
-                </div>
+
+              {/* Spacer between morning and afternoon labels */}
+              <div className="flex-1 min-h-[20px]" />
+
+              {/* AFTERNOON label – upright, stacked vertical */}
+              <div className="flex flex-col items-center justify-start text-xs font-bold text-blue-600 tracking-tight leading-[1.1]">
+                <span>A</span>
+                <span>F</span>
+                <span>T</span>
+                <span>E</span>
+                <span>R</span>
+                <span>N</span>
+                <span>O</span>
+                <span>O</span>
+                <span>N</span>
               </div>
             </div>
 
@@ -374,8 +375,8 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
                       {day} <span className="text-xs font-normal text-slate-500">({dateDisplay})</span>
                     </div>
 
-                    {/* Morning Block - FIXED HEIGHT with overflow for dynamic content */}
-                    <div className="p-2 border-b border-slate-100 h-[350px] overflow-auto">
+                    {/* Morning Block - fixed min-height to align afternoon */}
+                    <div className="p-2 border-b border-slate-100 min-h-[300px]">
                       {hasMorning ? (
                         <div className="space-y-2">{renderMeetingGroup(morning)}</div>
                       ) : (
@@ -384,9 +385,6 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
                         </div>
                       )}
                     </div>
-
-                    {/* ----- SEPARATOR: small gap between morning and afternoon ----- */}
-                    <div className="h-1 bg-slate-100"></div>
 
                     {/* Afternoon Block */}
                     <div className="p-2 min-h-[60px]">

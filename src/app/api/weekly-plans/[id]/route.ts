@@ -56,8 +56,29 @@ export async function PUT(
       });
     }
 
-    // Regular plan update
-    const updated = await updateWeekPlan(id, body);
+    // Regular plan update – explicitly include tasks and legend
+    const {
+      weekNumber,
+      year,
+      startDate,
+      endDate,
+      weekLabel,
+      meetings,
+      tasks,
+      legend,
+    } = body;
+
+    const updated = await updateWeekPlan(id, {
+      weekNumber,
+      year,
+      startDate,
+      endDate,
+      weekLabel,
+      meetings,
+      tasks: tasks || [],
+      legend: legend || [],
+    });
+
     if (!updated) {
       return NextResponse.json({ error: 'Plan not found' }, { status: 404 });
     }
