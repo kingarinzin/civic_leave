@@ -1,9 +1,12 @@
-import { MongoClient } from "mongodb";
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
+import { MongoClient } from 'mongodb';
 
 const uri = process.env.MONGODB_URI!;
 export const DATABASE_NAME = process.env.MONGODB_DB_NAME || "civic_leave_db";
 
+// ============================================
+// NATIVE DRIVER CLIENT (for existing code)
+// ============================================
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
@@ -22,18 +25,21 @@ if (process.env.NODE_ENV === "development") {
   clientPromise = client.connect();
 }
 
-// ---------- Mongoose connection state ----------
+// ============================================
+// MONGOOSE CONNECTION (for Mongoose models)
+// ============================================
+let mongooseConnection: typeof mongoose | null = null;
 let isMongooseConnected = false;
 
 export async function connectToDatabase() {
   try {
-    // 1. Native driver connection
-    const client = await clientPromise;
-    const db = client.db(DATABASE_NAME);
+    // 1. Connect native driver (for existing code)
+    const nativeClient = await clientPromise;
+    const db = nativeClient.db(DATABASE_NAME);
     await db.admin().ping();
     console.log("✅ MongoDB native driver connected");
 
-    // 2. Mongoose connection
+    // 2. Connect Mongoose (if not already connected)
     if (!isMongooseConnected) {
       if (mongoose.connection.readyState === 0) {
         await mongoose.connect(uri, {
@@ -41,19 +47,18 @@ export async function connectToDatabase() {
           maxPoolSize: 10,
         });
         isMongooseConnected = true;
-        console.log("✅ Mongoose connected");
+        console.log("✅ Mongoose connected to civic_leave_db");
       } else {
         isMongooseConnected = true;
         console.log("✅ Mongoose already connected");
       }
     }
 
-    return { client, db };
+    return { client: nativeClient, db };
   } catch (error) {
     console.error("❌ MongoDB connection failed:", error);
     throw error;
   }
 }
 
-// ---------- Default export for existing code ----------
 export default clientPromise;

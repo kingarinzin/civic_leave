@@ -13,7 +13,7 @@ import {
   Badge,
   Select,
 } from "@radix-ui/themes";
-import { FaDownload, FaCalendarAlt } from "react-icons/fa";
+import { FaDownload, FaCalendarAlt, FaClock } from "react-icons/fa";
 
 // Helper to format date as YYYY-MM-DD in local time
 const formatLocalDate = (date) => {
@@ -25,7 +25,7 @@ const formatLocalDate = (date) => {
 
 // Helper: calculate total working hours from firstIn and lastOut times
 function calculateTotalHours(firstIn, lastOut) {
-  if (!firstIn || !lastOut) return 0;
+  if (!firstIn || !lastOut) return 0; // return number for summation
   
   const parseTime = (timeStr) => {
     timeStr = timeStr.trim().toUpperCase();
@@ -56,7 +56,7 @@ function calculateTotalHours(firstIn, lastOut) {
     if (end < start) return 0;
     const diffMs = end.getTime() - start.getTime();
     const hours = diffMs / (1000 * 60 * 60);
-    return parseFloat(hours.toFixed(1));
+    return parseFloat(hours.toFixed(1)); // return decimal hours
   } catch (e) {
     return 0;
   }
@@ -70,13 +70,6 @@ const formatHours = (hours) => {
   if (fraction === 0) return `${whole}h`;
   const minutes = Math.round(fraction * 60);
   return `${whole}h ${minutes}m`;
-};
-
-// Helper: get weekday from date string (kept for display)
-const getWeekday = (dateStr) => {
-  const [y, m, d] = dateStr.split("-");
-  const date = new Date(Date.UTC(y, m-1, d));
-  return date.toLocaleDateString("en-GB", { weekday: "short" });
 };
 
 export default function AttendanceHistoryPage() {
@@ -162,7 +155,7 @@ export default function AttendanceHistoryPage() {
     attendanceByDate[key] = item;
   });
 
-  // Compute monthly statistics (unchanged)
+  // Compute monthly statistics
   let totalWorkingHours = 0;
   let totalDaysWorked = 0;
   let totalAbsent = 0;
@@ -170,15 +163,8 @@ export default function AttendanceHistoryPage() {
 
   allDates.forEach(dateStr => {
     const day = attendanceByDate[dateStr];
-    if (!day || day.status === "No punch" || day.status === "Weekend") {
-      // Treat weekends as absent? Or exclude from absent? Your logic may vary.
-      // I'll treat "Weekend" as not absent, but if you want to count them as absent, adjust.
-      // For now, I'll not count them as absent because they are weekend.
-      if (day && day.status === "Weekend") {
-        // do nothing – weekend days are not counted in attendance stats
-      } else {
-        totalAbsent++;
-      }
+    if (!day || day.status === "No punch") {
+      totalAbsent++;
     } else {
       const hours = calculateTotalHours(day.firstIn, day.lastOut);
       if (hours > 0) {
@@ -189,14 +175,12 @@ export default function AttendanceHistoryPage() {
     }
   });
 
-  // Note: You might want to exclude weekends from the stats entirely.
-  // The above logic is a quick adaptation – fine-tune as needed.
-
   const averageDailyHours = totalDaysWorked > 0 ? totalWorkingHours / totalDaysWorked : 0;
   const totalWorkingHoursFormatted = formatHours(totalWorkingHours);
   const averageDailyHoursFormatted = formatHours(averageDailyHours);
 
-  const fullTimeTarget = 160;
+  // Gauge: percentage of a 160h full-time month (8h/day * 20 working days approx)
+  const fullTimeTarget = 160; // standard monthly hours
   const percentageOfTarget = Math.min(100, (totalWorkingHours / fullTimeTarget) * 100);
   const gaugeColor = percentageOfTarget >= 90 ? "#22c55e" : percentageOfTarget >= 70 ? "#f97316" : "#ef4444";
 
@@ -232,12 +216,17 @@ export default function AttendanceHistoryPage() {
     URL.revokeObjectURL(url);
   };
 
+  const getWeekday = (dateStr) => {
+    const [y, m, d] = dateStr.split("-");
+    const date = new Date(Date.UTC(y, m-1, d));
+    return date.toLocaleDateString("en-GB", { weekday: "short" });
+  };
+
   const getNormalizedStatus = (status) => {
     if (status === "Present") return "Present";
     if (status === "Late arrival" || status === "Late & Early") return "Late";
     if (status === "Early departure") return "Early";
     if (status === "No punch") return "Absent";
-    if (status === "Weekend") return "Weekend"; // add this filter option
     return "Other";
   };
 
@@ -263,7 +252,7 @@ export default function AttendanceHistoryPage() {
           </Button>
         </Flex>
 
-        {/* Monthly Summary Card (unchanged) */}
+        {/* Monthly Summary Card with Circular Gauge */}
         <Card mb="4">
           <Flex justify="between" align="center" mb="3" wrap="wrap" gap="2">
             <Heading size="4">Monthly Summary – {monthName}</Heading>
@@ -283,6 +272,7 @@ export default function AttendanceHistoryPage() {
           {error && <Text color="red">{error}</Text>}
           {!loading && !error && (
             <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
+              {/* Circular Gauge */}
               <div className="flex flex-col items-center">
                 <div className="relative w-32 h-32">
                   <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -312,6 +302,7 @@ export default function AttendanceHistoryPage() {
                 </div>
               </div>
 
+              {/* Summary Stats */}
               <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-green-50 rounded-lg p-3 text-center shadow-sm">
                   <Text size="2" color="gray">Days Worked</Text>
@@ -334,7 +325,7 @@ export default function AttendanceHistoryPage() {
           )}
         </Card>
 
-        {/* Daily Details Table with new weekend styling */}
+        {/* Daily Details Table (unchanged except added Total Hrs column) */}
         <Card>
           <Flex justify="between" align="center" mb="4" wrap="wrap" gap="3">
             <Heading size="4">Daily Details</Heading>
@@ -348,7 +339,6 @@ export default function AttendanceHistoryPage() {
                   <Select.Item value="Late">Late</Select.Item>
                   <Select.Item value="Early">Early</Select.Item>
                   <Select.Item value="Absent">Absent / No punch</Select.Item>
-                  <Select.Item value="Weekend">Weekend</Select.Item>
                 </Select.Content>
               </Select.Root>
             </Flex>
@@ -388,20 +378,10 @@ export default function AttendanceHistoryPage() {
                       year: "numeric",
                     });
                     const weekday = getWeekday(dateStr);
+                    const isWeekend = weekday === "Sat" || weekday === "Sun";
                     const totalHrs = formatHours(calculateTotalHours(day?.firstIn, day?.lastOut));
-
-                    // 👇 NEW: use day.isWeekend from the API
-                    const isWeekend = day?.isWeekend || false;
-
                     return (
-                      <Table.Row 
-                        key={dateStr}
-                        className={
-                          isWeekend
-                            ? "bg-red-50 border-l-4 border-red-500" // ← thin red left border + light red background
-                            : ""
-                        }
-                      >
+                      <Table.Row key={dateStr} style={isWeekend ? { backgroundColor: "#f8fafc" } : {}}>
                         <Table.RowHeaderCell>{displayDate}</Table.RowHeaderCell>
                         <Table.Cell>
                           <Text size="1" color="gray">{weekday}</Text>
@@ -428,7 +408,6 @@ export default function AttendanceHistoryPage() {
                             <Badge
                               color={
                                 day.status === "Present" ? "green" :
-                                day.status === "Weekend" ? "gray" :
                                 day.status.includes("Late") ? "orange" :
                                 day.status.includes("Early") ? "orange" :
                                 "gray"

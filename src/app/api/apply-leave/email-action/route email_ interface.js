@@ -146,7 +146,7 @@ export async function GET(req) {
       { $set: { used: true, usedAt: new Date() } }
     );
 
-    // ========== SEND EMAIL TO APPLICANT – UPDATED UI ==========
+    // ========== SEND EMAIL TO APPLICANT – E‑SIGN STYLE TEMPLATE ==========
     const applicantUser = await db.collection("users").findOne({ _id: new ObjectId(leave.userId) });
     if (applicantUser?.email) {
       // Fetch approver's name
@@ -170,110 +170,91 @@ export async function GET(req) {
         day: 'numeric',
       });
 
-      // ─── Fetch applicant's remaining balance (optional) ──────────────────
-      let remainingBalance = null;
-      const leaveTypeDoc = await db.collection("leave-types").findOne({ _id: new ObjectId(leave.leaveTypeId) });
-      const skipBalance = leaveTypeDoc?.skipBalance === true;
-      if (!skipBalance) {
-        const leaveYear = new Date(leave.fromDate).getFullYear();
-        const balanceDoc = await db.collection("leave_balances").findOne({
-          userId: new ObjectId(leave.userId),
-          year: leaveYear,
-        });
-        if (balanceDoc) {
-          const leaveEntry = balanceDoc.leaves?.find(
-            (l) => l.leaveTypeId?.toString() === leave.leaveTypeId
-          );
-          if (leaveEntry) {
-            remainingBalance = Number(leaveEntry.balance) || 0;
-          }
-        }
-      }
-      const balanceDisplay = remainingBalance !== null
-        ? `${remainingBalance} day${remainingBalance !== 1 ? 's' : ''}`
-        : (skipBalance ? 'N/A' : 'Not found');
-
-      // ─── Updated email HTML – same e‑sign design ─────────────────────────
+      // ─── EMAIL HTML (exact copy of the e‑sign design style) ───
       const mailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Leave Request Status</title>
-</head>
-<body style="margin:0; padding:0; background-color:#f4f7fc; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#ffffff; margin:20px auto; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-    <!-- HEADER -->
-    <tr>
-      <td style="padding:30px 30px 10px 30px; text-align:center; border-bottom:1px solid #E5E7EB;">
-        <h2 style="margin:0; font-size:22px; color:#4F46E5; letter-spacing:-0.5px; font-weight:600;">
-          Leave Request Status
-        </h2>
-      </td>
-    </tr>
-    <!-- BODY -->
-    <tr>
-      <td style="padding:30px;">
-        <p style="font-size:16px; line-height:1.6; color:#333333; margin-top:0;">
-          Hello <strong>${applicantUser.name || "User"}</strong>,
-        </p>
-        <p style="font-size:16px; line-height:1.6; color:#333333;">
-          Your leave request has been <strong style="color:${statusColor};">${statusText}</strong> 
-          by <strong>${approverName}</strong>.
-        </p>
-
-        <!-- Status badge -->
-        <div style="background:#F9FAFB; padding:12px 16px; margin:20px 0; border-left:4px solid ${statusColor}; border-radius:4px;">
-          <p style="margin:0; font-size:15px; color:#555;">
-            <span style="font-size:20px;">${icon}</span> 
-            <strong>Status:</strong> <span style="color:${statusColor}; font-weight:600;">${statusText.toUpperCase()}</span>
-          </p>
-        </div>
-
-        <!-- Leave details – styled like the document info box -->
-        <div style="background:#F3F4F6; padding:15px; border-radius:8px; margin:20px 0;">
-          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Leave Request Status</title>
+        </head>
+        <body style="margin:0; padding:0; background-color:#f4f7fc; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#ffffff; margin:20px auto; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
+            <!-- HEADER -->
             <tr>
-              <td style="padding:6px 12px; width:40%; font-weight:600; color:#1a2a3a;">Leave Type</td>
-              <td style="padding:6px 12px; color:#333;">${leave.leaveTypeName || "—"}</td>
+              <td style="padding:30px 30px 10px 30px; text-align:center; border-bottom:1px solid #E5E7EB;">
+                <h2 style="margin:0; font-size:22px; color:#4F46E5; letter-spacing:-0.5px; font-weight:600;">
+                  Leave Request Status
+                </h2>
+              </td>
             </tr>
+            <!-- BODY -->
             <tr>
-              <td style="padding:6px 12px; font-weight:600; color:#1a2a3a;">Balance</td>
-              <td style="padding:6px 12px; color:#333;">${balanceDisplay}</td>
+              <td style="padding:30px;">
+                <p style="font-size:16px; line-height:1.6; color:#333333; margin-top:0;">
+                  Hello <strong>${applicantUser.name || "User"}</strong>,
+                </p>
+                <p style="font-size:16px; line-height:1.6; color:#333333;">
+                  Your leave request has been <strong style="color:${statusColor};">${statusText}</strong> 
+                  by <strong>${approverName}</strong>.
+                </p>
+
+                <!-- Status badge (styled like the e‑sign message box) -->
+                <div style="background:#F9FAFB; padding:12px 16px; margin:20px 0; border-left:4px solid ${statusColor}; border-radius:4px;">
+                  <p style="margin:0; font-size:15px; color:#555;">
+                    <span style="font-size:20px;">${icon}</span> 
+                    <strong>Status:</strong> <span style="color:${statusColor}; font-weight:600;">${statusText.toUpperCase()}</span>
+                  </p>
+                </div>
+
+                <!-- Leave details – styled like the document info box -->
+                <div style="background:#F3F4F6; padding:15px; border-radius:8px; margin:20px 0;">
+                  <table style="width:100%; border-collapse:collapse; font-size:15px;">
+                    <tr>
+                      <td style="padding:6px 12px; width:40%; font-weight:600; color:#1a2a3a;">Leave Type</td>
+                      <td style="padding:6px 12px; color:#333;">${leave.leaveTypeName || "—"}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:6px 12px; font-weight:600; color:#1a2a3a;">From</td>
+                      <td style="padding:6px 12px; color:#333;">${fromDate}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:6px 12px; font-weight:600; color:#1a2a3a;">To</td>
+                      <td style="padding:6px 12px; color:#333;">${toDate}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:6px 12px; font-weight:600; color:#1a2a3a;">Total Days</td>
+                      <td style="padding:6px 12px; color:#333;">${leave.days} day${leave.days !== 1 ? 's' : ''}</td>
+                    </tr>
+                  </table>
+                </div>
+
+                <!-- Optional note -->
+                <p style="font-size:14px; color:#6B7280; line-height:1.5; margin-top:20px;">
+                  This is an automated notification. If you have any questions, please contact HR.
+                </p>
+
+                <!-- "Sent via" line (exactly like the e‑sign badge) -->
+                <p style="font-size:13px; color:#9CA3AF; margin-top:25px;">
+                  <span style="color:#6B7280;">Sent via:</span> Civic Leave App
+                </p>
+              </td>
             </tr>
+            <!-- FOOTER -->
             <tr>
-              <td style="padding:6px 12px; font-weight:600; color:#1a2a3a;">Dates</td>
-              <td style="padding:6px 12px; color:#333;">
-                ${fromDate} – ${toDate} &nbsp;|&nbsp; <strong>${leave.days}</strong> day${leave.days !== 1 ? 's' : ''}
+              <td style="padding:20px 30px; background-color:#f8fafc; border-top:1px solid #e9edf2; text-align:center; border-radius:0 0 8px 8px;">
+                <p style="margin:0; font-size:13px; color:#8898aa;">
+                  &copy; ${new Date().getFullYear()} Your Company Name. All rights reserved.
+                </p>
+                <p style="margin:5px 0 0 0; font-size:12px; color:#a0b0c0;">
+                  This message was sent automatically. Please do not reply directly to this email.
+                </p>
               </td>
             </tr>
           </table>
-        </div>
-
-        <p style="font-size:14px; color:#6B7280; line-height:1.5; margin-top:20px;">
-          This is an automated notification. If you have any questions, please contact HR.
-        </p>
-
-        <p style="font-size:13px; color:#9CA3AF; margin-top:25px;">
-          <span style="color:#6B7280;">Sent via:</span> Civic Leave App
-        </p>
-      </td>
-    </tr>
-    <!-- FOOTER -->
-    <tr>
-      <td style="padding:20px 30px; background-color:#f8fafc; border-top:1px solid #e9edf2; text-align:center; border-radius:0 0 8px 8px;">
-        <p style="margin:0; font-size:13px; color:#8898aa;">
-          &copy; ${new Date().getFullYear()} Your Company Name. All rights reserved.
-        </p>
-        <p style="margin:5px 0 0 0; font-size:12px; color:#a0b0c0;">
-          This message was sent automatically. Please do not reply directly to this email.
-        </p>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
+        </body>
+        </html>
       `;
 
       await transporter.sendMail({

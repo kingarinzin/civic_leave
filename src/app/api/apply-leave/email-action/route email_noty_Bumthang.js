@@ -146,134 +146,30 @@ export async function GET(req) {
       { $set: { used: true, usedAt: new Date() } }
     );
 
-    // ========== SEND EMAIL TO APPLICANT – UPDATED UI ==========
+    // ========== SEND EMAIL TO APPLICANT (rich template, with approver name) ==========
     const applicantUser = await db.collection("users").findOne({ _id: new ObjectId(leave.userId) });
     if (applicantUser?.email) {
-      // Fetch approver's name
+      // Fetch the approver's name from the token (the person who clicked the link)
       const approverUser = await db.collection("users").findOne({ _id: new ObjectId(tokenRecord.approverId) });
       const approverName = approverUser?.name || "Approver";
 
       const transporter = createTransporter();
       const statusText = newStatus === "approved" ? "Approved" : "Rejected";
-      const statusColor = newStatus === "approved" ? "#2e7d32" : "#c62828";
-      const icon = newStatus === "approved" ? "✅" : "❌";
-
-      // Format dates
-      const fromDate = new Date(leave.fromDate).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-      const toDate = new Date(leave.toDate).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-
-      // ─── Fetch applicant's remaining balance (optional) ──────────────────
-      let remainingBalance = null;
-      const leaveTypeDoc = await db.collection("leave-types").findOne({ _id: new ObjectId(leave.leaveTypeId) });
-      const skipBalance = leaveTypeDoc?.skipBalance === true;
-      if (!skipBalance) {
-        const leaveYear = new Date(leave.fromDate).getFullYear();
-        const balanceDoc = await db.collection("leave_balances").findOne({
-          userId: new ObjectId(leave.userId),
-          year: leaveYear,
-        });
-        if (balanceDoc) {
-          const leaveEntry = balanceDoc.leaves?.find(
-            (l) => l.leaveTypeId?.toString() === leave.leaveTypeId
-          );
-          if (leaveEntry) {
-            remainingBalance = Number(leaveEntry.balance) || 0;
-          }
-        }
-      }
-      const balanceDisplay = remainingBalance !== null
-        ? `${remainingBalance} day${remainingBalance !== 1 ? 's' : ''}`
-        : (skipBalance ? 'N/A' : 'Not found');
-
-      // ─── Updated email HTML – same e‑sign design ─────────────────────────
+      const color = newStatus === "approved" ? "#28a745" : "#dc3545";
       const mailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Leave Request Status</title>
-</head>
-<body style="margin:0; padding:0; background-color:#f4f7fc; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#ffffff; margin:20px auto; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-    <!-- HEADER -->
-    <tr>
-      <td style="padding:30px 30px 10px 30px; text-align:center; border-bottom:1px solid #E5E7EB;">
-        <h2 style="margin:0; font-size:22px; color:#4F46E5; letter-spacing:-0.5px; font-weight:600;">
-          Leave Request Status
-        </h2>
-      </td>
-    </tr>
-    <!-- BODY -->
-    <tr>
-      <td style="padding:30px;">
-        <p style="font-size:16px; line-height:1.6; color:#333333; margin-top:0;">
-          Hello <strong>${applicantUser.name || "User"}</strong>,
-        </p>
-        <p style="font-size:16px; line-height:1.6; color:#333333;">
-          Your leave request has been <strong style="color:${statusColor};">${statusText}</strong> 
-          by <strong>${approverName}</strong>.
-        </p>
-
-        <!-- Status badge -->
-        <div style="background:#F9FAFB; padding:12px 16px; margin:20px 0; border-left:4px solid ${statusColor}; border-radius:4px;">
-          <p style="margin:0; font-size:15px; color:#555;">
-            <span style="font-size:20px;">${icon}</span> 
-            <strong>Status:</strong> <span style="color:${statusColor}; font-weight:600;">${statusText.toUpperCase()}</span>
-          </p>
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2 style="color:${color};">Leave ${statusText}</h2>
+          <p>Hi ${applicantUser.name || "User"},</p>
+          <p>Your leave request has been <strong>${statusText}</strong> by ${approverName}.</p>
+          <p><strong>Leave Details:</strong></p>
+          <ul>
+            <li>Leave Type: ${leave.leaveTypeName || "—"}</li>
+            <li>From: ${leave.fromDate}</li>
+            <li>To: ${leave.toDate}</li>
+            <li>Days: ${leave.days}</li>
+          </ul>
+          <p style="color: #666; font-size: 0.9em;">This is an automated notification.</p>
         </div>
-
-        <!-- Leave details – styled like the document info box -->
-        <div style="background:#F3F4F6; padding:15px; border-radius:8px; margin:20px 0;">
-          <table style="width:100%; border-collapse:collapse; font-size:15px;">
-            <tr>
-              <td style="padding:6px 12px; width:40%; font-weight:600; color:#1a2a3a;">Leave Type</td>
-              <td style="padding:6px 12px; color:#333;">${leave.leaveTypeName || "—"}</td>
-            </tr>
-            <tr>
-              <td style="padding:6px 12px; font-weight:600; color:#1a2a3a;">Balance</td>
-              <td style="padding:6px 12px; color:#333;">${balanceDisplay}</td>
-            </tr>
-            <tr>
-              <td style="padding:6px 12px; font-weight:600; color:#1a2a3a;">Dates</td>
-              <td style="padding:6px 12px; color:#333;">
-                ${fromDate} – ${toDate} &nbsp;|&nbsp; <strong>${leave.days}</strong> day${leave.days !== 1 ? 's' : ''}
-              </td>
-            </tr>
-          </table>
-        </div>
-
-        <p style="font-size:14px; color:#6B7280; line-height:1.5; margin-top:20px;">
-          This is an automated notification. If you have any questions, please contact HR.
-        </p>
-
-        <p style="font-size:13px; color:#9CA3AF; margin-top:25px;">
-          <span style="color:#6B7280;">Sent via:</span> Civic Leave App
-        </p>
-      </td>
-    </tr>
-    <!-- FOOTER -->
-    <tr>
-      <td style="padding:20px 30px; background-color:#f8fafc; border-top:1px solid #e9edf2; text-align:center; border-radius:0 0 8px 8px;">
-        <p style="margin:0; font-size:13px; color:#8898aa;">
-          &copy; ${new Date().getFullYear()} Your Company Name. All rights reserved.
-        </p>
-        <p style="margin:5px 0 0 0; font-size:12px; color:#a0b0c0;">
-          This message was sent automatically. Please do not reply directly to this email.
-        </p>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
       `;
 
       await transporter.sendMail({
@@ -284,7 +180,6 @@ export async function GET(req) {
       });
     }
 
-    // Return success HTML page to the approver
     const message = newStatus === "approved" ? "Leave Approved Successfully" : "Leave Rejected Successfully";
     return new NextResponse(
       `<html><body style="font-family:Arial;text-align:center;padding:50px;"><h2>${message}</h2><p>Request ID: ${requestId}</p></body></html>`,

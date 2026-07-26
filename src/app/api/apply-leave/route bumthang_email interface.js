@@ -161,9 +161,10 @@ export async function POST(req) {
     // Fetch leave type to check skipApproval and skipBalance
     const leaveTypeDoc = await db.collection("leave-types").findOne({ _id: toObjectIdSafe(leaveTypeId) });
     if (!leaveTypeDoc) return NextResponse.json({ error: "Invalid leave type" }, { status: 400 });
-    const skipApproval = leaveTypeDoc.skipApproval === true;
-    const skipBalance = leaveTypeDoc.skipBalance === true;
+    const skipApproval = leaveTypeDoc.skipApproval === true;   // auto‑approve
+    const skipBalance = leaveTypeDoc.skipBalance === true;     // skip balance deduction
 
+    // Balance check only if NOT skipBalance
     let leaveTypeName = leaveTypeDoc.name;
     if (!skipBalance) {
       const leaveBalance = await db.collection("leave_balances").findOne({ userId: userObjectId, year });
@@ -242,8 +243,7 @@ export async function POST(req) {
     }
 
     const transporter = createTransporter();
-
-    // ─── Applicant confirmation email ──────────────────────────────────────
+    // Applicant email (always)
     if (applicantUser?.email) {
       const statusText = finalStatus === "approved" ? "approved" : "submitted for approval";
       try {
@@ -270,7 +270,7 @@ export async function POST(req) {
       } catch (err) { console.error("Applicant email failed:", err); }
     }
 
-    // ─── Approver email ──────────────────────────────────────────────────────
+    // Approver email & token only for pending (non-skipApproval)
     if (!skipApproval && resolvedApprover?.approverId) {
       await db.collection("leave_action_tokens").insertOne({
         token,
@@ -281,138 +281,26 @@ export async function POST(req) {
         createdAt: new Date(),
       });
 
-      const baseUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const baseUrl = process.env.APP_URL;
       const approveLink = `${baseUrl}/api/apply-leave/email-action?requestId=${result.insertedId}&token=${token}&action=approve`;
       const rejectLink = `${baseUrl}/api/apply-leave/email-action?requestId=${result.insertedId}&token=${token}&action=reject`;
 
-      const approverUser = await db.collection("users").findOne({ _id: new ObjectId(resolvedApprover.approverId) });
-
-      // ─── Fetch remaining balance using the stored `balance` field ──────
-      let remainingBalance = null;
-      if (!skipBalance) {
-        const leaveYear = new Date(fromDate).getFullYear();
-        const balanceDoc = await db.collection("leave_balances").findOne({
-          userId: userObjectId,
-          year: leaveYear,
-        });
-        if (balanceDoc) {
-          const leaveEntry = balanceDoc.leaves?.find(
-            (l) => l.leaveTypeId?.toString() === leaveTypeId
-          );
-          if (leaveEntry) {
-            // Use the stored balance directly (this matches the UI)
-            remainingBalance = Number(leaveEntry.balance) || 0;
-          }
-        }
-      }
-      const balanceDisplay = remainingBalance !== null
-        ? `${remainingBalance} day${remainingBalance !== 1 ? 's' : ''}`
-        : (skipBalance ? 'N/A' : 'Not found');
-
-      // ─── HTML template (with button gap) ──────────────────────────────────
       const mailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Leave Approval Request</title>
-</head>
-<body style="margin:0; padding:0; background-color:#f4f7fc; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#ffffff; margin:20px auto; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-    <!-- HEADER -->
-    <tr>
-      <td style="padding:30px 30px 10px 30px; text-align:center; border-bottom:1px solid #E5E7EB;">
-        <h2 style="margin:0; font-size:22px; color:#4F46E5; letter-spacing:-0.5px; font-weight:600;">
-          Leave Approval Request
-        </h2>
-      </td>
-    </tr>
-    <!-- BODY -->
-    <tr>
-      <td style="padding:30px;">
-        <p style="font-size:16px; line-height:1.6; color:#333333; margin-top:0;">
-          Hello <strong>${approverUser?.name || "Approver"}</strong>,
-        </p>
-        <p style="font-size:16px; line-height:1.6; color:#333333; margin-bottom:20px;">
-          You have a new leave request awaiting your action.
-        </p>
-
-        <!-- Info box – styled like the e‑sign document box -->
-        <div style="background:#F3F4F6; padding:15px; border-radius:8px; margin:0 0 15px 0;">
-          <table style="width:100%; border-collapse:collapse; font-size:15px;">
-            <tr>
-              <td style="padding:4px 12px; width:30%; font-weight:600; color:#1a2a3a;">Applicant</td>
-              <td style="padding:4px 12px; color:#333;">${applicantUser.name || applicantUser.email}</td>
-            </tr>
-            <tr>
-              <td style="padding:4px 12px; font-weight:600; color:#1a2a3a;">Leave Type</td>
-              <td style="padding:4px 12px; color:#333;">${leaveTypeName}</td>
-            </tr>
-            <tr>
-              <td style="padding:4px 12px; font-weight:600; color:#1a2a3a;">Balance</td>
-              <td style="padding:4px 12px; color:#333;">${balanceDisplay}</td>
-            </tr>
-            <tr>
-              <td style="padding:4px 12px; font-weight:600; color:#1a2a3a;">Dates</td>
-              <td style="padding:4px 12px; color:#333;">
-                ${fromDate} – ${toDate} &nbsp;|&nbsp; <strong>${parsedDays}</strong> day${parsedDays !== 1 ? 's' : ''}
-              </td>
-            </tr>
-          </table>
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>Leave Approval Request</h2>
+          <p><strong>Applicant:</strong> ${applicantUser.name || applicantUser.email}</p>
+          <p><strong>Leave Type:</strong> ${leaveTypeName}</p>
+          <p><strong>From:</strong> ${fromDate}</p>
+          <p><strong>To:</strong> ${toDate}</p>
+          <p><strong>Days:</strong> ${parsedDays}</p>
+          <p><strong>Description:</strong> ${description || "-"}</p>
+          <hr />
+          <a href="${approveLink}" style="background:#28a745; color:white; padding:10px 20px; text-decoration:none; margin-right:10px;">Approve</a>
+          <a href="${rejectLink}" style="background:#dc3545; color:white; padding:10px 20px; text-decoration:none;">Reject</a>
         </div>
-
-        ${description ? `
-          <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;">
-          <div style="background:#F9FAFB; padding:12px 16px; border-left:4px solid #4F46E5; border-radius:4px; margin:15px 0;">
-            <p style="margin:0; font-size:15px; color:#555;">
-              <strong>Message:</strong><br>
-              ${description}
-            </p>
-          </div>
-        ` : ''}
-
-        <!-- Action buttons with spacer column -->
-        <div style="margin:30px 0; text-align:center;">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;">
-            <tr>
-              <td bgcolor="#4F46E5" style="border-radius:6px;">
-                <a href="${approveLink}"
-                   style="display:inline-block; padding:12px 30px; font-family: Arial, sans-serif; font-size:14px; color:#ffffff; text-decoration:none; border-radius:6px; background-color:#4F46E5;">
-                  Approve
-                </a>
-              </td>
-              <td style="width:15px;"></td>
-              <td bgcolor="#dc3545" style="border-radius:6px;">
-                <a href="${rejectLink}"
-                   style="display:inline-block; padding:12px 30px; font-family: Arial, sans-serif; font-size:14px; color:#ffffff; text-decoration:none; border-radius:6px; background-color:#dc3545;">
-                  Reject
-                </a>
-              </td>
-            </tr>
-          </table>
-        </div>
-
-        <p style="font-size:13px; color:#9CA3AF; margin-top:25px;">
-          <span style="color:#6B7280;">Sent via:</span> Civic Leave App
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:20px 30px; background-color:#f8fafc; border-top:1px solid #e9edf2; text-align:center; border-radius:0 0 8px 8px;">
-        <p style="margin:0; font-size:13px; color:#8898aa;">
-          &copy; ${new Date().getFullYear()} Your Company Name. All rights reserved.
-        </p>
-        <p style="margin:5px 0 0 0; font-size:12px; color:#a0b0c0;">
-          This message was sent automatically. Please do not reply directly to this email.
-        </p>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
       `;
 
+      const approverUser = await db.collection("users").findOne({ _id: new ObjectId(resolvedApprover.approverId) });
       if (approverUser?.email) {
         try {
           await transporter.sendMail({

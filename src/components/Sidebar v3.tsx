@@ -1,8 +1,9 @@
+
 "use client";
 
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
-import { Layers, Calendar, Clock, Briefcase } from "lucide-react";
+import { Layers, Calendar, Clock, Briefcase } from "lucide-react"; // ✅ Added Briefcase
 import {
   Shield,
   Settings,
@@ -64,6 +65,7 @@ export default function Sidebar() {
         setUserEmail(tokenEmail);
       }
 
+      // Check localStorage for isAdmin flag first
       const storedIsAdmin = localStorage.getItem("isAdmin") === "true";
       setIsAdminUser(storedIsAdmin);
 
@@ -97,17 +99,6 @@ export default function Sidebar() {
 
   const isAdmin =
     isAdminUser || userRole === "Admin" || pathname.startsWith("/admin/");
-
-  // ─── INTERIM MEASURE: allow specific emails to see HRS ───
-  const hrsAllowedEmails = [
-  "yangzom@acc.org.bt",
-  "skhando@acc.org.bt",
-  "bdorj@acc.org.bt",
-  "trinzin@acc.org.bt",
-  "gyeltshencipo@acc.org.bt"
-];
-  const showHRS = isAdmin || hrsAllowedEmails.includes(userEmail);
-
   const isMasterActive =
     pathname === "/admin/department" || pathname === "/division";
   const isLeaveActive =
@@ -158,11 +149,14 @@ export default function Sidebar() {
   return (
     <aside className="w-64 bg-white border-r border-gray-200 h-screen fixed top-0 left-0 flex flex-col text-sm">
       <div className="px-4 py-4 flex items-center gap-3">
+        {/* Avatar */}
         <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
           <span className="text-sm font-semibold text-gray-700">
             {userName ? userName.charAt(0).toUpperCase() : "U"}
           </span>
         </div>
+
+        {/* Name */}
         <p className="text-lg text-gray-700 font-medium truncate">
           {userName || "User"}
         </p>
@@ -171,7 +165,7 @@ export default function Sidebar() {
       <nav className="flex-1 px-4 py-3 space-y-2 overflow-y-auto min-h-0">
         {isAdmin ? (
           <>
-            {/* Master */}
+            {/* --- MASTER SECTION --- */}
             <button
               onClick={() => toggleSection("master")}
               className={navButtonClass(isMasterActive)}
@@ -184,6 +178,7 @@ export default function Sidebar() {
                 <ChevronRight size={16} />
               )}
             </button>
+
             {displayedOpenSection === "master" && (
               <div className="ml-8 mt-1 space-y-1">
                 <button
@@ -203,7 +198,7 @@ export default function Sidebar() {
               </div>
             )}
 
-            {/* Leave */}
+            {/* --- LEAVE SECTION --- */}
             <button
               onClick={() => toggleSection("leave")}
               className={navButtonClass(isLeaveActive)}
@@ -216,6 +211,7 @@ export default function Sidebar() {
                 <ChevronRight size={16} />
               )}
             </button>
+
             {displayedOpenSection === "leave" && (
               <div className="ml-8 mt-1 space-y-1">
                 {canHandleLeaveApprovals && (
@@ -228,6 +224,7 @@ export default function Sidebar() {
                     Leave Approvals
                   </button>
                 )}
+
                 <button
                   onClick={() => router.push("/admin/leave-type")}
                   className={navSubButtonClass(
@@ -263,7 +260,16 @@ export default function Sidebar() {
               </div>
             )}
 
-            {/* Admin-only buttons */}
+            {/* --- SECRETARIAT SERVICES - VISIBLE TO EVERYONE --- */}
+            <button
+              onClick={() => router.push("/secretariat-services")}
+              className={navButtonClass(pathname === "/secretariat-services")}
+            >
+              <Briefcase size={18} />
+              Secretariat Services
+            </button>
+
+            {/* --- ADMIN-ONLY BUTTONS --- */}
             <button
               onClick={() => router.push("/admin/pending-users")}
               className={navButtonClass(pathname === "/admin/pending-users")}
@@ -271,6 +277,7 @@ export default function Sidebar() {
               <Clock size={18} />
               Pending Approvals
             </button>
+
             <button
               onClick={() => router.push("/dashboard/weekly-plan")}
               className={navButtonClass(pathname === "/dashboard/weekly-plan")}
@@ -278,6 +285,15 @@ export default function Sidebar() {
               <Clock size={18} />
               Weekly Plan
             </button>
+
+             <button
+              onClick={() => router.push("/dashboard/hr/employee")}
+              className={navButtonClass(pathname === "/dashboard/hr/employee")}
+            >
+              <Clock size={18} />
+              HRS
+            </button>
+
             <button
               onClick={() => router.push("/admin/all-users")}
               className={navButtonClass(pathname === "/admin/all-users")}
@@ -285,6 +301,7 @@ export default function Sidebar() {
               <Users size={18} />
               All Users
             </button>
+
             <button
               onClick={() => router.push("/settings")}
               className={navButtonClass(pathname === "/settings")}
@@ -295,7 +312,7 @@ export default function Sidebar() {
           </>
         ) : (
           <>
-            {/* Non-admin Leave */}
+            {/* --- LEAVE SECTION (NON-ADMIN) --- */}
             <button
               onClick={() => toggleSection("leave")}
               className={navButtonClass(isLeaveActive)}
@@ -308,6 +325,7 @@ export default function Sidebar() {
                 <ChevronRight size={16} />
               )}
             </button>
+
             {displayedOpenSection === "leave" && (
               <div className="ml-8 mt-1 space-y-1">
                 <button
@@ -319,6 +337,7 @@ export default function Sidebar() {
                 >
                   Apply Leave
                 </button>
+
                 {canHandleLeaveApprovals && (
                   <button
                     onClick={() => router.push("/dashboard/leave/approvals")}
@@ -331,6 +350,17 @@ export default function Sidebar() {
                 )}
               </div>
             )}
+
+            {/* --- SECRETARIAT SERVICES - VISIBLE TO EVERYONE --- */}
+            <button
+              onClick={() => router.push("/secretariat-services")}
+              className={navButtonClass(pathname === "/secretariat-services")}
+            >
+              <Briefcase size={18} />
+              Secretariat Services
+            </button>
+
+            {/* --- SETTINGS (NON-ADMIN) --- */}
             <button
               onClick={() => router.push("/settings")}
               className={navButtonClass(pathname === "/settings")}
@@ -340,29 +370,9 @@ export default function Sidebar() {
             </button>
           </>
         )}
-
-        {/* ─── SECRETARIAT SERVICES (visible to everyone) ─── */}
-        <button
-          onClick={() => router.push("/secretariat-services")}
-          className={navButtonClass(pathname === "/secretariat-services")}
-        >
-          <Briefcase size={18} />
-          Secretariat Services
-        </button>
-
-        {/* ─── HRS MODULE (visible to admins AND specific emails) ─── */}
-        {showHRS && (
-          <button
-            onClick={() => router.push("/dashboard/hr/employee")}
-            className={navButtonClass(pathname === "/dashboard/hr/employee")}
-          >
-            <Clock size={18} />
-            HRS
-          </button>
-        )}
       </nav>
 
-      {/* Logout */}
+      {/* --- LOGOUT --- */}
       <div className="px-4 py-4">
         <button
           onClick={handleLogout}
