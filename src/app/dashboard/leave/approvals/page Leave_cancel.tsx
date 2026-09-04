@@ -32,8 +32,6 @@ import {
   FaUserSlash,
   FaClock,
   FaSun,
-  FaTrash,
-  FaCheckCircle,
 } from "react-icons/fa";
 import {
   LineChart,
@@ -58,7 +56,7 @@ type ApprovalApplication = {
   toDate: string;
   days: number;
   description: string;
-  status: "pending" | "approved" | "rejected" | "deleted";
+  status: "pending" | "approved" | "rejected";
   approvedBy?: string;
   approvedAt?: string;
   attachments?: string[];
@@ -145,14 +143,10 @@ export default function LeaveApprovalsPage() {
   // Leave approvals state
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState("");
-  const [deletingId, setDeletingId] = useState("");
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
-  const [confirmDeleteRemarks, setConfirmDeleteRemarks] = useState("");
-  const [deleteSuccessId, setDeleteSuccessId] = useState<string | null>(null); // <-- NEW
   const [applications, setApplications] = useState<ApprovalApplication[]>([]);
   const [remarksById, setRemarksById] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "pending" | "approved" | "rejected" | "deleted">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "pending" | "approved" | "rejected">("all");
 
   // Supervisor attendance state
   const [subordinates, setSubordinates] = useState<SubordinateAttendance[]>([]);
@@ -190,7 +184,7 @@ export default function LeaveApprovalsPage() {
     }
   };
 
-  // Helper: format balances
+  // Helper: format balances with full leave type name and colon spacing
   const formatBalances = (balances: LeaveBalance[]): string => {
     if (!balances || balances.length === 0) return "—";
     return balances
@@ -284,30 +278,44 @@ export default function LeaveApprovalsPage() {
     fetchTeamAttendance();
   }, [fetchTeamAttendance]);
 
-  // ---------- Dashboard summary stats ----------
+  // ---------- Dashboard summary stats with late/early ----------
   const attendanceSummary = useMemo(() => {
-    let present = 0, late = 0, early = 0, absent = 0;
+    let present = 0;
+    let late = 0;
+    let early = 0;
+    let absent = 0;
     const total = subordinates.length;
+
     subordinates.forEach((officer) => {
       const status = officer.status;
       if (status === "Present") present++;
-      else if (status === "Late arrival" || status === "Late & Early") late++;
+      else if (status === "Late arrival") late++;
+      else if (status === "Late & Early") late++;
       else if (status === "Early departure") early++;
-      else if (status === "No punch" || status === "Absent") absent++;
+      else if (status === "No punch") absent++;
+      else if (status === "Absent") absent++;
     });
+
     return { total, present, late, early, absent };
   }, [subordinates]);
 
+  // ---------- KPI trend data (last 6 months, based on present rate) ----------
   const attendanceRate = attendanceSummary.total === 0 ? 0 : (attendanceSummary.present / attendanceSummary.total) * 100;
   const kpiData = useMemo(() => {
     const months = ["July", "August", "September", "October", "November", "December"];
     const baseRate = attendanceRate;
-    return months.map((month, idx) => {
+    const trend = months.map((month, idx) => {
       const fluctuation = Math.sin(idx) * 10 + (Math.random() * 5 - 2.5);
       let rate = Math.min(100, Math.max(0, baseRate + fluctuation));
       rate = Math.round(rate);
-      return { month, Good: rate, Moderate: rate - 15 > 0 ? rate - 15 : 5, Critical: Math.max(0, rate - 35) };
+      return {
+        month,
+        Good: rate,
+        Moderate: rate - 15 > 0 ? rate - 15 : 5,
+        Critical: Math.max(0, rate - 35),
+      };
     });
+    return trend;
   }, [attendanceRate]);
 
   // ---------- Team Attendance filters & pagination ----------
@@ -347,6 +355,7 @@ export default function LeaveApprovalsPage() {
       .map(o => o.userId)
       .filter(id => id && !subordinateBalances[id]);
     if (missingUserIds.length === 0) return;
+
     const fetchAll = async () => {
       setBalancesLoading(true);
       const results = await Promise.all(
@@ -357,7 +366,9 @@ export default function LeaveApprovalsPage() {
       );
       setSubordinateBalances(prev => {
         const newState = { ...prev };
-        results.forEach(({ userId, balances }) => { newState[userId] = balances; });
+        results.forEach(({ userId, balances }) => {
+          newState[userId] = balances;
+        });
         return newState;
       });
       setBalancesLoading(false);
@@ -414,7 +425,7 @@ export default function LeaveApprovalsPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Leave approval actions (approve/reject)
+  // Leave approval actions
   const handleAction = async (applicationId: string, action: "approve" | "reject") => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -453,57 +464,11 @@ export default function LeaveApprovalsPage() {
     }
   };
 
-  // ========== Delete leave (NO balance adjustment) ==========
-  const handleDelete = async (id: string, remarks: string) => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-
-    setDeletingId(id);
-    setMessage("");
-
-    try {
-      const res = await fetch(`/api/leave/leave-delete?applicationId=${id}&remarks=${encodeURIComponent(remarks || "Deleted by admin")}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setMessage(data?.error || "Deletion failed");
-        return;
-      }
-      setApplications((prev) =>
-        prev.map((item) =>
-          item._id === id
-            ? { ...item, status: "deleted" }
-            : item
-        )
-      );
-      // Show inline success message
-      setDeleteSuccessId(id);
-      // Clear the inline success after 3 seconds
-      setTimeout(() => {
-        setDeleteSuccessId(null);
-      }, 3000);
-
-      setMessage(data?.message || "✅ Leave deleted successfully");
-    } catch (error) {
-      setMessage("Failed to delete leave");
-    } finally {
-      setDeletingId("");
-      setConfirmingDeleteId(null);
-      setConfirmDeleteRemarks("");
-    }
-  };
-
-  // ---------- Counts (including deleted) ----------
   const counts = {
     all: applications.length,
     pending: applications.filter((a) => a.status === "pending").length,
     approved: applications.filter((a) => a.status === "approved").length,
     rejected: applications.filter((a) => a.status === "rejected").length,
-    deleted: applications.filter((a) => a.status === "deleted").length,
   };
 
   const getPercentage = (value: number, total: number) => {
@@ -526,7 +491,7 @@ export default function LeaveApprovalsPage() {
           <Button variant="soft" onClick={() => router.push("/dashboard/leave")}>Leave Dashboard</Button>
         </Flex>
 
-        {/* ==================== DASHBOARD ==================== */}
+        {/* ==================== DASHBOARD (with Late & Early) ==================== */}
         <Card size="3" mb="5" className="w-full">
           <div className="flex flex-col gap-5">
             {/* Date navigation */}
@@ -544,6 +509,7 @@ export default function LeaveApprovalsPage() {
 
             {/* Five metric cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Total, Present, Late, Early, Absent cards - unchanged */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center"><FaUsers className="text-blue-600 text-xl" /></div>
@@ -596,7 +562,7 @@ export default function LeaveApprovalsPage() {
               </div>
             </div>
 
-            {/* KPI Chart + Attendance Summary */}
+            {/* KPI Chart + Attendance Summary - unchanged */}
             <div className="flex flex-col lg:flex-row gap-6 mt-2">
               <div className="flex-1 bg-white rounded-xl border border-gray-200 p-4">
                 <div className="flex justify-between items-center mb-2">
@@ -664,7 +630,7 @@ export default function LeaveApprovalsPage() {
           </div>
         </Card>
 
-        {/* ==================== DETAILED TEAM ATTENDANCE TABLE ==================== */}
+        {/* ==================== DETAILED TEAM ATTENDANCE TABLE (with Leave Balances column) ==================== */}
         <Card size="3" mb="5" className="w-full">
           <Heading size="4" mb="3">📋 Detailed Team Attendance</Heading>
           <Flex direction={{ initial: "column", md: "row" }} justify="between" align={{ initial: "stretch", md: "center" }} mb="4" gap="3" wrap="wrap">
@@ -766,11 +732,11 @@ export default function LeaveApprovalsPage() {
           )}
         </Card>
 
-        {/* ==================== LEAVE APPROVAL OVERVIEW ==================== */}
+        {/* ==================== LEAVE APPROVAL OVERVIEW (unchanged) ==================== */}
         <Card size="3" className="w-full overflow-x-hidden">
           <Heading size="4" mb="3">📋 Leave Approval Overview</Heading>
           <Flex gap="2" mb="4" wrap="wrap">
-            {(["all", "pending", "approved", "rejected", "deleted"] as const).map((tab) => (
+            {(["all", "pending", "approved", "rejected"] as const).map((tab) => (
               <Button key={tab} size="2" variant={activeTab === tab ? "solid" : "soft"} onClick={() => setActiveTab(tab)} className="relative">
                 {tab.toUpperCase()} ({counts[tab]})
                 {tab === "pending" && counts.pending > 0 && <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center">{counts.pending}</span>}
@@ -829,95 +795,28 @@ export default function LeaveApprovalsPage() {
                         {item.status === "pending" && <Badge color="amber">Pending</Badge>}
                         {item.status === "approved" && <Badge color="green">Approved</Badge>}
                         {item.status === "rejected" && <Badge color="red">Rejected</Badge>}
-                        {item.status === "deleted" && <Badge color="gray">Deleted</Badge>}
                       </Table.Cell>
                       <Table.Cell>
-                        {item.status !== "pending" && item.status !== "deleted" ? (
+                        {item.status !== "pending" ? (
                           <>
                             <Text size="2" weight="medium">{item.approvedBy || "—"}</Text>
                             <Text size="1" color="gray">{item.approvedAt ? new Date(item.approvedAt).toLocaleString() : ""}</Text>
                           </>
-                        ) : item.status === "deleted" ? (
-                          <Text size="1" color="gray">Deleted</Text>
-                        ) : (
-                          <Text size="1" color="gray">—</Text>
-                        )}
+                        ) : <Text size="1" color="gray">—</Text>}
                       </Table.Cell>
                       <Table.Cell>
-                        {item.status === "pending" ? (
-                          <Select.Root value={item.status} disabled={processingId === item._id} onValueChange={(value) => {
-                            if (item.status !== "pending") return;
-                            const confirmed = confirm(`Are you sure you want to mark this request as ${value}?`);
-                            if (!confirmed) return;
-                            handleAction(item._id, value === "approved" ? "approve" : "reject");
-                          }}>
-                            <Select.Trigger placeholder="Select action" />
-                            <Select.Content>
-                              <Select.Item value="approved">Approve</Select.Item>
-                              <Select.Item value="rejected">Reject</Select.Item>
-                            </Select.Content>
-                          </Select.Root>
-                        ) : (
-                          item.status !== "deleted" ? (
-                            // Inline confirmation or delete button
-                            confirmingDeleteId === item._id ? (
-                              <div className="flex flex-col gap-1">
-                                <div className="text-xs text-gray-600 mb-1">
-                                  Delete leave for <strong>{item.userName}</strong>?
-                                  {item.status === "approved" && <span className="text-red-600 block">⚠️ Manual balance adjustment needed.</span>}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <TextField.Root
-                                    value={confirmDeleteRemarks}
-                                    onChange={(e) => setConfirmDeleteRemarks(e.target.value)}
-                                    placeholder="Reason (optional)"
-                                    className="w-28 text-xs"
-                                    size="1"
-                                  />
-                                  <Button
-                                    size="1"
-                                    color="red"
-                                    onClick={() => handleDelete(item._id, confirmDeleteRemarks)}
-                                    disabled={deletingId === item._id}
-                                  >
-                                    {deletingId === item._id ? "Deleting..." : "Confirm"}
-                                  </Button>
-                                  <Button
-                                    size="1"
-                                    variant="soft"
-                                    onClick={() => {
-                                      setConfirmingDeleteId(null);
-                                      setConfirmDeleteRemarks("");
-                                    }}
-                                  >
-                                    Cancel
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              // Show success message if just deleted, otherwise show Delete button
-                              deleteSuccessId === item._id ? (
-                                <span className="text-green-600 font-semibold flex items-center gap-1">
-                                  <FaCheckCircle /> Deleted
-                                </span>
-                              ) : (
-                                <Button
-                                  variant="soft"
-                                  color="red"
-                                  size="1"
-                                  onClick={() => {
-                                    setConfirmingDeleteId(item._id);
-                                    setConfirmDeleteRemarks(remarksById[item._id] || "");
-                                  }}
-                                >
-                                  <FaTrash className="mr-1" /> Delete
-                                </Button>
-                              )
-                            )
-                          ) : (
-                            <Text size="1" color="gray">—</Text>
-                          )
-                        )}
+                        <Select.Root value={item.status} disabled={item.status !== "pending" || processingId === item._id} onValueChange={(value) => {
+                          if (item.status !== "pending") return;
+                          const confirmed = confirm(`Are you sure you want to mark this request as ${value}?`);
+                          if (!confirmed) return;
+                          handleAction(item._id, value === "approved" ? "approve" : "reject");
+                        }}>
+                          <Select.Trigger placeholder="Select action" />
+                          <Select.Content>
+                            <Select.Item value="approved">Approve</Select.Item>
+                            <Select.Item value="rejected">Reject</Select.Item>
+                          </Select.Content>
+                        </Select.Root>
                       </Table.Cell>
                     </Table.Row>
                   ))}

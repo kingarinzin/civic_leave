@@ -73,7 +73,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Employee code not found for target user' }, { status: 400 });
     }
 
-    // Authorization logic (unchanged)
+    // Authorization logic
     const currentRole = currentUser.role;
     const targetRole = targetUser.role;
 
@@ -139,45 +139,6 @@ export async function GET(request) {
       const d = String(current.getDate()).padStart(2, '0');
       dateList.push(`${y}-${m}-${d}`);
       current.setDate(current.getDate() + 1);
-    }
-
-    // ----- NEW: Fetch approved leaves for the target user that overlap with the date range -----
-    const leaveByDate = {}; // key: YYYY-MM-DD, value: leave type name (e.g., "Casual", "Medical")
-    try {
-      // Convert date strings to Date objects for query
-      const startDateObj = new Date(startDateStr + 'T00:00:00');
-      const endDateObj = new Date(endDateStr + 'T23:59:59');
-
-      // Query approved leaves where date ranges overlap
-      const approvedLeaves = await db.collection('leave_applications').find({
-        userId: targetUser._id, // ObjectId
-        status: 'approved',
-        $or: [
-          // leave starts within range
-          { fromDate: { $lte: endDateStr, $gte: startDateStr } },
-          // leave ends within range
-          { toDate: { $lte: endDateStr, $gte: startDateStr } },
-          // leave spans entire range
-          { fromDate: { $lte: startDateStr }, toDate: { $gte: endDateStr } },
-        ],
-      }).toArray();
-
-      // For each leave, mark all dates in the range that fall within its from-to interval
-      approvedLeaves.forEach(leave => {
-        const leaveStart = new Date(leave.fromDate);
-        const leaveEnd = new Date(leave.toDate);
-        // Iterate over all dates in the overall range and check if they fall within this leave
-        for (const dateStr of dateList) {
-          const d = new Date(dateStr + 'T00:00:00');
-          if (d >= leaveStart && d <= leaveEnd) {
-            // Use leaveTypeName; if not available, use a default
-            leaveByDate[dateStr] = leave.leaveTypeName || 'Leave';
-          }
-        }
-      });
-    } catch (leaveError) {
-      console.error('Failed to fetch approved leaves:', leaveError);
-      // Continue without leaves
     }
 
     // Fetch punches
@@ -250,21 +211,10 @@ export async function GET(request) {
         }
       }
 
-      // ----- NEW: Leave and weekend priority logic -----
-      let isLeave = false;
-      let leaveType = null;
-      if (leaveByDate[date]) {
-        // 1. Leave overrides everything
-        const leaveName = leaveByDate[date];
-        // Append " Leave" if not already present? We'll use the exact stored name
-        status = leaveName; // e.g., "Casual", "Medical", "Annual", "Tour"
-        isLeave = true;
-        leaveType = leaveName;
-      } else if (isWeekend) {
-        // 2. Weekend (no leave) override
+      // Override for weekends – always show "Weekend"
+      if (isWeekend) {
         status = 'Weekend';
       }
-      // else keep punch status
 
       return {
         date: new Date(date).toLocaleDateString('en-GB', {
@@ -278,8 +228,6 @@ export async function GET(request) {
         lastClass: outColor,
         status,
         isWeekend,
-        isLeave,       // new field
-        leaveType,     // new field (null if not a leave day)
       };
     });
 

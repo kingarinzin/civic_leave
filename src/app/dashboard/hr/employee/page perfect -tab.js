@@ -33,7 +33,6 @@ import {
   ZoomOut,
   Edit,
   Layout,
-  Printer,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import Cropper from "react-easy-crop";
@@ -128,7 +127,6 @@ export default function HREmployeePage() {
   const [editData, setEditData] = useState({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef(null);
-  const printRef = useRef(null);
 
   // ---------- Crop positioning state ----------
   const [cropModalOpen, setCropModalOpen] = useState(false);
@@ -144,7 +142,6 @@ export default function HREmployeePage() {
 
   // ---------- Tab state ----------
   const [activeTab, setActiveTab] = useState("personal");
-  const [isPrinting, setIsPrinting] = useState(false);
 
   const showPhotoNotification = (message, type = "success") => {
     setPhotoNotification({ message, type });
@@ -267,14 +264,6 @@ export default function HREmployeePage() {
       setEditingCid(null);
       setActiveTab("personal");
     }
-  };
-
-  const handlePrint = () => {
-    setIsPrinting(true);
-    setTimeout(() => {
-      window.print();
-      setIsPrinting(false);
-    }, 300);
   };
 
   // ================== EDIT START ==================
@@ -762,7 +751,8 @@ export default function HREmployeePage() {
                                       <User className="w-10 h-10 text-blue-600" />
                                     </div>
                                   )}
-                                  <div className="absolute -bottom-2 -right-2 flex gap-1 bg-white rounded-full shadow-md p-1 border border-gray-200 no-print">
+                                  {/* Photo controls */}
+                                  <div className="absolute -bottom-2 -right-2 flex gap-1 bg-white rounded-full shadow-md p-1 border border-gray-200">
                                     <input
                                       type="file"
                                       accept="image/*"
@@ -814,7 +804,7 @@ export default function HREmployeePage() {
                                     </span>
                                   </div>
                                 </div>
-                                <div className="no-print">
+                                <div>
                                   <button
                                     onClick={() => startEdit(item)}
                                     className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition shadow-sm"
@@ -824,10 +814,10 @@ export default function HREmployeePage() {
                                 </div>
                               </div>
 
-                              {/* Photo Notification - hidden in print */}
+                              {/* Photo Notification */}
                               {photoNotification && (
                                 <div
-                                  className={`px-4 py-2 text-sm no-print ${
+                                  className={`px-4 py-2 text-sm ${
                                     photoNotification.type === "success"
                                       ? "bg-green-50 text-green-700 border-b border-green-200"
                                       : "bg-red-50 text-red-700 border-b border-red-200"
@@ -841,7 +831,7 @@ export default function HREmployeePage() {
                               {/* EDIT MODE – full grid (unchanged)           */}
                               {/* =========================================== */}
                               {isEditing ? (
-                                <div className="p-6 no-print">
+                                <div className="p-6">
                                   <div className="flex justify-between items-center mb-4">
                                     <h4 className="font-semibold text-lg">Edit HR Fields</h4>
                                     <button
@@ -947,8 +937,8 @@ export default function HREmployeePage() {
                                 /* DISPLAY MODE – TABBED LAYOUT                */
                                 /* =========================================== */
                                 <div className="p-6">
-                                  {/* Tab Buttons - no background, blue underline only */}
-                                  <div className="flex gap-1 mb-6">
+                                  {/* Tab Buttons – added "All" tab */}
+                                  <div className="flex border-b border-gray-200 mb-6 gap-1 flex-wrap">
                                     <TabButton
                                       active={activeTab === "personal"}
                                       onClick={() => setActiveTab("personal")}
@@ -979,15 +969,6 @@ export default function HREmployeePage() {
                                       icon={Layout}
                                       label="All"
                                     />
-                                    {/* Print button – only text, no icon */}
-                                    {activeTab === "all" && (
-                                      <button
-                                        onClick={handlePrint}
-                                        className="ml-auto text-sm font-medium text-blue-600 hover:text-blue-800 border border-blue-600 rounded-md px-4 py-2 hover:bg-blue-50 transition no-print"
-                                      >
-                                        Print
-                                      </button>
-                                    )}
                                   </div>
 
                                   {/* Tab Panels */}
@@ -1045,43 +1026,41 @@ export default function HREmployeePage() {
 
                                     {activeTab === "all" && (
                                       <TabPanel>
-                                        <div ref={printRef} className="print-content">
-                                          <div className="space-y-8">
-                                            <Section title="Personal Information" icon={User}>
-                                              <DetailItem icon={User} label="Gender" value={item.gender} />
-                                              <DetailItem icon={Calendar} label="Date of Birth" value={item.dateOfBirth} />
-                                              <DetailItem icon={Phone} label="Mobile" value={item.mobile} />
-                                              <DetailItem icon={Mail} label="Email" value={item.email} isLink={`mailto:${item.email}`} />
-                                            </Section>
+                                        <div className="space-y-8">
+                                          <Section title="Personal Information" icon={User}>
+                                            <DetailItem icon={User} label="Gender" value={item.gender} />
+                                            <DetailItem icon={Calendar} label="Date of Birth" value={item.dateOfBirth} />
+                                            <DetailItem icon={Phone} label="Mobile" value={item.mobile} />
+                                            <DetailItem icon={Mail} label="Email" value={item.email} isLink={`mailto:${item.email}`} />
+                                          </Section>
 
-                                            <Section title="Employment Details" icon={Briefcase}>
-                                              <DetailItem icon={Briefcase} label="Employee Number" value={item.employeeNumber} />
-                                              <DetailItem icon={Award} label="Position Level" value={`${item.positionLevel || ""}${item.subLevel ? `-${item.subLevel}` : ""}`} />
-                                              <DetailItem icon={Calendar} label="Appointment Date" value={item.dateOfAppointment} />
-                                              <DetailItem icon={Calendar} label="Last Promotion" value={item.lastDateOfPromotion} />
-                                              <DetailItem icon={Users} label="Employee Type" value={item.empType} />
-                                            </Section>
+                                          <Section title="Employment Details" icon={Briefcase}>
+                                            <DetailItem icon={Briefcase} label="Employee Number" value={item.employeeNumber} />
+                                            <DetailItem icon={Award} label="Position Level" value={`${item.positionLevel || ""}${item.subLevel ? `-${item.subLevel}` : ""}`} />
+                                            <DetailItem icon={Calendar} label="Appointment Date" value={item.dateOfAppointment} />
+                                            <DetailItem icon={Calendar} label="Last Promotion" value={item.lastDateOfPromotion} />
+                                            <DetailItem icon={Users} label="Employee Type" value={item.empType} />
+                                          </Section>
 
-                                            <Section title="HR Custom Fields" icon={FileText}>
-                                              <DetailItem icon={Building} label="Parent Agency" value={item.parentAgency || "Anti-Corruption Commission"} />
-                                              <DetailItem icon={MapPin} label="MoG" value={item.mog} />
-                                              <DetailItem icon={FileText} label="Sub Group" value={item.subGroup} />
-                                              <DetailItem icon={FileText} label="Super Structure" value={item.superStructure} />
-                                              <DetailItem icon={Briefcase} label="Position Type" value={item.positionType} />
-                                              <DetailItem icon={GraduationCap} label="Degree" value={item.degree} />
-                                              <DetailItem icon={GraduationCap} label="Area of Study" value={item.qualification} />
-                                              <DetailItem icon={UserCheck} label="Current Status" value={item.currentStatus} />
-                                              <DetailItem icon={Calendar} label="Date of Joining ACC" value={item.dateOfJoining} />
-                                              <DetailItem icon={Hash} label="Intact Type" value={item.intactType} />
-                                              <DetailItem icon={FileText} label="Remarks" value={item.remarks} />
-                                            </Section>
+                                          <Section title="HR Custom Fields" icon={FileText}>
+                                            <DetailItem icon={Building} label="Parent Agency" value={item.parentAgency || "Anti-Corruption Commission"} />
+                                            <DetailItem icon={MapPin} label="MoG" value={item.mog} />
+                                            <DetailItem icon={FileText} label="Sub Group" value={item.subGroup} />
+                                            <DetailItem icon={FileText} label="Super Structure" value={item.superStructure} />
+                                            <DetailItem icon={Briefcase} label="Position Type" value={item.positionType} />
+                                            <DetailItem icon={GraduationCap} label="Degree" value={item.degree} />
+                                            <DetailItem icon={GraduationCap} label="Area of Study" value={item.qualification} />
+                                            <DetailItem icon={UserCheck} label="Current Status" value={item.currentStatus} />
+                                            <DetailItem icon={Calendar} label="Date of Joining ACC" value={item.dateOfJoining} />
+                                            <DetailItem icon={Hash} label="Intact Type" value={item.intactType} />
+                                            <DetailItem icon={FileText} label="Remarks" value={item.remarks} />
+                                          </Section>
 
-                                            <Section title="Agency Path" icon={MapPin}>
-                                              <DetailItem icon={MapPin} label="Full Agency Path" value={item.fullAgencyPath} />
-                                              <DetailItem icon={Building} label="Department" value={item.department} />
-                                              <DetailItem icon={Building} label="Division" value={item.division} />
-                                            </Section>
-                                          </div>
+                                          <Section title="Agency Path" icon={MapPin}>
+                                            <DetailItem icon={MapPin} label="Full Agency Path" value={item.fullAgencyPath} />
+                                            <DetailItem icon={Building} label="Department" value={item.department} />
+                                            <DetailItem icon={Building} label="Division" value={item.division} />
+                                          </Section>
                                         </div>
                                       </TabPanel>
                                     )}
@@ -1137,87 +1116,6 @@ export default function HREmployeePage() {
           </div>
         )}
       </main>
-
-      {/* Print View – only rendered when printing */}
-      {isPrinting && expandedCid && (
-        <div className="print-view">
-          {employees
-            .filter((emp) => emp.cidNumber === expandedCid)
-            .map((item) => (
-              <div key={item.cidNumber} className="print-container">
-                <div className="print-header">
-                  <div className="print-avatar">
-                    {item.passportPhoto ? (
-                      <img
-                        src={item.passportPhoto}
-                        alt={item.fullName}
-                        className="w-32 h-32 rounded-full object-cover border-4 border-gray-300"
-                      />
-                    ) : (
-                      <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-300">
-                        <User className="w-16 h-16 text-gray-400" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="print-name">
-                    <h1>{item.fullName}</h1>
-                    <p>CID: {item.cidNumber}</p>
-                    <p>{item.positionTitle || "N/A"}</p>
-                  </div>
-                </div>
-
-                <div className="print-body">
-                  <div className="print-section">
-                    <h3>Personal Information</h3>
-                    <div className="print-grid">
-                      <div><span>Gender</span>{item.gender || "N/A"}</div>
-                      <div><span>Date of Birth</span>{item.dateOfBirth || "N/A"}</div>
-                      <div><span>Mobile</span>{item.mobile || "N/A"}</div>
-                      <div><span>Email</span>{item.email || "N/A"}</div>
-                    </div>
-                  </div>
-
-                  <div className="print-section">
-                    <h3>Employment Details</h3>
-                    <div className="print-grid">
-                      <div><span>Employee Number</span>{item.employeeNumber || "N/A"}</div>
-                      <div><span>Position Level</span>{item.positionLevel || "N/A"}{item.subLevel ? `-${item.subLevel}` : ""}</div>
-                      <div><span>Appointment Date</span>{item.dateOfAppointment || "N/A"}</div>
-                      <div><span>Last Promotion</span>{item.lastDateOfPromotion || "N/A"}</div>
-                      <div><span>Employee Type</span>{item.empType || "N/A"}</div>
-                    </div>
-                  </div>
-
-                  <div className="print-section">
-                    <h3>HR Custom Fields</h3>
-                    <div className="print-grid">
-                      <div><span>Parent Agency</span>{item.parentAgency || "Anti-Corruption Commission"}</div>
-                      <div><span>MoG</span>{item.mog || "N/A"}</div>
-                      <div><span>Sub Group</span>{item.subGroup || "N/A"}</div>
-                      <div><span>Super Structure</span>{item.superStructure || "N/A"}</div>
-                      <div><span>Position Type</span>{item.positionType || "N/A"}</div>
-                      <div><span>Degree</span>{item.degree || "N/A"}</div>
-                      <div><span>Area of Study</span>{item.qualification || "N/A"}</div>
-                      <div><span>Current Status</span>{item.currentStatus || "N/A"}</div>
-                      <div><span>Date of Joining ACC</span>{item.dateOfJoining || "N/A"}</div>
-                      <div><span>Intact Type</span>{item.intactType || "N/A"}</div>
-                      <div><span>Remarks</span>{item.remarks || "N/A"}</div>
-                    </div>
-                  </div>
-
-                  <div className="print-section">
-                    <h3>Agency Path</h3>
-                    <div className="print-grid">
-                      <div><span>Full Agency Path</span>{item.fullAgencyPath || "N/A"}</div>
-                      <div><span>Department</span>{item.department || "N/A"}</div>
-                      <div><span>Division</span>{item.division || "N/A"}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
 
       {/* Crop Modal */}
       {cropModalOpen && imageSrc && (
@@ -1301,122 +1199,12 @@ export default function HREmployeePage() {
           </div>
         </div>
       )}
-
-      {/* Print Styles */}
-      <style jsx global>{`
-        .no-print {
-          display: block;
-        }
-
-        @media print {
-          .no-print {
-            display: none !important;
-          }
-
-          body * {
-            visibility: hidden;
-          }
-          .print-view,
-          .print-view * {
-            visibility: visible;
-          }
-          .print-view {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 100%;
-            padding: 40px;
-            background: white;
-          }
-
-          .print-container {
-            max-width: 1000px;
-            margin: 0 auto;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-
-          .print-header {
-            display: flex;
-            align-items: center;
-            gap: 30px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #2563eb;
-            margin-bottom: 30px;
-          }
-
-          .print-avatar img,
-          .print-avatar div {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            border: 4px solid #d1d5db;
-          }
-
-          .print-name h1 {
-            font-size: 28px;
-            font-weight: bold;
-            color: #1f2937;
-            margin: 0;
-          }
-
-          .print-name p {
-            font-size: 16px;
-            color: #4b5563;
-            margin: 5px 0;
-          }
-
-          .print-section {
-            margin-bottom: 25px;
-            page-break-inside: avoid;
-          }
-
-          .print-section h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2563eb;
-            border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 8px;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-
-          .print-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px 30px;
-          }
-
-          .print-grid > div {
-            display: flex;
-            flex-direction: column;
-            padding: 4px 0;
-          }
-
-          .print-grid > div span {
-            font-size: 11px;
-            font-weight: 600;
-            color: #6b7280;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-          }
-
-          .print-grid > div {
-            font-size: 14px;
-            color: #1f2937;
-          }
-
-          .print-body {
-            padding: 0 10px;
-          }
-        }
-      `}</style>
     </div>
   );
 }
 
 // ============================================
-// TAB COMPONENTS – with blue underline only
+// TAB COMPONENTS – with blue background
 // ============================================
 function TabButton({ active, onClick, icon: Icon, label }) {
   return (
@@ -1424,8 +1212,8 @@ function TabButton({ active, onClick, icon: Icon, label }) {
       onClick={onClick}
       className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${
         active
-          ? "border-blue-600 text-blue-600"
-          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          ? "bg-blue-600 text-white border-blue-600 rounded-t-md"
+          : "bg-transparent text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
       }`}
     >
       <Icon size={16} />
@@ -1448,7 +1236,9 @@ function Section({ title, icon: Icon, children }) {
         {Icon && <Icon size={16} className="text-blue-500" />}
         {title}
       </h4>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">{children}</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+        {children}
+      </div>
     </div>
   );
 }

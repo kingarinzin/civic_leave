@@ -1,0 +1,287 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import jwt from "jsonwebtoken";
+import { ObjectId } from "mongodb";
+import clientPromise from "@/lib/mongodb";
+import { createTransporter } from "@/lib/mailer";
+
+// ========== Helper functions ==========
+
+function getTokenUserId(req: NextRequest): string {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new Error("Unauthorized");
+  }
+  const token = authHeader.split(" ")[1];
+  const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
+  return decoded.id;
+}
+
+function normalizeId(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof ObjectId) return value.toString();
+  if (typeof value === "object" && value !== null) {
+    const obj = value as { _id?: unknown };
+    if (obj._id instanceof ObjectId) return obj._id.toString();
+    if (typeof obj.toString === "function") {
+      const str = obj.toString();
+      if (str && str !== "[object Object]") return str;
+    }
+  }
+  return "";
+}
+
+// ========== GET handler ==========
+export async function GET(req: NextRequest) {
+  try {
+    const currentUserId = getTokenUserId(req);
+    const client = await clientPromise;
+    const db = client.db("civic_leave_db");
+
+    const currentUser = await db.collection("users").findOne({
+      _id: new ObjectId(currentUserId),
+    });
+    if (!currentUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const approverRoles = ["DivisionHead", "DepartmentHead", "Commissioner"];
+    const canApprove = !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
+    if (!canApprove) {
+      return NextResponse.json({ applications: [] }, { status: 200 });
+    }
+
+    const query: Record<string, unknown> = {};
+    if (!currentUser.isAdmin) {
+      query.approverId = currentUserId;
+    }
+
+    const applications = await db
+      .collection("leave_applications")
+      .find(query)
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const departments = await db.collection("departments").find({}).toArray();
+    const divisions = await db.collection("divisions").find({}).toArray();
+
+    const mapped = applications.map((entry) => {
+      const department = departments.find(
+        (d) => normalizeId(d._id) === normalizeId(entry.departmentId)
+      );
+      const division = divisions.find(
+        (d) => normalizeId(d._id) === normalizeId(entry.divisionId)
+      );
+      return {
+        _id: normalizeId(entry._id),
+        userId: entry.userId,
+        userName: entry.userName || "-",
+        applicantRole: entry.applicantRole || "Officer",
+        departmentName: department?.name || "-",
+        divisionName: division?.name || "-",
+        leaveTypeName: entry.leaveTypeName || "-",
+        fromDate: entry.fromDate,
+        toDate: entry.toDate,
+        days: Number(entry.days || 0),
+        description: entry.description || "",
+        approverName: entry.approverName || "-",
+        approverRole: entry.approverRole || "-",
+        attachments: entry.attachments || [],
+        attachmentName: entry.attachmentName || "",
+        createdAt: entry.createdAt,
+        status: entry.status || "pending",
+        approvedBy: entry.approvedBy || "",
+        approvedAt: entry.approvedAt || null,
+      };
+    });
+
+    return NextResponse.json({ applications: mapped });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("GET /api/leave-approvals error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}
+
+// ========== POST handler ==========
+export async function POST(req: NextRequest) {
+  try {
+    const currentUserId = getTokenUserId(req);
+    const body = await req.json();
+    const { applicationId, action, remarks } = body;
+
+    if (!applicationId || !["approve", "reject"].includes(action)) {
+      return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
+    }
+
+    const client = await clientPromise;
+    const db = client.db("civic_leave_db");
+
+    const currentUser = await db.collection("users").findOne({
+      _id: new ObjectId(currentUserId),
+    });
+    if (!currentUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const leaveApplication = await db.collection("leave_applications").findOne({
+      _id: new ObjectId(applicationId),
+    });
+    if (!leaveApplication) {
+      return NextResponse.json({ error: "Leave application not found" }, { status: 404 });
+    }
+    if (leaveApplication.status !== "pending") {
+      return NextResponse.json(
+        { error: "This leave request has already been processed" },
+        { status: 400 }
+      );
+    }
+
+    // Authorization
+    const approverRoles = ["DivisionHead", "DepartmentHead", "Commissioner"];
+    const canApproveByRole = !!currentUser.isAdmin || approverRoles.includes(currentUser.role);
+    const isAssignedApprover = normalizeId(leaveApplication.approverId) === currentUserId;
+    if (!canApproveByRole) {
+      return NextResponse.json({ error: "Not authorized (role)" }, { status: 403 });
+    }
+    if (!currentUser.isAdmin && !isAssignedApprover) {
+      return NextResponse.json({ error: "Not assigned approver" }, { status: 403 });
+    }
+
+    const newStatus = action === "approve" ? "approved" : "rejected";
+
+    // ========== BALANCE DEDUCTION (skipBalance-aware) ==========
+    if (newStatus === "approved") {
+      const leaveType = await db.collection("leave-types").findOne({
+        _id: new ObjectId(leaveApplication.leaveTypeId),
+      });
+      const shouldDeductBalance = leaveType?.skipBalance !== true;
+
+      if (shouldDeductBalance) {
+        const leaveYear = new Date(leaveApplication.fromDate).getFullYear();
+        const applicantObjectId = new ObjectId(leaveApplication.userId);
+        const leaveTypeIdObj = new ObjectId(leaveApplication.leaveTypeId);
+        const daysToDeduct = Number(leaveApplication.days);
+
+        const balanceDoc = await db.collection("leave_balances").findOne({
+          userId: applicantObjectId,
+          year: leaveYear,
+        });
+
+        if (!balanceDoc) {
+          return NextResponse.json(
+            { error: "Leave balance record not found for this user/year" },
+            { status: 404 }
+          );
+        }
+
+        // Find the specific leave type in the balance array
+        const leaveIndex = balanceDoc.leaves.findIndex(
+          (l: any) => l.leaveTypeId.toString() === leaveTypeIdObj.toString()
+        );
+
+        if (leaveIndex === -1) {
+          return NextResponse.json(
+            { error: "Leave type not found in balance record" },
+            { status: 404 }
+          );
+        }
+
+        const currentUsed = Number(balanceDoc.leaves[leaveIndex].used) || 0;
+        const allocated = Number(balanceDoc.leaves[leaveIndex].allocated);
+        const remainingBalance = allocated - currentUsed;
+
+        if (daysToDeduct > remainingBalance) {
+          return NextResponse.json(
+            { error: "Insufficient leave balance (balance changed after application)" },
+            { status: 400 }
+          );
+        }
+
+        const newUsed = currentUsed + daysToDeduct;
+        const newBalance = allocated - newUsed;
+
+        await db.collection("leave_balances").updateOne(
+          { _id: balanceDoc._id },
+          {
+            $set: {
+              [`leaves.${leaveIndex}.used`]: newUsed,
+              [`leaves.${leaveIndex}.balance`]: newBalance,
+              updatedAt: new Date(),
+            },
+          }
+        );
+      }
+    }
+
+    // Update application status
+    await db.collection("leave_applications").updateOne(
+      { _id: new ObjectId(applicationId) },
+      {
+        $set: {
+          status: newStatus,
+          approvedBy: currentUser.name || currentUser.email || "Approver",
+          approvedAt: new Date(),
+          remarks: remarks || "",
+          reviewRemarks: remarks || "",
+          reviewedAt: new Date(),
+          reviewedById: currentUserId,
+          reviewedByRole: currentUser.role || (currentUser.isAdmin ? "Admin" : "Approver"),
+          reviewedByName: currentUser.name || currentUser.email || "Approver",
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    // ========== SEND EMAIL TO APPLICANT ==========
+    const applicantUser = await db.collection("users").findOne({
+      _id: new ObjectId(leaveApplication.userId),
+    });
+    if (applicantUser?.email) {
+      try {
+        const transporter = createTransporter();
+        const statusText = newStatus === "approved" ? "Approved" : "Rejected";
+        const color = newStatus === "approved" ? "#28a745" : "#dc3545";
+        const mailHtml = `
+          <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color:${color};">Leave ${statusText}</h2>
+            <p>Hi ${applicantUser.name || "User"},</p>
+            <p>Your leave request has been <strong>${statusText}</strong> by ${currentUser.name || "Admin"}.</p>
+            <p><strong>Leave Details:</strong></p>
+            <ul>
+              <li>Leave Type: ${leaveApplication.leaveTypeName || "—"}</li>
+              <li>From: ${leaveApplication.fromDate}</li>
+              <li>To: ${leaveApplication.toDate}</li>
+              <li>Days: ${leaveApplication.days}</li>
+            </ul>
+            ${remarks ? `<p><strong>Remarks:</strong> ${remarks}</p>` : ""}
+          </div>
+        `;
+
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: applicantUser.email,
+          subject: `Leave ${statusText}`,
+          html: mailHtml,
+        });
+      } catch (emailErr) {
+        console.error("Failed to send email to applicant:", emailErr);
+        // Do not fail the approval; log the error
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Leave request ${newStatus}`,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("POST /api/leave-approvals error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}

@@ -2,9 +2,6 @@ import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Employee } from '@/models/Employee';
 
-// ------------------------------------------------------------------
-// POST – Upload or replace photo
-// ------------------------------------------------------------------
 export async function POST(request, { params }) {
   try {
     const { cid } = await params;
@@ -32,34 +29,5 @@ export async function POST(request, { params }) {
     return NextResponse.json({ success: true, photoUrl: base64, employee: updated });
   } catch (error) {
     return NextResponse.json({ error: 'Upload failed', details: error.message }, { status: 500 });
-  }
-}
-
-// ------------------------------------------------------------------
-// DELETE – Remove employee photo
-// ------------------------------------------------------------------
-export async function DELETE(request, { params }) {
-  try {
-    const { cid } = await params;
-    if (!cid) return NextResponse.json({ error: 'CID required' }, { status: 400 });
-
-    await connectToDatabase();
-    const employee = await Employee.findOne({ cidNumber: cid });
-    if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
-
-    // Remove the photo field
-    const updated = await Employee.findOneAndUpdate(
-      { cidNumber: cid },
-      { $set: { passportPhoto: null, lastUpdated: new Date() } },
-      { new: true }
-    );
-
-    return NextResponse.json({
-      success: true,
-      message: 'Photo deleted successfully',
-      employee: updated,
-    });
-  } catch (error) {
-    return NextResponse.json({ error: 'Delete failed', details: error.message }, { status: 500 });
   }
 }

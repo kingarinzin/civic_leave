@@ -162,48 +162,35 @@ export default function AttendanceHistoryPage() {
     attendanceByDate[key] = item;
   });
 
-  // Compute monthly statistics – now includes leave days
+  // Compute monthly statistics (unchanged)
   let totalWorkingHours = 0;
   let totalDaysWorked = 0;
   let totalAbsent = 0;
   let totalLate = 0;
-  let totalLeave = 0;
 
   allDates.forEach(dateStr => {
     const day = attendanceByDate[dateStr];
-    if (!day) {
-      totalAbsent++;
-      return;
+    if (!day || day.status === "No punch" || day.status === "Weekend") {
+      // Treat weekends as absent? Or exclude from absent? Your logic may vary.
+      // I'll treat "Weekend" as not absent, but if you want to count them as absent, adjust.
+      // For now, I'll not count them as absent because they are weekend.
+      if (day && day.status === "Weekend") {
+        // do nothing – weekend days are not counted in attendance stats
+      } else {
+        totalAbsent++;
+      }
+    } else {
+      const hours = calculateTotalHours(day.firstIn, day.lastOut);
+      if (hours > 0) {
+        totalWorkingHours += hours;
+        totalDaysWorked++;
+      }
+      if (day.status === "Late arrival" || day.status === "Late & Early") totalLate++;
     }
-
-    // If it's a leave day – count as leave, not absent
-    if (day.isLeave) {
-      totalLeave++;
-      return;
-    }
-
-    // Otherwise, regular attendance logic
-    if (day.status === "Weekend") {
-      // Weekend days are not counted in any stat
-      return;
-    }
-
-    if (day.status === "No punch" || day.status === "Missing IN" || day.status === "Missing OUT") {
-      totalAbsent++;
-      return;
-    }
-
-    // It's a present day (Present, Late, Early, etc.)
-    const hours = calculateTotalHours(day.firstIn, day.lastOut);
-    if (hours > 0) {
-      totalWorkingHours += hours;
-      totalDaysWorked++;
-    }
-    if (day.status === "Late arrival" || day.status === "Late & Early") {
-      totalLate++;
-    }
-    // Early departure is not counted as late, but we could track it if needed.
   });
+
+  // Note: You might want to exclude weekends from the stats entirely.
+  // The above logic is a quick adaptation – fine-tune as needed.
 
   const averageDailyHours = totalDaysWorked > 0 ? totalWorkingHours / totalDaysWorked : 0;
   const totalWorkingHoursFormatted = formatHours(totalWorkingHours);
@@ -226,15 +213,13 @@ export default function AttendanceHistoryPage() {
       const displayDate = new Date(Date.UTC(y, m-1, d)).toLocaleDateString("en-GB");
       const weekday = getWeekday(dateStr);
       const totalHrs = formatHours(calculateTotalHours(day?.firstIn, day?.lastOut));
-      // For leave days, status shows leave type
-      const statusDisplay = day?.isLeave ? (day?.leaveType || "Leave") : (day?.status || "No punch");
       return [
         displayDate,
         weekday,
         day?.firstIn || "-",
         day?.lastOut || "-",
         totalHrs,
-        statusDisplay,
+        day?.status || "No punch",
       ];
     });
     const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
@@ -247,21 +232,19 @@ export default function AttendanceHistoryPage() {
     URL.revokeObjectURL(url);
   };
 
-  const getNormalizedStatus = (status, isLeave) => {
-    if (isLeave) return "Leave";
+  const getNormalizedStatus = (status) => {
     if (status === "Present") return "Present";
     if (status === "Late arrival" || status === "Late & Early") return "Late";
     if (status === "Early departure") return "Early";
     if (status === "No punch") return "Absent";
-    if (status === "Weekend") return "Weekend";
+    if (status === "Weekend") return "Weekend"; // add this filter option
     return "Other";
   };
 
   const filteredDates = allDates.filter(dateStr => {
     const day = attendanceByDate[dateStr];
     const rawStatus = day?.status || "No punch";
-    const isLeave = day?.isLeave || false;
-    const normalized = getNormalizedStatus(rawStatus, isLeave);
+    const normalized = getNormalizedStatus(rawStatus);
     if (statusFilter === "all") return true;
     return normalized === statusFilter;
   });
@@ -280,7 +263,7 @@ export default function AttendanceHistoryPage() {
           </Button>
         </Flex>
 
-        {/* Monthly Summary Card – now includes Leave Days */}
+        {/* Monthly Summary Card (unchanged) */}
         <Card mb="4">
           <Flex justify="between" align="center" mb="3" wrap="wrap" gap="2">
             <Heading size="4">Monthly Summary – {monthName}</Heading>
@@ -329,7 +312,7 @@ export default function AttendanceHistoryPage() {
                 </div>
               </div>
 
-              <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-green-50 rounded-lg p-3 text-center shadow-sm">
                   <Text size="2" color="gray">Days Worked</Text>
                   <Text size="5" weight="bold" className="text-green-700">{totalDaysWorked}</Text>
@@ -346,16 +329,12 @@ export default function AttendanceHistoryPage() {
                   <Text size="2" color="gray">Avg Daily Hours</Text>
                   <Text size="5" weight="bold" className="text-blue-700">{averageDailyHoursFormatted}</Text>
                 </div>
-                <div className="bg-purple-50 rounded-lg p-3 text-center shadow-sm">
-                  <Text size="2" color="gray">Leave Days</Text>
-                  <Text size="5" weight="bold" className="text-purple-700">{totalLeave}</Text>
-                </div>
               </div>
             </div>
           )}
         </Card>
 
-        {/* Daily Details Table – updated for leave days */}
+        {/* Daily Details Table with new weekend styling */}
         <Card>
           <Flex justify="between" align="center" mb="4" wrap="wrap" gap="3">
             <Heading size="4">Daily Details</Heading>
@@ -370,7 +349,6 @@ export default function AttendanceHistoryPage() {
                   <Select.Item value="Early">Early</Select.Item>
                   <Select.Item value="Absent">Absent / No punch</Select.Item>
                   <Select.Item value="Weekend">Weekend</Select.Item>
-                  <Select.Item value="Leave">Leave</Select.Item>
                 </Select.Content>
               </Select.Root>
             </Flex>
@@ -412,36 +390,15 @@ export default function AttendanceHistoryPage() {
                     const weekday = getWeekday(dateStr);
                     const totalHrs = formatHours(calculateTotalHours(day?.firstIn, day?.lastOut));
 
+                    // 👇 NEW: use day.isWeekend from the API
                     const isWeekend = day?.isWeekend || false;
-                    const isLeave = day?.isLeave || false;
-                    const leaveType = day?.leaveType || "";
-
-                    // Determine the status display and badge color
-                    let statusDisplay = day?.status || "No punch";
-                    let badgeColor = "gray";
-                    if (isLeave) {
-                      statusDisplay = leaveType + " Leave"; // e.g., "Casual Leave"
-                      badgeColor = "purple";
-                    } else if (statusDisplay === "Present") {
-                      badgeColor = "green";
-                    } else if (statusDisplay === "Weekend") {
-                      badgeColor = "gray";
-                    } else if (statusDisplay === "Late arrival" || statusDisplay === "Late & Early") {
-                      badgeColor = "orange";
-                    } else if (statusDisplay === "Early departure") {
-                      badgeColor = "yellow";
-                    } else {
-                      badgeColor = "gray";
-                    }
 
                     return (
                       <Table.Row 
                         key={dateStr}
                         className={
-                          isWeekend && !isLeave
-                            ? "bg-red-50 border-l-4 border-red-500"
-                            : isLeave
-                            ? "bg-purple-50 border-l-4 border-purple-400"
+                          isWeekend
+                            ? "bg-red-50 border-l-4 border-red-500" // ← thin red left border + light red background
                             : ""
                         }
                       >
@@ -467,9 +424,22 @@ export default function AttendanceHistoryPage() {
                           <span className="font-medium text-blue-700">{totalHrs}</span>
                         </Table.Cell>
                         <Table.Cell>
-                          <Badge color={badgeColor} variant="soft">
-                            {statusDisplay}
-                          </Badge>
+                          {day?.status ? (
+                            <Badge
+                              color={
+                                day.status === "Present" ? "green" :
+                                day.status === "Weekend" ? "gray" :
+                                day.status.includes("Late") ? "orange" :
+                                day.status.includes("Early") ? "orange" :
+                                "gray"
+                              }
+                              variant="soft"
+                            >
+                              {day.status}
+                            </Badge>
+                          ) : (
+                            <Badge color="gray" variant="soft">No punch</Badge>
+                          )}
                         </Table.Cell>
                       </Table.Row>
                     );

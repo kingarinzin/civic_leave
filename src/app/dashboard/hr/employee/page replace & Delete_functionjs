@@ -32,8 +32,6 @@ import {
   ZoomIn,
   ZoomOut,
   Edit,
-  Layout,
-  Printer,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import Cropper from "react-easy-crop";
@@ -128,7 +126,6 @@ export default function HREmployeePage() {
   const [editData, setEditData] = useState({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef(null);
-  const printRef = useRef(null);
 
   // ---------- Crop positioning state ----------
   const [cropModalOpen, setCropModalOpen] = useState(false);
@@ -138,18 +135,6 @@ export default function HREmployeePage() {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [currentCidForUpload, setCurrentCidForUpload] = useState(null);
   const [isEditingExistingPhoto, setIsEditingExistingPhoto] = useState(false);
-
-  // ---------- Local photo notification ----------
-  const [photoNotification, setPhotoNotification] = useState(null);
-
-  // ---------- Tab state ----------
-  const [activeTab, setActiveTab] = useState("personal");
-  const [isPrinting, setIsPrinting] = useState(false);
-
-  const showPhotoNotification = (message, type = "success") => {
-    setPhotoNotification({ message, type });
-    setTimeout(() => setPhotoNotification(null), 4000);
-  };
 
   // ================== LOAD, SYNC, FETCH ==================
   const loadFromDatabase = async () => {
@@ -265,16 +250,7 @@ export default function HREmployeePage() {
     } else {
       setExpandedCid(cid);
       setEditingCid(null);
-      setActiveTab("personal");
     }
-  };
-
-  const handlePrint = () => {
-    setIsPrinting(true);
-    setTimeout(() => {
-      window.print();
-      setIsPrinting(false);
-    }, 300);
   };
 
   // ================== EDIT START ==================
@@ -337,17 +313,17 @@ export default function HREmployeePage() {
             emp.cidNumber === cid ? data.employee : emp
           )
         );
-        showPhotoNotification("Photo deleted successfully", "success");
+        showNotification("Photo deleted successfully", "success");
       } else {
         const errorData = await res.json();
-        showPhotoNotification(errorData.error || "Delete failed", "error");
+        showNotification(errorData.error || "Delete failed", "error");
       }
     } catch (err) {
-      showPhotoNotification("Error deleting photo", "error");
+      showNotification("Error deleting photo", "error");
     }
   };
 
-  // ---------- Photo Positioning ----------
+  // ---------- Photo Positioning with react-easy-crop ----------
   const triggerFilePicker = (cid) => {
     setCurrentCidForUpload(cid);
     setIsEditingExistingPhoto(false);
@@ -356,7 +332,7 @@ export default function HREmployeePage() {
 
   const editExistingPhoto = (cid, existingPhotoBase64) => {
     if (!existingPhotoBase64) {
-      showPhotoNotification("No photo to edit. Please upload one first.", "error");
+      showNotification("No photo to edit. Please upload one first.", "error");
       return;
     }
     setCurrentCidForUpload(cid);
@@ -367,17 +343,19 @@ export default function HREmployeePage() {
     setCrop({ x: 0, y: 0 });
   };
 
+  // ✅ FIX: Reset file input so Replace works every time
   const handleFileSelect = (event) => {
     const file = event.target.files?.[0];
+    // Reset the input so the same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
     if (!file) {
-      showPhotoNotification("Please select a photo", "error");
+      showNotification("Please select a photo", "error");
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
-      showPhotoNotification("Photo must be less than 20MB", "error");
+    if (file.size > 5 * 1024 * 1024) {
+      showNotification("Photo must be less than 5MB", "error");
       return;
     }
 
@@ -398,7 +376,7 @@ export default function HREmployeePage() {
 
   const handleSavePositionedPhoto = async () => {
     if (!croppedAreaPixels || !imageSrc) {
-      showPhotoNotification("Please position the photo first", "error");
+      showNotification("Please position the photo first", "error");
       return;
     }
 
@@ -415,9 +393,6 @@ export default function HREmployeePage() {
       canvas.width = outputSize;
       canvas.height = outputSize;
       const ctx = canvas.getContext("2d");
-
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, outputSize, outputSize);
 
       const { x, y, width, height } = croppedAreaPixels;
       ctx.drawImage(
@@ -449,7 +424,7 @@ export default function HREmployeePage() {
             emp.cidNumber === currentCidForUpload ? data.employee : emp
           )
         );
-        showPhotoNotification(
+        showNotification(
           isEditingExistingPhoto ? "Photo repositioned successfully" : "Photo uploaded successfully",
           "success"
         );
@@ -459,11 +434,11 @@ export default function HREmployeePage() {
         if (fileInputRef.current) fileInputRef.current.value = "";
       } else {
         const errorData = await res.json();
-        showPhotoNotification(errorData.error || "Upload failed", "error");
+        showNotification(errorData.error || "Upload failed", "error");
       }
     } catch (err) {
       console.error("Photo upload error:", err);
-      showPhotoNotification("Error uploading photo", "error");
+      showNotification("Error uploading photo", "error");
     } finally {
       setUploadingPhoto(false);
       setCurrentCidForUpload(null);
@@ -572,7 +547,7 @@ export default function HREmployeePage() {
           </div>
         </div>
 
-        {/* Global Notification */}
+        {/* Notification */}
         {notification && (
           <div
             className={`mb-4 px-4 py-2 rounded ${
@@ -585,7 +560,7 @@ export default function HREmployeePage() {
           </div>
         )}
 
-        {/* Search by CID */}
+        {/* Search by CID Input */}
         <div className="bg-white shadow rounded-xl p-6 mb-6">
           <div className="flex items-center gap-4">
             <div className="flex-1">
@@ -743,14 +718,14 @@ export default function HREmployeePage() {
                         </td>
                       </tr>
 
-                      {/* Expanded row */}
+                      {/* Expanded details row */}
                       {isExpanded && (
                         <tr>
                           <td colSpan="7" className="px-6 py-6 bg-blue-50/50">
                             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                              {/* Header */}
+                              {/* Header: Photo + Name + Badges + Edit */}
                               <div className="flex items-center gap-6 p-6 bg-gradient-to-r from-blue-50 to-white border-b border-gray-200">
-                                <div className="flex-shrink-0 relative">
+                                <div className="flex-shrink-0">
                                   {item.passportPhoto ? (
                                     <img
                                       src={item.passportPhoto}
@@ -762,45 +737,6 @@ export default function HREmployeePage() {
                                       <User className="w-10 h-10 text-blue-600" />
                                     </div>
                                   )}
-                                  <div className="absolute -bottom-2 -right-2 flex gap-1 bg-white rounded-full shadow-md p-1 border border-gray-200 no-print">
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      ref={fileInputRef}
-                                      className="hidden"
-                                      disabled={uploadingPhoto}
-                                      onChange={handleFileSelect}
-                                    />
-                                    {item.passportPhoto ? (
-                                      <>
-                                        <button
-                                          onClick={() => editExistingPhoto(item.cidNumber, item.passportPhoto)}
-                                          disabled={uploadingPhoto}
-                                          className="p-1.5 rounded-full hover:bg-blue-50 transition disabled:opacity-50"
-                                          title="Edit Photo"
-                                        >
-                                          <Edit size={14} className="text-blue-600" />
-                                        </button>
-                                        <button
-                                          onClick={() => deletePhoto(item.cidNumber)}
-                                          disabled={uploadingPhoto}
-                                          className="p-1.5 rounded-full hover:bg-red-50 transition disabled:opacity-50"
-                                          title="Delete Photo"
-                                        >
-                                          <Trash2 size={14} className="text-red-600" />
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <button
-                                        onClick={() => triggerFilePicker(item.cidNumber)}
-                                        disabled={uploadingPhoto}
-                                        className="p-1.5 rounded-full hover:bg-blue-50 transition disabled:opacity-50"
-                                        title="Upload Photo"
-                                      >
-                                        <Upload size={14} className="text-blue-600" />
-                                      </button>
-                                    )}
-                                  </div>
                                 </div>
                                 <div className="flex-1">
                                   <h3 className="text-xl font-bold text-gray-900">{item.fullName}</h3>
@@ -814,7 +750,7 @@ export default function HREmployeePage() {
                                     </span>
                                   </div>
                                 </div>
-                                <div className="no-print">
+                                <div>
                                   <button
                                     onClick={() => startEdit(item)}
                                     className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition shadow-sm"
@@ -824,24 +760,9 @@ export default function HREmployeePage() {
                                 </div>
                               </div>
 
-                              {/* Photo Notification - hidden in print */}
-                              {photoNotification && (
-                                <div
-                                  className={`px-4 py-2 text-sm no-print ${
-                                    photoNotification.type === "success"
-                                      ? "bg-green-50 text-green-700 border-b border-green-200"
-                                      : "bg-red-50 text-red-700 border-b border-red-200"
-                                  }`}
-                                >
-                                  {photoNotification.message}
-                                </div>
-                              )}
-
-                              {/* =========================================== */}
-                              {/* EDIT MODE – full grid (unchanged)           */}
-                              {/* =========================================== */}
+                              {/* Body: Edit or Display */}
                               {isEditing ? (
-                                <div className="p-6 no-print">
+                                <div className="p-6">
                                   <div className="flex justify-between items-center mb-4">
                                     <h4 className="font-semibold text-lg">Edit HR Fields</h4>
                                     <button
@@ -943,147 +864,120 @@ export default function HREmployeePage() {
                                   </div>
                                 </div>
                               ) : (
-                                /* =========================================== */
-                                /* DISPLAY MODE – TABBED LAYOUT                */
-                                /* =========================================== */
                                 <div className="p-6">
-                                  {/* Tab Buttons - no background, blue underline only */}
-                                  <div className="flex gap-1 mb-6">
-                                    <TabButton
-                                      active={activeTab === "personal"}
-                                      onClick={() => setActiveTab("personal")}
-                                      icon={User}
-                                      label="Personal"
-                                    />
-                                    <TabButton
-                                      active={activeTab === "employment"}
-                                      onClick={() => setActiveTab("employment")}
-                                      icon={Briefcase}
-                                      label="Employment"
-                                    />
-                                    <TabButton
-                                      active={activeTab === "hr"}
-                                      onClick={() => setActiveTab("hr")}
-                                      icon={FileText}
-                                      label="HR Fields"
-                                    />
-                                    <TabButton
-                                      active={activeTab === "agency"}
-                                      onClick={() => setActiveTab("agency")}
-                                      icon={MapPin}
-                                      label="Agency Path"
-                                    />
-                                    <TabButton
-                                      active={activeTab === "all"}
-                                      onClick={() => setActiveTab("all")}
-                                      icon={Layout}
-                                      label="All"
-                                    />
-                                    {/* Print button – only text, no icon */}
-                                    {activeTab === "all" && (
-                                      <button
-                                        onClick={handlePrint}
-                                        className="ml-auto text-sm font-medium text-blue-600 hover:text-blue-800 border border-blue-600 rounded-md px-4 py-2 hover:bg-blue-50 transition no-print"
-                                      >
-                                        Print
-                                      </button>
-                                    )}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                                    <div className="space-y-4">
+                                      <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider border-b pb-1">
+                                        Personal Information
+                                      </h4>
+                                      <InfoItem icon={User} label="Gender" value={item.gender} />
+                                      <InfoItem icon={Calendar} label="Date of Birth" value={item.dateOfBirth} />
+                                      <InfoItem icon={Phone} label="Mobile" value={item.mobile} />
+                                      <InfoItem icon={Mail} label="Email" value={item.email} isLink={`mailto:${item.email}`} />
+
+                                      <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider border-b pb-1 mt-2">
+                                        Employment Details
+                                      </h4>
+                                      <InfoItem icon={Briefcase} label="Employee Number" value={item.employeeNumber} />
+                                      <InfoItem icon={Award} label="Position Level" value={`${item.positionLevel || ""}${item.subLevel ? `-${item.subLevel}` : ""}`} />
+                                      <InfoItem icon={Calendar} label="Appointment Date" value={item.dateOfAppointment} />
+                                      <InfoItem icon={Calendar} label="Last Promotion" value={item.lastDateOfPromotion} />
+                                      <InfoItem icon={Users} label="Employee Type" value={item.empType} />
+                                    </div>
+
+                                    <div className="space-y-4">
+                                      <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider border-b pb-1">
+                                        HR Custom Fields
+                                      </h4>
+                                      <InfoItem icon={Building} label="Parent Agency" value={item.parentAgency || "Anti-Corruption Commission"} />
+                                      <InfoItem icon={MapPin} label="MoG" value={item.mog} />
+                                      <InfoItem icon={FileText} label="Sub Group" value={item.subGroup} />
+                                      <InfoItem icon={FileText} label="Super Structure" value={item.superStructure} />
+                                      <InfoItem icon={Briefcase} label="Position Type" value={item.positionType} />
+                                      <InfoItem icon={GraduationCap} label="Degree" value={item.degree} />
+                                      <InfoItem icon={GraduationCap} label="Area of Study" value={item.qualification} />
+                                      <InfoItem icon={UserCheck} label="Current Status" value={item.currentStatus} />
+                                      <InfoItem icon={Calendar} label="Date of Joining ACC" value={item.dateOfJoining} />
+                                      <InfoItem icon={Hash} label="Intact Type" value={item.intactType} />
+                                      <InfoItem icon={FileText} label="Remarks" value={item.remarks} />
+
+                                      <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider border-b pb-1 mt-2">
+                                        Agency Path
+                                      </h4>
+                                      <InfoItem icon={MapPin} label="Full Agency Path" value={item.fullAgencyPath} />
+                                      <InfoItem icon={Building} label="Department" value={item.department} />
+                                      <InfoItem icon={Building} label="Division" value={item.division} />
+                                    </div>
                                   </div>
 
-                                  {/* Tab Panels */}
-                                  <div className="mt-2">
-                                    {activeTab === "personal" && (
-                                      <TabPanel>
-                                        <Section title="Personal Information" icon={User}>
-                                          <DetailItem icon={User} label="Gender" value={item.gender} />
-                                          <DetailItem icon={Calendar} label="Date of Birth" value={item.dateOfBirth} />
-                                          <DetailItem icon={Phone} label="Mobile" value={item.mobile} />
-                                          <DetailItem icon={Mail} label="Email" value={item.email} isLink={`mailto:${item.email}`} />
-                                        </Section>
-                                      </TabPanel>
-                                    )}
+                                  {/* ✅ UPDATED: Photo upload with Edit, Replace & Delete */}
+                                  <div className="mt-6 pt-4 border-t border-gray-200">
+                                    <div className="flex items-center gap-4 flex-wrap">
+                                      <span className="text-sm font-medium text-gray-700">Photo:</span>
 
-                                    {activeTab === "employment" && (
-                                      <TabPanel>
-                                        <Section title="Employment Details" icon={Briefcase}>
-                                          <DetailItem icon={Briefcase} label="Employee Number" value={item.employeeNumber} />
-                                          <DetailItem icon={Award} label="Position Level" value={`${item.positionLevel || ""}${item.subLevel ? `-${item.subLevel}` : ""}`} />
-                                          <DetailItem icon={Calendar} label="Appointment Date" value={item.dateOfAppointment} />
-                                          <DetailItem icon={Calendar} label="Last Promotion" value={item.lastDateOfPromotion} />
-                                          <DetailItem icon={Users} label="Employee Type" value={item.empType} />
-                                        </Section>
-                                      </TabPanel>
-                                    )}
+                                      {/* Hidden file input */}
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        ref={fileInputRef}
+                                        className="hidden"
+                                        disabled={uploadingPhoto}
+                                        onChange={handleFileSelect}
+                                      />
 
-                                    {activeTab === "hr" && (
-                                      <TabPanel>
-                                        <Section title="HR Custom Fields" icon={FileText}>
-                                          <DetailItem icon={Building} label="Parent Agency" value={item.parentAgency || "Anti-Corruption Commission"} />
-                                          <DetailItem icon={MapPin} label="MoG" value={item.mog} />
-                                          <DetailItem icon={FileText} label="Sub Group" value={item.subGroup} />
-                                          <DetailItem icon={FileText} label="Super Structure" value={item.superStructure} />
-                                          <DetailItem icon={Briefcase} label="Position Type" value={item.positionType} />
-                                          <DetailItem icon={GraduationCap} label="Degree" value={item.degree} />
-                                          <DetailItem icon={GraduationCap} label="Area of Study" value={item.qualification} />
-                                          <DetailItem icon={UserCheck} label="Current Status" value={item.currentStatus} />
-                                          <DetailItem icon={Calendar} label="Date of Joining ACC" value={item.dateOfJoining} />
-                                          <DetailItem icon={Hash} label="Intact Type" value={item.intactType} />
-                                          <DetailItem icon={FileText} label="Remarks" value={item.remarks} />
-                                        </Section>
-                                      </TabPanel>
-                                    )}
-
-                                    {activeTab === "agency" && (
-                                      <TabPanel>
-                                        <Section title="Agency Path" icon={MapPin}>
-                                          <DetailItem icon={MapPin} label="Full Agency Path" value={item.fullAgencyPath} />
-                                          <DetailItem icon={Building} label="Department" value={item.department} />
-                                          <DetailItem icon={Building} label="Division" value={item.division} />
-                                        </Section>
-                                      </TabPanel>
-                                    )}
-
-                                    {activeTab === "all" && (
-                                      <TabPanel>
-                                        <div ref={printRef} className="print-content">
-                                          <div className="space-y-8">
-                                            <Section title="Personal Information" icon={User}>
-                                              <DetailItem icon={User} label="Gender" value={item.gender} />
-                                              <DetailItem icon={Calendar} label="Date of Birth" value={item.dateOfBirth} />
-                                              <DetailItem icon={Phone} label="Mobile" value={item.mobile} />
-                                              <DetailItem icon={Mail} label="Email" value={item.email} isLink={`mailto:${item.email}`} />
-                                            </Section>
-
-                                            <Section title="Employment Details" icon={Briefcase}>
-                                              <DetailItem icon={Briefcase} label="Employee Number" value={item.employeeNumber} />
-                                              <DetailItem icon={Award} label="Position Level" value={`${item.positionLevel || ""}${item.subLevel ? `-${item.subLevel}` : ""}`} />
-                                              <DetailItem icon={Calendar} label="Appointment Date" value={item.dateOfAppointment} />
-                                              <DetailItem icon={Calendar} label="Last Promotion" value={item.lastDateOfPromotion} />
-                                              <DetailItem icon={Users} label="Employee Type" value={item.empType} />
-                                            </Section>
-
-                                            <Section title="HR Custom Fields" icon={FileText}>
-                                              <DetailItem icon={Building} label="Parent Agency" value={item.parentAgency || "Anti-Corruption Commission"} />
-                                              <DetailItem icon={MapPin} label="MoG" value={item.mog} />
-                                              <DetailItem icon={FileText} label="Sub Group" value={item.subGroup} />
-                                              <DetailItem icon={FileText} label="Super Structure" value={item.superStructure} />
-                                              <DetailItem icon={Briefcase} label="Position Type" value={item.positionType} />
-                                              <DetailItem icon={GraduationCap} label="Degree" value={item.degree} />
-                                              <DetailItem icon={GraduationCap} label="Area of Study" value={item.qualification} />
-                                              <DetailItem icon={UserCheck} label="Current Status" value={item.currentStatus} />
-                                              <DetailItem icon={Calendar} label="Date of Joining ACC" value={item.dateOfJoining} />
-                                              <DetailItem icon={Hash} label="Intact Type" value={item.intactType} />
-                                              <DetailItem icon={FileText} label="Remarks" value={item.remarks} />
-                                            </Section>
-
-                                            <Section title="Agency Path" icon={MapPin}>
-                                              <DetailItem icon={MapPin} label="Full Agency Path" value={item.fullAgencyPath} />
-                                              <DetailItem icon={Building} label="Department" value={item.department} />
-                                              <DetailItem icon={Building} label="Division" value={item.division} />
-                                            </Section>
+                                      {item.passportPhoto ? (
+                                        <div className="flex items-center gap-3">
+                                          {/* Small preview */}
+                                          <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-300 flex-shrink-0">
+                                            <img
+                                              src={item.passportPhoto}
+                                              alt="Current"
+                                              className="w-full h-full object-cover"
+                                            />
                                           </div>
+                                          <button
+                                            onClick={() => editExistingPhoto(item.cidNumber, item.passportPhoto)}
+                                            disabled={uploadingPhoto}
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 transition"
+                                          >
+                                            <Edit size={14} />
+                                            Edit Photo
+                                          </button>
+                                          <button
+                                            onClick={() => triggerFilePicker(item.cidNumber)}
+                                            disabled={uploadingPhoto}
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm disabled:opacity-50 transition"
+                                          >
+                                            <Upload size={14} />
+                                            Replace
+                                          </button>
+                                          <button
+                                            onClick={() => deletePhoto(item.cidNumber)}
+                                            disabled={uploadingPhoto}
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50 transition"
+                                          >
+                                            <Trash2 size={14} /> Delete
+                                          </button>
                                         </div>
-                                      </TabPanel>
+                                      ) : (
+                                        <button
+                                          onClick={() => triggerFilePicker(item.cidNumber)}
+                                          disabled={uploadingPhoto}
+                                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 transition"
+                                        >
+                                          {uploadingPhoto ? (
+                                            <Loader2 size={16} className="animate-spin" />
+                                          ) : (
+                                            <Upload size={16} />
+                                          )}
+                                          Upload Photo
+                                        </button>
+                                      )}
+                                    </div>
+                                    {item.passportPhoto && (
+                                      <p className="text-xs text-gray-500 mt-2">
+                                        Click "Edit Photo" to reposition, "Replace" to upload a new one, or "Delete" to remove it.
+                                      </p>
                                     )}
                                   </div>
                                 </div>
@@ -1138,88 +1032,7 @@ export default function HREmployeePage() {
         )}
       </main>
 
-      {/* Print View – only rendered when printing */}
-      {isPrinting && expandedCid && (
-        <div className="print-view">
-          {employees
-            .filter((emp) => emp.cidNumber === expandedCid)
-            .map((item) => (
-              <div key={item.cidNumber} className="print-container">
-                <div className="print-header">
-                  <div className="print-avatar">
-                    {item.passportPhoto ? (
-                      <img
-                        src={item.passportPhoto}
-                        alt={item.fullName}
-                        className="w-32 h-32 rounded-full object-cover border-4 border-gray-300"
-                      />
-                    ) : (
-                      <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-300">
-                        <User className="w-16 h-16 text-gray-400" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="print-name">
-                    <h1>{item.fullName}</h1>
-                    <p>CID: {item.cidNumber}</p>
-                    <p>{item.positionTitle || "N/A"}</p>
-                  </div>
-                </div>
-
-                <div className="print-body">
-                  <div className="print-section">
-                    <h3>Personal Information</h3>
-                    <div className="print-grid">
-                      <div><span>Gender</span>{item.gender || "N/A"}</div>
-                      <div><span>Date of Birth</span>{item.dateOfBirth || "N/A"}</div>
-                      <div><span>Mobile</span>{item.mobile || "N/A"}</div>
-                      <div><span>Email</span>{item.email || "N/A"}</div>
-                    </div>
-                  </div>
-
-                  <div className="print-section">
-                    <h3>Employment Details</h3>
-                    <div className="print-grid">
-                      <div><span>Employee Number</span>{item.employeeNumber || "N/A"}</div>
-                      <div><span>Position Level</span>{item.positionLevel || "N/A"}{item.subLevel ? `-${item.subLevel}` : ""}</div>
-                      <div><span>Appointment Date</span>{item.dateOfAppointment || "N/A"}</div>
-                      <div><span>Last Promotion</span>{item.lastDateOfPromotion || "N/A"}</div>
-                      <div><span>Employee Type</span>{item.empType || "N/A"}</div>
-                    </div>
-                  </div>
-
-                  <div className="print-section">
-                    <h3>HR Custom Fields</h3>
-                    <div className="print-grid">
-                      <div><span>Parent Agency</span>{item.parentAgency || "Anti-Corruption Commission"}</div>
-                      <div><span>MoG</span>{item.mog || "N/A"}</div>
-                      <div><span>Sub Group</span>{item.subGroup || "N/A"}</div>
-                      <div><span>Super Structure</span>{item.superStructure || "N/A"}</div>
-                      <div><span>Position Type</span>{item.positionType || "N/A"}</div>
-                      <div><span>Degree</span>{item.degree || "N/A"}</div>
-                      <div><span>Area of Study</span>{item.qualification || "N/A"}</div>
-                      <div><span>Current Status</span>{item.currentStatus || "N/A"}</div>
-                      <div><span>Date of Joining ACC</span>{item.dateOfJoining || "N/A"}</div>
-                      <div><span>Intact Type</span>{item.intactType || "N/A"}</div>
-                      <div><span>Remarks</span>{item.remarks || "N/A"}</div>
-                    </div>
-                  </div>
-
-                  <div className="print-section">
-                    <h3>Agency Path</h3>
-                    <div className="print-grid">
-                      <div><span>Full Agency Path</span>{item.fullAgencyPath || "N/A"}</div>
-                      <div><span>Department</span>{item.department || "N/A"}</div>
-                      <div><span>Division</span>{item.division || "N/A"}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {/* Crop Modal */}
+      {/* ======== POSITION MODAL (using react-easy-crop) ======== */}
       {cropModalOpen && imageSrc && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -1236,7 +1049,7 @@ export default function HREmployeePage() {
               </button>
             </div>
             <div className="p-6">
-              <div className="relative bg-white rounded-lg p-4" style={{ height: 400, background: 'white' }}>
+              <div className="relative bg-gray-100 rounded-lg p-4" style={{ height: 400 }}>
                 <Cropper
                   image={imageSrc}
                   crop={crop}
@@ -1247,10 +1060,6 @@ export default function HREmployeePage() {
                   onZoomChange={setZoom}
                   onCropComplete={onCropComplete}
                   objectFit="horizontal-cover"
-                  style={{
-                    containerStyle: { background: 'white' },
-                    imageStyle: { background: 'white' }
-                  }}
                 />
               </div>
               <div className="mt-4 flex items-center gap-4">
@@ -1301,178 +1110,14 @@ export default function HREmployeePage() {
           </div>
         </div>
       )}
-
-      {/* Print Styles */}
-      <style jsx global>{`
-        .no-print {
-          display: block;
-        }
-
-        @media print {
-          .no-print {
-            display: none !important;
-          }
-
-          body * {
-            visibility: hidden;
-          }
-          .print-view,
-          .print-view * {
-            visibility: visible;
-          }
-          .print-view {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 100%;
-            padding: 40px;
-            background: white;
-          }
-
-          .print-container {
-            max-width: 1000px;
-            margin: 0 auto;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-
-          .print-header {
-            display: flex;
-            align-items: center;
-            gap: 30px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #2563eb;
-            margin-bottom: 30px;
-          }
-
-          .print-avatar img,
-          .print-avatar div {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            border: 4px solid #d1d5db;
-          }
-
-          .print-name h1 {
-            font-size: 28px;
-            font-weight: bold;
-            color: #1f2937;
-            margin: 0;
-          }
-
-          .print-name p {
-            font-size: 16px;
-            color: #4b5563;
-            margin: 5px 0;
-          }
-
-          .print-section {
-            margin-bottom: 25px;
-            page-break-inside: avoid;
-          }
-
-          .print-section h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2563eb;
-            border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 8px;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-
-          .print-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px 30px;
-          }
-
-          .print-grid > div {
-            display: flex;
-            flex-direction: column;
-            padding: 4px 0;
-          }
-
-          .print-grid > div span {
-            font-size: 11px;
-            font-weight: 600;
-            color: #6b7280;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-          }
-
-          .print-grid > div {
-            font-size: 14px;
-            color: #1f2937;
-          }
-
-          .print-body {
-            padding: 0 10px;
-          }
-        }
-      `}</style>
     </div>
   );
 }
 
 // ============================================
-// TAB COMPONENTS – with blue underline only
+// HELPER COMPONENTS
 // ============================================
-function TabButton({ active, onClick, icon: Icon, label }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 ${
-        active
-          ? "border-blue-600 text-blue-600"
-          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-      }`}
-    >
-      <Icon size={16} />
-      {label}
-    </button>
-  );
-}
 
-function TabPanel({ children }) {
-  return <div className="py-2">{children}</div>;
-}
-
-// ============================================
-// DISPLAY HELPERS – two‑column grid
-// ============================================
-function Section({ title, icon: Icon, children }) {
-  return (
-    <div>
-      <h4 className="flex items-center gap-2 text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200 pb-2 mb-3">
-        {Icon && <Icon size={16} className="text-blue-500" />}
-        {title}
-      </h4>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">{children}</div>
-    </div>
-  );
-}
-
-function DetailItem({ icon: Icon, label, value, isLink }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-start gap-3 text-sm">
-      <Icon className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <span className="text-xs font-medium text-gray-500 block">{label}</span>
-        {isLink ? (
-          <a href={isLink} className="text-blue-600 hover:underline break-words">
-            {value}
-          </a>
-        ) : (
-          <p className="text-gray-800 break-words">{value}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ----- Original helper components (kept as they were) -----
 function DisplayField({ label, value, isLink }) {
   if (!value) return null;
   return (

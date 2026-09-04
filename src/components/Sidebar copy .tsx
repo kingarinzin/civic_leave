@@ -10,7 +10,6 @@ import {
   LogOut,
   ChevronDown,
   ChevronRight,
-  FileText,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -40,7 +39,7 @@ export default function Sidebar() {
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState("Officer");
   const [isAdminUser, setIsAdminUser] = useState(false);
-  const [openSection, setOpenSection] = useState<"master" | "leave" | "hrs" | "meetings" | null>(
+  const [openSection, setOpenSection] = useState<"master" | "leave" | null>(
     null,
   );
 
@@ -99,14 +98,14 @@ export default function Sidebar() {
   const isAdmin =
     isAdminUser || userRole === "Admin" || pathname.startsWith("/admin/");
 
+  // ─── INTERIM MEASURE: allow specific emails to see HRS ───
   const hrsAllowedEmails = [
-    "yangzom@acc.org.bt",
-    "skhando@acc.org.bt",
-    "bdorj@acc.org.bt",
-    "tshewangrinzin@acc.org.bt",
-    "chekiw@acc.org.bt",
-    "gyeltshencipo@acc.org.bt"
-  ];
+  "yangzom@acc.org.bt",
+  "skhando@acc.org.bt",
+  "bdorj@acc.org.bt",
+  "tshewangrinzin@acc.org.bt",
+  "gyeltshencipo@acc.org.bt"
+];
   const showHRS = isAdmin || hrsAllowedEmails.includes(userEmail);
 
   const isMasterActive =
@@ -118,20 +117,6 @@ export default function Sidebar() {
     pathname === "/admin/commissioner-assignments" ||
     pathname === "/admin/individual-leave-balance" ||
     pathname === "/admin/my-leave";
-
-  const isHRSActive =
-    pathname.startsWith("/admin/hr/training-type") ||
-    pathname.startsWith("/admin/hr/program-title") ||
-    pathname.startsWith("/admin/hr/training-log") ||
-    pathname.startsWith("/admin/hr/institution") ||
-    pathname.startsWith("/admin/hr/funding-agency") ||
-    pathname.startsWith("/admin/hr/funding-modality") ||
-    pathname.startsWith("/dashboard/hr/employee");
-
-  // ✅ Meetings active state (catches BOTH user log AND admin setup)
-  const isMeetingsActive =
-    pathname.startsWith("/dashboard/meetings") ||
-    pathname.startsWith("/admin/meetings");
 
   const canHandleLeaveApprovals =
     isAdmin ||
@@ -149,13 +134,9 @@ export default function Sidebar() {
       ? "master"
       : isLeaveActive || (!isAdmin && canHandleLeaveApprovals)
         ? "leave"
-        : isHRSActive
-        ? "hrs"
-        : isMeetingsActive
-        ? "meetings"
         : null);
 
-  const toggleSection = (section: "master" | "leave" | "hrs" | "meetings") => {
+  const toggleSection = (section: "master" | "leave") => {
     setOpenSection(displayedOpenSection === section ? null : section);
   };
 
@@ -360,7 +341,7 @@ export default function Sidebar() {
           </>
         )}
 
-        {/* ─── SECRETARIAT SERVICES ─── */}
+        {/* ─── SECRETARIAT SERVICES (visible to everyone) ─── */}
         <button
           onClick={() => router.push("/secretariat-services")}
           className={navButtonClass(pathname === "/secretariat-services")}
@@ -369,127 +350,15 @@ export default function Sidebar() {
           Secretariat Services
         </button>
 
-        {/* ─── MEETINGS & MINUTES (Now visible to EVERYONE) ─── */}
-        <button
-          onClick={() => toggleSection("meetings")}
-          className={navButtonClass(isMeetingsActive)}
-        >
-          <FileText size={18} />
-          <span className="flex-1 text-left">Meetings & Minutes</span>
-          {displayedOpenSection === "meetings" ? (
-            <ChevronDown size={16} />
-          ) : (
-            <ChevronRight size={16} />
-          )}
-        </button>
-        {displayedOpenSection === "meetings" && (
-          <div className="ml-8 mt-1 space-y-1">
-            {/* ✅ 1. User Daily Log - visible to everyone */}
-            <button
-              onClick={() => router.push("/dashboard/meetings")}
-              className={navSubButtonClass(
-                pathname.startsWith("/dashboard/meetings"),
-              )}
-            >
-              Log Meeting / Minutes
-            </button>
-
-            {/* ✅ 2. Admin Setup - only visible to Admins */}
-            {isAdmin && (
-              <>
-                <button
-                  onClick={() => router.push("/admin/meetings/document-type")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/meetings/document-type",
-                  )}
-                >
-                  Document Type
-                </button>
-                <button
-                  onClick={() => router.push("/admin/meetings/commission")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/meetings/commission" ||
-                    pathname.startsWith("/admin/meetings/commission/"),
-                  )}
-                >
-                  Commission
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ─── HRS MODULE ─── */}
+        {/* ─── HRS MODULE (visible to admins AND specific emails) ─── */}
         {showHRS && (
-          <>
-            <button
-              onClick={() => {
-                router.push("/dashboard/hr/employee");
-                setOpenSection("hrs");
-              }}
-              className={navButtonClass(isHRSActive)}
-            >
-              <Clock size={18} />
-              <span className="flex-1 text-left">HRS</span>
-              {displayedOpenSection === "hrs" ? (
-                <ChevronDown size={16} />
-              ) : (
-                <ChevronRight size={16} />
-              )}
-            </button>
-            {displayedOpenSection === "hrs" && (
-              <div className="ml-8 mt-1 space-y-1">
-                <button
-                  onClick={() => router.push("/admin/hr/training-type")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/hr/training-type"
-                  )}
-                >
-                  Training Type
-                </button>
-                <button
-                  onClick={() => router.push("/admin/hr/program-title")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/hr/program-title"
-                  )}
-                >
-                  Program Catelogue
-                </button>
-                <button
-                  onClick={() => router.push("/admin/hr/training-log")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/hr/training-log"
-                  )}
-                >
-                  Training Log
-                </button>
-                <button
-                  onClick={() => router.push("/admin/hr/institution")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/hr/institution"
-                  )}
-                >
-                  Institution
-                </button>
-                <button
-                  onClick={() => router.push("/admin/hr/funding-agency")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/hr/funding-agency"
-                  )}
-                >
-                  Funding Agency
-                </button>
-                <button
-                  onClick={() => router.push("/admin/hr/funding-modality")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/hr/funding-modality"
-                  )}
-                >
-                  Funding Modality
-                </button>
-              </div>
-            )}
-          </>
+          <button
+            onClick={() => router.push("/dashboard/hr/employee")}
+            className={navButtonClass(pathname === "/dashboard/hr/employee")}
+          >
+            <Clock size={18} />
+            HRS
+          </button>
         )}
       </nav>
 
