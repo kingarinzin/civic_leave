@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
-export default function FundingAgencyPage() {
+export default function DocumentTypePage() {
   const [items, setItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState(null);
@@ -15,14 +15,14 @@ export default function FundingAgencyPage() {
   const [notification, setNotification] = useState(null);
 
   const [formData, setFormData] = useState({
-    name: "",
+    documentType: "",
     remarks: "",
   });
 
   // ─── FETCH ──────────────────────────────────────────
   const fetchItems = async () => {
     try {
-      const res = await fetch("/api/hr/funding-agency");
+      const res = await fetch("/api/meetings/document-type");
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || "Failed to fetch");
@@ -31,7 +31,7 @@ export default function FundingAgencyPage() {
       setItems(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
-      showNotification("Failed to load Funding Agencies", "error");
+      showNotification("Failed to load Document Types", "error");
       setItems([]);
     }
   };
@@ -47,18 +47,18 @@ export default function FundingAgencyPage() {
   };
 
   const resetForm = () => {
-    setFormData({ name: "", remarks: "" });
+    setFormData({ documentType: "", remarks: "" });
     setEditData(null);
     setShowForm(false);
   };
 
   const handleAdd = async () => {
-    if (!formData.name.trim()) {
-      showNotification("Funding Agency name is required", "error");
+    if (!formData.documentType.trim()) {
+      showNotification("Document Type is required", "error");
       return;
     }
     try {
-      const res = await fetch("/api/hr/funding-agency", {
+      const res = await fetch("/api/meetings/document-type", {
         method: "POST",
         body: JSON.stringify(formData),
         headers: { "Content-Type": "application/json" },
@@ -69,7 +69,7 @@ export default function FundingAgencyPage() {
       }
       await fetchItems();
       resetForm();
-      showNotification("Funding Agency added successfully", "success");
+      showNotification("Document Type added successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
     }
@@ -78,7 +78,7 @@ export default function FundingAgencyPage() {
   const handleEdit = (item) => {
     setEditData(item);
     setFormData({
-      name: item.name || "",
+      documentType: item.documentType || "",
       remarks: item.remarks || "",
     });
     setShowForm(true);
@@ -86,11 +86,11 @@ export default function FundingAgencyPage() {
 
   const handleUpdate = async () => {
     try {
-      const res = await fetch("/api/hr/funding-agency", {
+      const res = await fetch("/api/meetings/document-type", {
         method: "PUT",
         body: JSON.stringify({
           _id: editData._id,
-          name: formData.name,
+          documentType: formData.documentType,
           remarks: formData.remarks,
         }),
         headers: { "Content-Type": "application/json" },
@@ -101,16 +101,17 @@ export default function FundingAgencyPage() {
       }
       await fetchItems();
       resetForm();
-      showNotification("Funding Agency updated successfully", "success");
+      showNotification("Document Type updated successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
     }
   };
 
   const handleDelete = async (item) => {
-    if (!confirm(`Are you sure you want to delete "${item.name}"?`)) return;
+    if (!confirm(`Are you sure you want to delete "${item.documentType}"?`))
+      return;
     try {
-      const res = await fetch("/api/hr/funding-agency", {
+      const res = await fetch("/api/meetings/document-type", {
         method: "DELETE",
         body: JSON.stringify({ _id: item._id }),
         headers: { "Content-Type": "application/json" },
@@ -120,7 +121,7 @@ export default function FundingAgencyPage() {
         throw new Error(err.error || "Failed to delete");
       }
       await fetchItems();
-      showNotification("Funding Agency deleted successfully", "success");
+      showNotification("Document Type deleted successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
     }
@@ -151,7 +152,9 @@ export default function FundingAgencyPage() {
 
   const filtered = items.filter(
     (item) =>
-      (item.name?.toLowerCase() || "").includes(search.toLowerCase()) ||
+      (item.documentType?.toLowerCase() || "").includes(
+        search.toLowerCase()
+      ) ||
       (item.remarks?.toLowerCase() || "").includes(search.toLowerCase())
   );
 
@@ -178,17 +181,17 @@ export default function FundingAgencyPage() {
       <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Funding Agency List</h1>
+          <h1 className="text-2xl font-bold">Document Type List</h1>
           {!showForm && (
             <button
               onClick={() => {
                 setShowForm(true);
                 setEditData(null);
-                setFormData({ name: "", remarks: "" });
+                setFormData({ documentType: "", remarks: "" });
               }}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
-              <Plus size={14} /> Funding Agency
+              <Plus size={14} /> Document Type
             </button>
           )}
         </div>
@@ -211,7 +214,7 @@ export default function FundingAgencyPage() {
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             <div className="flex justify-between mb-4">
               <h2 className="text-lg font-semibold">
-                {editData ? "Edit Funding Agency" : "Add Funding Agency"}
+                {editData ? "Edit Document Type" : "Add Document Type"}
               </h2>
               <button
                 onClick={() => resetForm()}
@@ -223,15 +226,15 @@ export default function FundingAgencyPage() {
 
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium">Funding Agency *</label>
+                <label className="text-sm font-medium">Document Type *</label>
                 <input
-                  name="name"
+                  name="documentType"
                   type="text"
-                  value={formData.name}
+                  value={formData.documentType}
                   onChange={handleFormChange}
                   className="w-full border rounded px-3 py-2"
                   required
-                  placeholder="e.g., ACC, World Bank"
+                  placeholder="e.g., Minutes, Agenda, Report"
                 />
               </div>
               <div>
@@ -271,7 +274,7 @@ export default function FundingAgencyPage() {
             type="text"
             value={search}
             onChange={handleSearchChange}
-            placeholder="Search by name or remarks..."
+            placeholder="Search by document type or remarks..."
             className="w-64 px-4 py-2 border rounded focus:ring-2 focus:ring-blue-400 outline-none"
           />
           <div className="flex items-center gap-2 text-sm">
@@ -299,12 +302,12 @@ export default function FundingAgencyPage() {
                   S/N
                 </th>
                 <th
-                  onClick={() => handleSort("name")}
+                  onClick={() => handleSort("documentType")}
                   className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "name" ? "bg-blue-100" : ""
+                    sortConfig.key === "documentType" ? "bg-blue-100" : ""
                   }`}
                 >
-                  Funding Agency
+                  Document Type
                 </th>
                 <th
                   onClick={() => handleSort("remarks")}
@@ -329,7 +332,7 @@ export default function FundingAgencyPage() {
                     <td className="px-6 py-3 text-sm">
                       {startIndex + index + 1}
                     </td>
-                    <td className="px-6 py-3 text-sm">{item.name}</td>
+                    <td className="px-6 py-3 text-sm">{item.documentType}</td>
                     <td className="px-6 py-3 text-sm">
                       {item.remarks || "—"}
                     </td>

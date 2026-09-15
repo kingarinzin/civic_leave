@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { Layers, Calendar, Clock, Briefcase } from "lucide-react";
 import {
@@ -128,7 +127,6 @@ export default function Sidebar() {
     pathname.startsWith("/admin/hr/funding-modality") ||
     pathname.startsWith("/dashboard/hr/employee");
 
-  // ✅ Meetings active state (catches BOTH user log AND admin setup)
   const isMeetingsActive =
     pathname.startsWith("/dashboard/meetings") ||
     pathname.startsWith("/admin/meetings");
@@ -369,7 +367,7 @@ export default function Sidebar() {
           Secretariat Services
         </button>
 
-        {/* ─── MEETINGS & MINUTES (Now visible to EVERYONE) ─── */}
+        {/* ─── MEETINGS & MINUTES ─── */}
         <button
           onClick={() => toggleSection("meetings")}
           className={navButtonClass(isMeetingsActive)}
@@ -384,7 +382,6 @@ export default function Sidebar() {
         </button>
         {displayedOpenSection === "meetings" && (
           <div className="ml-8 mt-1 space-y-1">
-            {/* ✅ 1. User Daily Log - visible to everyone */}
             <button
               onClick={() => router.push("/dashboard/meetings")}
               className={navSubButtonClass(
@@ -394,7 +391,6 @@ export default function Sidebar() {
               Log Meeting / Minutes
             </button>
 
-            {/* ✅ 2. Admin Setup - only visible to Admins */}
             {isAdmin && (
               <>
                 <button
@@ -493,7 +489,6 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* Logout */}
       <div className="px-4 py-4">
         <button
           onClick={handleLogout}
