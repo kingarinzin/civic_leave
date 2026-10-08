@@ -242,7 +242,7 @@ export async function sendWeekPlanEmail(
         
         <!-- Footer -->
         <p style="font-size: 0.8em; color: #999; text-align: center;">
-          This is an automated email from the Planning Office.
+          This is an automated email from the Policy & Planning Division (PPD).
         </p>
       </div>
     </body>
@@ -251,7 +251,7 @@ export async function sendWeekPlanEmail(
 
   const transporter = createTransporter();
   await transporter.sendMail({
-    from: `"Planning Office" <${process.env.EMAIL_USER}>`,
+    from: `"Policy & Planning Division (PPD)" <${process.env.EMAIL_USER}>`,
     to: recipientEmail,
     subject: `📅 Weekly Plan: ${plan.weekLabel}`,
     html,

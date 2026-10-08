@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
+import { Trash2, Pencil, Save, Check, X, Plus, Loader2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 export default function ProgramTitlePage() {
@@ -14,6 +14,9 @@ export default function ProgramTitlePage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
   const [notification, setNotification] = useState(null);
+  
+  // State to track saving/updating progress
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -101,6 +104,7 @@ export default function ProgramTitlePage() {
       return;
     }
 
+    setIsSubmitting(true); 
     try {
       const res = await fetch("/api/hr/program-title", {
         method: "POST",
@@ -111,11 +115,13 @@ export default function ProgramTitlePage() {
         const err = await res.json();
         throw new Error(err.error || "Failed to add");
       }
-      await fetchItems();
+      await fetchItems(); 
       resetForm();
       showNotification("Course added successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
+    } finally {
+      setIsSubmitting(false); 
     }
   };
 
@@ -132,6 +138,7 @@ export default function ProgramTitlePage() {
   };
 
   const handleUpdate = async () => {
+    setIsSubmitting(true); 
     try {
       const res = await fetch("/api/hr/program-title", {
         method: "PUT",
@@ -149,11 +156,13 @@ export default function ProgramTitlePage() {
         const err = await res.json();
         throw new Error(err.error || "Failed to update");
       }
-      await fetchItems();
+      await fetchItems(); 
       resetForm();
       showNotification("Course updated successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
+    } finally {
+      setIsSubmitting(false); 
     }
   };
 
@@ -214,8 +223,11 @@ export default function ProgramTitlePage() {
     );
   });
 
+  // Create a copy for sorting
   const sorted = [...filtered];
+  
   if (sortConfig.key) {
+    // 1. If user clicks a column header, sort by that column
     sorted.sort((a, b) => {
       let aVal, bVal;
       if (sortConfig.key === "trainingType") {
@@ -232,6 +244,16 @@ export default function ProgramTitlePage() {
       if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
+  } else {
+    // 2. Default sort: Newest first. 
+    sorted.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      
+      if (dateA !== dateB) return dateB - dateA; 
+      
+      return String(b._id).localeCompare(String(a._id));
+    });
   }
 
   const totalPages = Math.ceil(sorted.length / rowsPerPage);
@@ -243,6 +265,37 @@ export default function ProgramTitlePage() {
     if (!text) return "—";
     if (text.length <= maxLength) return text;
     return text.slice(0, maxLength) + "...";
+  };
+
+  // ─── PAGINATION LOGIC ──────────────────────────────
+  // Generate dynamic page numbers with ellipsis
+  const getPaginationGroup = () => {
+    const total = totalPages;
+    const current = currentPage;
+    const delta = 2; // Number of pages to show around current page
+    const range = [];
+    const rangeWithDots = [];
+    let l;
+
+    for (let i = 1; i <= total; i++) {
+      if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
+        range.push(i);
+      }
+    }
+
+    for (let i of range) {
+      if (l) {
+        if (i - l === 2) {
+          rangeWithDots.push(l + 1);
+        } else if (i - l !== 1) {
+          rangeWithDots.push("...");
+        }
+      }
+      rangeWithDots.push(i);
+      l = i;
+    }
+
+    return rangeWithDots;
   };
 
   // ─── RENDER ────────────────────────────────────────
@@ -378,16 +431,31 @@ export default function ProgramTitlePage() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={() => resetForm()}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition disabled:opacity-50"
               >
                 <X size={14} /> Cancel
               </button>
               <button
                 onClick={editData ? handleUpdate : handleAdd}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
+                disabled={isSubmitting}
+                className={`flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium transition ${
+                  isSubmitting 
+                    ? "bg-gray-100 text-gray-500 cursor-not-allowed" 
+                    : "hover:border-black"
+                }`}
               >
-                {editData ? <Check size={14} /> : <Save size={14} />}
-                {editData ? "Update" : "Save"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    {editData ? "Updating..." : "Saving..."}
+                  </>
+                ) : (
+                  <>
+                    {editData ? <Check size={14} /> : <Save size={14} />}
+                    {editData ? "Update" : "Save"}
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -423,7 +491,6 @@ export default function ProgramTitlePage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {/* S/N column removed */}
                 <th className="px-6 py-3 text-left text-sm font-medium uppercase">
                   Training ID
                 </th>
@@ -479,7 +546,6 @@ export default function ProgramTitlePage() {
                     key={item._id}
                     className="hover:bg-gray-100 transition-colors"
                   >
-                    {/* Training ID – always on one line, no truncation */}
                     <td className="px-6 py-3 text-sm whitespace-nowrap">
                       {item.trainingId || "—"}
                     </td>
@@ -526,30 +592,50 @@ export default function ProgramTitlePage() {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Updated Pagination */}
         {totalPages > 1 && (
-          <div className="flex justify-end items-center gap-4 mt-5 text-sm">
+          <div className="flex justify-end items-center gap-2 mt-5 text-sm">
+            {/* Previous Button */}
             <button
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(currentPage - 1)}
-              className={`font-semibold text-lg ${
+              className={`px-2 py-1 rounded ${
                 currentPage === 1
                   ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
+                  : "hover:bg-gray-200 text-gray-700"
               }`}
             >
               &lt;
             </button>
-            <span>
-              Page {currentPage} of {totalPages}
-            </span>
+
+            {/* Page Numbers with Ellipsis */}
+            {getPaginationGroup().map((page, index) => (
+              <div key={index}>
+                {page === "..." ? (
+                  <span className="px-2 py-1 text-gray-500">...</span>
+                ) : (
+                  <button
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-3 py-1 rounded transition-colors ${
+                      currentPage === page
+                        ? "bg-blue-600 text-white font-semibold"
+                        : "hover:bg-gray-200 text-gray-700"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {/* Next Button */}
             <button
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(currentPage + 1)}
-              className={`font-semibold text-lg ${
+              className={`px-2 py-1 rounded ${
                 currentPage === totalPages
                   ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
+                  : "hover:bg-gray-200 text-gray-700"
               }`}
             >
               &gt;

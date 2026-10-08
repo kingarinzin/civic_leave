@@ -21,23 +21,22 @@ const generateTrainingId = async (trainingGroup, locationCategory) => {
   const locAbbr = getLocationAbbr(locationCategory);
   const prefix = `HRD-${groupAbbr}${locAbbr}-`;
 
-  const existing = await ProgramTitle.find({
-    trainingId: { $regex: `^${prefix}` },
-  })
-    .sort({ trainingId: -1 })
-    .limit(1);
+  // Aggregate to find the numeric max suffix (not string max)
+  const latest = await ProgramTitle.aggregate([
+    { $match: { trainingId: { $regex: `^${prefix}\\d+$` } } },
+    {
+      $project: {
+        num: {
+          $toInt: { $arrayElemAt: [{ $split: ["$trainingId", "-"] }, -1] },
+        },
+      },
+    },
+    { $sort: { num: -1 } },
+    { $limit: 1 },
+  ]);
 
-  let nextNumber = 1;
-  if (existing.length > 0) {
-    const lastId = existing[0].trainingId;
-    const parts = lastId.split("-");
-    const numPart = parts[parts.length - 1];
-    const num = parseInt(numPart, 10);
-    if (!isNaN(num)) {
-      nextNumber = num + 1;
-    }
-  }
-  const padded = String(nextNumber).padStart(2, "0");
+  const nextNumber = latest.length > 0 ? latest[0].num + 1 : 1;
+  const padded = String(nextNumber).padStart(3, "0");
   return `${prefix}${padded}`;
 };
 
@@ -97,16 +96,33 @@ export async function POST(request) {
       );
     }
 
-    const trainingId = await generateTrainingId(trainingGroup, locationCategory);
+    // Retry loop to handle duplicate-key races on trainingId
+    let newTitle = null;
+    let lastErr = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const trainingId = await generateTrainingId(trainingGroup, locationCategory);
+      try {
+        newTitle = await ProgramTitle.create({
+          title,
+          description,
+          locationCategory,
+          trainingGroup,
+          trainingType,
+          trainingId,
+        });
+        break;
+      } catch (err) {
+        if (err.code === 11000) {
+          lastErr = err;
+          continue; // duplicate → recompute and try again
+        }
+        throw err;
+      }
+    }
 
-    const newTitle = await ProgramTitle.create({
-      title,
-      description,
-      locationCategory,
-      trainingGroup,
-      trainingType,
-      trainingId,
-    });
+    if (!newTitle) {
+      throw lastErr || new Error("Could not generate a unique Training ID");
+    }
 
     await newTitle.populate("trainingType", "name");
 

@@ -148,7 +148,7 @@ export async function POST(request, { params }) {
           ${isTest ? '<div class="test-badge"><span>🧪 TEST EMAIL</span></div>' : ""}
           <hr class="hr" />
 
-          <p class="greeting">Hello <strong>Team</strong>,</p>
+          <p class="greeting">Hello <strong>Madam/Sir</strong>,</p>
           <p class="lead">A new meeting minutes document has been uploaded to the system.</p>
 
           <div class="panel">
@@ -175,7 +175,7 @@ export async function POST(request, { params }) {
 
           <div class="message">
             <p class="label">Message:</p>
-            <p class="text">Please review the attached minutes at your earliest convenience.</p>
+            <p class="text">Sharing this for your necessary action.</p>
           </div>
 
           <div class="actions">

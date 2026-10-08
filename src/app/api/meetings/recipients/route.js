@@ -4,7 +4,7 @@ import clientPromise from "@/lib/mongodb";
 // 🔑 Keep this list in sync with `meetingsAllowedEmails` in page.tsx
 const RECIPIENTS_ALLOWED_EMAILS = [
   "kwangmo@acc.org.bt",
-  "karamawang@acc.org.bt",
+  "karmawangmo@acc.org.bt",
   "skhando@acc.org.bt",
 ];
 

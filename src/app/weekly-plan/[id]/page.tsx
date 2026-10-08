@@ -3,6 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Badge, Box, Card, Flex, Heading, Text } from '@radix-ui/themes';
+import AbbrBadge from '@/components/AbbrBadge';
+import { abbrDept, abbrDiv } from '@/lib/abbreviations';
+import { DAYS, DIVISION_COLORS } from '@/lib/weekly-plan-constants';
 
 // ============================================
 // TYPES
@@ -36,20 +39,9 @@ interface WeekPlan {
   updatedAt: string;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
-const ALL_DAYS: string[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-const DIVISION_COLORS: Record<string, string> = {
-  IT: '#4caf50',
-  Finance: '#ff9800',
-  HR: '#f44336',
-  Administration: '#2196f3',
-  Operations: '#9c27b0',
-  Legal: '#607d8b',
-  Communications: '#00bcd4',
-};
+// =========================================================
+// ⚠️ Constants imported from `lib/weekly-plan-constants.ts`
+// =========================================================
 
 // =========================================================
 // Helper: Format time to 12-hour display
@@ -73,7 +65,7 @@ function getDateForDay(startDateStr: string, dayName: string): string {
   targetDate.setDate(startDate.getDate() + dayIndex);
 
   const day = targetDate.getDate();
-  const month = targetDate.toLocaleString('default', { month: 'long' });
+  const month = targetDate.toLocaleString('default', { month: 'short' });
 
   const ordinal = (n: number): string => {
     const s = ['th', 'st', 'nd', 'rd'];
@@ -85,7 +77,7 @@ function getDateForDay(startDateStr: string, dayName: string): string {
 }
 
 // =========================================================
-// Helper: Format a date range for display (e.g., "20 - 24 July, 2026")
+// Helper: Format a date range for display
 // =========================================================
 function formatDateRange(startDateStr: string, endDateStr: string): string {
   const start = new Date(startDateStr);
@@ -172,7 +164,7 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
   }
 
   // Filter days: Show Saturday & Sunday ONLY if they have meetings
-  const daysToShow = ALL_DAYS.filter((day) => {
+  const daysToShow = DAYS.filter((day) => {
     if (day === 'Saturday' || day === 'Sunday') {
       const hasMeetings = plan.meetings.some((m) => m.day === day);
       return hasMeetings;
@@ -204,54 +196,73 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
     }, {});
   };
 
-  // Render meeting cards for a group – with parallel layout fix
+  // Render meeting cards for a group — clean, flat design
   const renderMeetingGroup = (meetings: Meeting[]) => {
     const grouped = groupByTime(meetings);
     return Object.entries(grouped).map(([timeStart, meetingsInGroup]) => {
-      const count = meetingsInGroup.length;
-      const flexBasis = count > 1 ? `calc(${100 / count}% - 4px)` : '100%';
       const displayTime = formatTimeDisplay(timeStart);
 
       return (
-        <div key={timeStart} className="border-b border-slate-100 pb-2 last:border-0">
-          <Badge variant="soft" color="blue" className="mb-1" size="1">
-            🕐 {displayTime}
-          </Badge>
-          <div className="flex flex-wrap gap-1">
+        <div key={timeStart} className="mb-2 last:mb-0">
+          {/* Time label — small caps, muted, with thin rule */}
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-[10px] font-semibold text-slate-500 tracking-wide uppercase">
+              {displayTime}
+            </span>
+            <div className="flex-1 h-px bg-slate-200" />
+          </div>
+          <div className="space-y-1">
             {meetingsInGroup.map((meeting) => (
               <div
                 key={meeting._id}
-                className="bg-slate-50 rounded p-2 border-l-4 flex-1 min-w-0 overflow-hidden"
+                className="pl-2 border-l-2"
                 style={{
-                  flex: `0 0 ${flexBasis}`,
-                  borderLeftColor: DIVISION_COLORS[meeting.division] || '#888',
+                  borderLeftColor: DIVISION_COLORS[meeting.division] || '#94a3b8',
                   wordBreak: 'break-word',
                 }}
               >
-                <Text weight="bold" size="2">
+                <Text weight="bold" className="block text-[11px] leading-snug text-slate-800">
                   {meeting.title}
                 </Text>
                 {meeting.location && (
-                  <div className="text-xs text-slate-500">📍 {meeting.location}</div>
-                )}
-                {meeting.department && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {meeting.department.split(',').map((d) => (
-                      <Badge key={d.trim()} variant="soft" color="blue" size="1">
-                        {d.trim()}
-                      </Badge>
-                    ))}
+                  <div className="text-[10px] text-slate-500 leading-snug mt-0.5">
+                    📍 {meeting.location}
                   </div>
                 )}
-                {meeting.divisionName && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {meeting.divisionName.split(',').map((d) => (
-                      <Badge key={d.trim()} variant="soft" color="green" size="1">
-                        {d.trim()}
-                      </Badge>
-                    ))}
+
+                {/* Department + Division combined — inline */}
+                {(meeting.department || meeting.divisionName) && (
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                    {meeting.department &&
+                      meeting.department.split(',').map((d) => {
+                        const full = d.trim();
+                        if (!full) return null;
+                        return (
+                          <AbbrBadge
+                            key={`dept-${full}`}
+                            name={full}
+                            abbr={abbrDept(full)}
+                            color="blue"
+                          />
+                        );
+                      })}
+                    {meeting.divisionName &&
+                      meeting.divisionName.split(',').map((d) => {
+                        const full = d.trim();
+                        if (!full) return null;
+                        return (
+                          <AbbrBadge
+                            key={`div-${full}`}
+                            name={full}
+                            abbr={abbrDiv(full)}
+                            color="green"
+                          />
+                        );
+                      })}
                   </div>
                 )}
+
+                {/* Stakeholders */}
                 {meeting.stakeholders && (
                   <div className="flex flex-wrap gap-1 mt-1">
                     {meeting.stakeholders.split(',').map((s) => (
@@ -263,9 +274,9 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
                         style={{
                           background: '#7c3aed',
                           color: 'white',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '10px',
+                          padding: '1px 6px',
+                          borderRadius: '0',
+                          fontSize: '9px',
                         }}
                       >
                         👤 {s.trim()}
@@ -281,181 +292,233 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
     });
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 w-full max-w-full">
-      <Card size="3" className="w-full max-w-full rounded-none shadow-none">
-        {/* ========================================================= */}
-        {/* HEADER – Live Schedule badge removed, but heading stays centered */}
-        {/* ========================================================= */}
-        <div className="px-4 md:px-6 pt-4">
-          <Flex align="center" justify="between" mb="2" wrap="wrap">
-            <Box className="flex-1 min-w-[100px]">
-              <Text size="4" weight="bold" className="text-slate-700">
-                Week {plan.weekNumber}
-              </Text>
-            </Box>
-            <Box className="flex-1 text-center">
-              <Heading size="6" className="text-slate-800">
-                Weekly Work Plan <span className="font-normal text-slate-500">({dateRange})</span>
-              </Heading>
-            </Box>
-            {/* Empty box to balance flex and keep heading centered */}
-            <Box className="flex-1 min-w-[140px]" />
-          </Flex>
+  const gridTemplateColumns = `60px repeat(${dayData.length}, minmax(0, 1fr))`;
 
-          <Flex gap="2" mt="1" align="center" wrap="wrap">
-            <Badge variant="soft" color="blue">Version {plan.version}</Badge>
-            <Badge variant="soft" color="gray">{plan.meetings.length} meetings</Badge>
-            {plan.tasks && plan.tasks.length > 0 && (
-              <Badge variant="soft" color="orange">{plan.tasks.length} tasks</Badge>
-            )}
-            <Text size="1" color="gray">Updated: {new Date(plan.updatedAt).toLocaleString()}</Text>
-          </Flex>
+  return (
+    <div className="min-h-screen bg-white w-full max-w-full">
+      <div className="w-full max-w-full">
+        {/* ========================================================= */}
+        {/* MASTHEAD — both title lines now share the same font style */}
+        {/* ========================================================= */}
+        <div className="border-b-2 border-slate-800 pb-3 mb-4 px-4 md:px-8 pt-6">
+          {/* Organization — bold, uppercase, letter-spaced, centered */}
+          <div className="text-center">
+            <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-800">
+              Anti-Corruption Commission
+            </span>
+          </div>
+
+          {/* Title — same font style as the organization line above */}
+          <div className="text-center mt-2">
+            <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-800">
+              Weekly Work Plan ({dateRange})
+            </span>
+          </div>
+
+          {/* Meta strip — single line, left-aligned, under the title */}
+          <div className="flex items-center justify-between mt-3 text-[11px] text-slate-600">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="font-semibold text-slate-800">
+                Week {plan.weekNumber}, {plan.year}
+              </span>
+              <span className="text-slate-400">|</span>
+              <span>Version {plan.version}</span>
+              <span className="text-slate-400">|</span>
+              <span>{plan.meetings.length} meetings</span>
+              {plan.tasks && plan.tasks.length > 0 && (
+                <>
+                  <span className="text-slate-400">|</span>
+                  <span>{plan.tasks.length} tasks</span>
+                </>
+              )}
+            </div>
+            <div className="text-slate-500 hidden sm:block">
+              Updated {new Date(plan.updatedAt).toLocaleDateString()}
+            </div>
+          </div>
         </div>
 
         {/* ========================================================= */}
-        {/* MEETINGS GRID – with centered vertical labels (larger font) */}
+        {/* MEETINGS CALENDAR — clean, no wrapper card */}
         {/* ========================================================= */}
-        <Card size="3" className="mx-2 sm:mx-4 md:mx-6 p-2 sm:p-4 mt-4">
-          <Flex align="center" justify="between" mb="3" wrap="wrap">
-            <Text size="3" weight="bold">📋 Meetings ({plan.meetings.length})</Text>
-            <Flex align="center" gap="1" className="text-xs">
-              <Badge variant="solid" color="green" size="1">Live Schedule</Badge>
-              <Text size="1" color="gray">–</Text>
-              <Text size="1" color="gray">updates appear automatically</Text>
-            </Flex>
-          </Flex>
-
-          {/* MAIN GRID: Label Column + Day Columns */}
-          <div className="flex gap-2">
-            {/* ----- LEFT LABEL COLUMN (centered labels, larger font) ----- */}
-            <div className="flex flex-col min-w-[24px] max-w-[24px]">
-              {/* Morning label – fixed height to match morning block, centered */}
-              <div className="flex items-center justify-center h-[350px] text-sm font-bold text-amber-600 tracking-tight leading-[1.1]">
-                <div className="flex flex-col items-center justify-center">
-                  <span>M</span>
-                  <span>O</span>
-                  <span>R</span>
-                  <span>N</span>
-                  <span>I</span>
-                  <span>N</span>
-                  <span>G</span>
-                </div>
-              </div>
-              {/* Separator gap (matches the separator in day columns) */}
-              <div className="h-1 bg-slate-100"></div>
-              {/* Afternoon label – takes remaining height, centered */}
-              <div className="flex-1 flex items-center justify-center text-sm font-bold text-blue-600 tracking-tight leading-[1.1]">
-                <div className="flex flex-col items-center justify-center">
-                  <span>A</span>
-                  <span>F</span>
-                  <span>T</span>
-                  <span>E</span>
-                  <span>R</span>
-                  <span>N</span>
-                  <span>O</span>
-                  <span>O</span>
-                  <span>N</span>
-                </div>
-              </div>
+        <div className="px-4 md:px-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+              Weekly Schedule
+            </h2>
+            <div className="flex items-center gap-2 text-[10px] text-slate-500">
+              <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+              <span>Live — updates automatically</span>
             </div>
+          </div>
 
-            {/* ----- DAY COLUMNS ----- */}
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {dayData.map(({ day, morning, afternoon }) => {
+          <div className="overflow-x-auto">
+            <div
+              className="grid border border-slate-300"
+              style={{
+                gridTemplateColumns,
+                gridTemplateRows: 'auto auto auto',
+              }}
+            >
+              {/* ROW 1 — Day Headers */}
+              <div className="border-b border-r border-slate-300 bg-slate-800"></div>
+              {dayData.map(({ day }) => {
                 const dateDisplay = plan?.startDate ? getDateForDay(plan.startDate, day) : '';
-                const hasMorning = morning.length > 0;
-                const hasAfternoon = afternoon.length > 0;
-
                 return (
-                  <div key={day} className="border border-slate-200 rounded-lg bg-white overflow-hidden">
-                    {/* Day Header */}
-                    <div className="font-bold text-sm text-center bg-slate-100 p-2 border-b border-slate-200">
-                      {day} <span className="text-xs font-normal text-slate-500">({dateDisplay})</span>
+                  <div
+                    key={`header-${day}`}
+                    className="border-b border-r border-slate-300 bg-slate-800 px-2 py-1.5 text-center text-white last:border-r-0"
+                  >
+                    <div className="text-[11px] font-bold uppercase tracking-wide">
+                      {day}
                     </div>
-
-                    {/* Morning Block - FIXED HEIGHT with overflow for dynamic content */}
-                    <div className="p-2 border-b border-slate-100 h-[350px] overflow-auto">
-                      {hasMorning ? (
-                        <div className="space-y-2">{renderMeetingGroup(morning)}</div>
-                      ) : (
-                        <div className="flex items-center justify-center h-12">
-                          <Text size="1" color="gray">(empty)</Text>
-                        </div>
-                      )}
+                    <div className="text-[10px] font-normal text-slate-300">
+                      {dateDisplay}
                     </div>
+                  </div>
+                );
+              })}
 
-                    {/* ----- SEPARATOR: small gap between morning and afternoon ----- */}
-                    <div className="h-1 bg-slate-100"></div>
+              {/* ROW 2 — MORNING label + morning content */}
+              <div className="border-b border-r border-slate-300 bg-amber-50 flex items-center justify-center py-3">
+                <span
+                  className="text-[10px] font-bold text-amber-700 tracking-[0.25em]"
+                  style={{
+                    writingMode: 'vertical-rl',
+                    transform: 'rotate(180deg)',
+                  }}
+                >
+                  MORNING
+                </span>
+              </div>
 
-                    {/* Afternoon Block */}
-                    <div className="p-2 min-h-[60px]">
-                      {hasAfternoon ? (
-                        <div className="space-y-2">{renderMeetingGroup(afternoon)}</div>
-                      ) : (
-                        <div className="flex items-center justify-center h-12">
-                          <Text size="1" color="gray">(empty)</Text>
-                        </div>
-                      )}
-                    </div>
+              {dayData.map(({ day, morning }) => {
+                const hasMorning = morning.length > 0;
+                return (
+                  <div
+                    key={`am-${day}`}
+                    className="border-b border-r border-slate-300 p-2 last:border-r-0 align-top"
+                  >
+                    {hasMorning ? (
+                      <div>{renderMeetingGroup(morning)}</div>
+                    ) : (
+                      <div className="flex items-center justify-center h-12 text-[10px] text-slate-300 italic">
+                        no meetings
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* ROW 3 — AFTERNOON label + afternoon content */}
+              <div className="border-r border-slate-300 bg-blue-50 flex items-center justify-center py-3">
+                <span
+                  className="text-[10px] font-bold text-blue-700 tracking-[0.25em]"
+                  style={{
+                    writingMode: 'vertical-rl',
+                    transform: 'rotate(180deg)',
+                  }}
+                >
+                  AFTERNOON
+                </span>
+              </div>
+
+              {dayData.map(({ day, afternoon }) => {
+                const hasAfternoon = afternoon.length > 0;
+                return (
+                  <div
+                    key={`pm-${day}`}
+                    className="border-r border-slate-300 p-2 last:border-r-0 align-top min-h-[80px]"
+                  >
+                    {hasAfternoon ? (
+                      <div>{renderMeetingGroup(afternoon)}</div>
+                    ) : (
+                      <div className="flex items-center justify-center h-12 text-[10px] text-slate-300 italic">
+                        no meetings
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           </div>
-        </Card>
+        </div>
 
         {/* ========================================================= */}
-        {/* TASKS */}
+        {/* WEEK-LONG TASKS — clean, no border */}
         {/* ========================================================= */}
         {plan.tasks && plan.tasks.length > 0 && (
-          <Card size="3" mt="4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }} className="mx-2 sm:mx-4 md:mx-6">
-            <Flex align="center" gap="2" mb="2">
-              <Text size="3" weight="bold">📌 Week-long Tasks</Text>
-              <Badge variant="solid" color="orange" size="1">{plan.tasks.length}</Badge>
-            </Flex>
-            <div className="space-y-1">
-              {plan.tasks.map((task, index) => (
-                <Text key={index} size="2" className="text-slate-700 py-0.5 flex items-start gap-2">
-                  <span className="text-orange-500">•</span>
-                  {task}
-                </Text>
-              ))}
+          <div className="px-4 md:px-8 mt-6">
+            <div className="flex items-center gap-2 mb-2">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+                Week-long Tasks
+              </h2>
+              <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 font-semibold">
+                {plan.tasks.length}
+              </span>
             </div>
-          </Card>
-        )}
-
-        {/* ========================================================= */}
-        {/* LEGEND */}
-        {/* ========================================================= */}
-        {plan.legend && plan.legend.length > 0 && (
-          <Card size="3" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }} className="mx-2 sm:mx-4 md:mx-6">
-            <Flex align="center" gap="2" mb="2">
-              <Text size="3" weight="bold">📖 Legend</Text>
-              <Badge variant="solid" color="blue" size="1">{plan.legend.length}</Badge>
-            </Flex>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-              {plan.legend.map((item, index) => (
-                <div key={index} className="flex items-center gap-2 text-sm bg-white rounded px-3 py-1.5 border border-slate-100">
-                  <span className="font-medium text-slate-700">{item.key}</span>
-                  <span className="text-slate-400">→</span>
-                  <span className="text-slate-600">{item.value}</span>
+            <div className="border-t border-slate-200 pt-3 space-y-1.5">
+              {plan.tasks.map((task, index) => (
+                <div key={index} className="flex items-start gap-2">
+                  <span className="text-amber-600 text-[11px] font-bold mt-0.5">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <Text size="2" className="text-slate-700 leading-relaxed">
+                    {task}
+                  </Text>
                 </div>
               ))}
             </div>
-          </Card>
+          </div>
         )}
 
         {/* ========================================================= */}
-        {/* FOOTER */}
+        {/* LEGEND — clean, no border, muted */}
         {/* ========================================================= */}
-        <div className="mt-6 pt-4 border-t border-slate-200 text-center px-4 md:px-6 pb-4">
-          <Text size="1" color="gray">
-            This is an automated schedule from the Planning Office.
-            {plan.status === 'draft' && ' ⚠️ This schedule is still in draft.'}
-          </Text>
+        {plan.legend && plan.legend.length > 0 && (
+          <div className="px-4 md:px-8 mt-6">
+            <div className="flex items-center gap-2 mb-2">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+                Legend
+              </h2>
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 font-semibold">
+                {plan.legend.length}
+              </span>
+            </div>
+            <div className="border-t border-slate-200 pt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-1">
+                {plan.legend.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex items-baseline gap-2 text-[12px] py-0.5"
+                  >
+                    <span className="font-semibold text-slate-800 min-w-[44px]">
+                      {item.key}
+                    </span>
+                    <span className="text-slate-400">—</span>
+                    <span className="text-slate-600">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* FOOTER — subtle, formal */}
+        {/* ========================================================= */}
+        <div className="px-4 md:px-8 mt-8 mb-6 pt-4 border-t border-slate-200">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] text-slate-500">
+            <div>
+              This is an automated schedule from the Planning Office
+              {plan.status === 'draft' && ' — draft version'}
+            </div>
+            <div className="uppercase tracking-widest">
+              Anti-Corruption Commission
+            </div>
+          </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

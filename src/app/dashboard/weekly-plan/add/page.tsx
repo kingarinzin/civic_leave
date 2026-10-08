@@ -4,6 +4,14 @@ import React, { FormEvent, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { FaPlus, FaTrash, FaCopy, FaEdit, FaTimes, FaSearch, FaChevronDown } from 'react-icons/fa';
+import AbbrBadge from '@/components/AbbrBadge';
+import { abbrDept, abbrDiv } from '@/lib/abbreviations';
+import {
+  DAYS,
+  DIVISIONS_WITH_OTHERS as DIVISIONS,
+  LOCATION_OPTIONS,
+  DIVISION_COLORS,
+} from '@/lib/weekly-plan-constants';
 import {
   Badge,
   Box,
@@ -26,9 +34,9 @@ interface Meeting {
   timeEnd: string;
   title: string;
   location: string;
-  division: string;        // Meeting Type (single‑select, hardcoded)
-  department: string;      // Department (multi‑select from API + custom)
-  divisionName: string;    // Division (multi‑select from API)
+  division: string;
+  department: string;
+  divisionName: string;
   stakeholders: string;
   description: string;
 }
@@ -48,50 +56,6 @@ interface WeekPlan {
   createdAt: string;
   updatedAt: string;
 }
-
-// ============================================
-// CONSTANTS
-// ============================================
-const DAYS: string[] = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
-];
-const DIVISIONS: string[] = [
-  'Commission meeting',
-  'Commisison meeting on case',
-  'CEC',
-  'HRC',
-  'Finance Committe meeting',
-  'Endowment Committee meeting',
-  'CM on ATR apprisal',
-  'CM on complaints, IE, & ATR',
-  'CM on Judgment Appraisal',
-  'Others',
-];
-
-const LOCATION_OPTIONS = [
-  'Druk Dradhir Khang',
-  'Chungchen Phurkhang',
-  'Taagtshang Sherab Jorden Khang',
-  'Meeting Room adjacent to PPD',
-  'Chhoesham',
-  'Others',
-];
-
-const DIVISION_COLORS: Record<string, string> = {
-  IT: '#4caf50',
-  Finance: '#ff9800',
-  HR: '#f44336',
-  Administration: '#2196f3',
-  Operations: '#9c27b0',
-  Legal: '#607d8b',
-  Communications: '#00bcd4',
-};
 
 // =========================================================
 // TIME HELPER FUNCTIONS
@@ -122,8 +86,6 @@ function formatTimeDisplay(time: string): string {
 // ============================================
 // SEARCHABLE DROPDOWN COMPONENTS
 // ============================================
-
-// Single-select searchable dropdown
 function SearchableSelect({
   value,
   onChange,
@@ -203,46 +165,64 @@ function SearchableSelect({
   );
 }
 
-// Multi-select searchable dropdown
 function SearchableMultiSelect({
   selected,
   onChange,
   options,
   placeholder,
   className,
+  abbrResolver,
 }: {
   selected: string[];
   onChange: (selected: string[]) => void;
   options: string[];
   placeholder: string;
   className?: string;
+  abbrResolver?: (name: string) => string;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [pendingSelected, setPendingSelected] = useState<string[]>(selected);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleCancel = () => {
+    setPendingSelected(selected);
+    setIsOpen(false);
+  };
+
+  const handleDone = () => {
+    onChange(pendingSelected);
+    setIsOpen(false);
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+        if (isOpen) {
+          setPendingSelected(selected);
+          setIsOpen(false);
+        }
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen, selected]);
+
+  const handleOpen = () => {
+    setPendingSelected(selected);
+    setIsOpen(true);
+  };
 
   const filteredOptions = options.filter((opt) =>
     opt.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const toggleOption = (opt: string) => {
-    if (selected.includes(opt)) {
-      onChange(selected.filter((s) => s !== opt));
+    if (pendingSelected.includes(opt)) {
+      setPendingSelected(pendingSelected.filter((s) => s !== opt));
     } else {
-      onChange([...selected, opt]);
+      setPendingSelected([...pendingSelected, opt]);
     }
-    // close dropdown after selection
-    setIsOpen(false);
   };
 
   const removeOption = (opt: string) => {
@@ -251,18 +231,15 @@ function SearchableMultiSelect({
 
   return (
     <div ref={containerRef} className={`relative ${className || ''}`}>
-      {/* Selected badges */}
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-1">
           {selected.map((s) => (
-            <Badge
+            <AbbrBadge
               key={s}
-              variant="soft"
+              name={s}
+              abbr={(abbrResolver ?? ((x: string) => x))(s)}
               color="blue"
-              size="1"
-              className="flex items-center gap-1"
             >
-              {s}
               <button
                 type="button"
                 onClick={() => removeOption(s)}
@@ -270,14 +247,14 @@ function SearchableMultiSelect({
               >
                 ✕
               </button>
-            </Badge>
+            </AbbrBadge>
           ))}
         </div>
       )}
 
       <div
         className="flex items-center border border-slate-300 rounded px-3 py-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200 cursor-text"
-        onClick={() => setIsOpen(true)}
+        onClick={handleOpen}
       >
         <FaSearch className="text-slate-400 mr-2 flex-shrink-0" size={14} />
         <input
@@ -285,9 +262,9 @@ function SearchableMultiSelect({
           value={searchTerm}
           onChange={(e) => {
             setSearchTerm(e.target.value);
-            setIsOpen(true);
+            if (!isOpen) handleOpen();
           }}
-          onFocus={() => setIsOpen(true)}
+          onFocus={handleOpen}
           placeholder={selected.length > 0 ? '' : placeholder}
           className="flex-1 outline-none bg-transparent text-sm"
         />
@@ -298,28 +275,54 @@ function SearchableMultiSelect({
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-48 overflow-y-auto">
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-slate-500">No options found</div>
-          ) : (
-            filteredOptions.map((opt) => (
-              <div
-                key={opt}
-                className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 flex items-center gap-2 ${
-                  selected.includes(opt) ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-700'
-                }`}
-                onClick={() => toggleOption(opt)}
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-64 overflow-hidden flex flex-col">
+          <div className="overflow-y-auto max-h-48">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-slate-500">No options found</div>
+            ) : (
+              filteredOptions.map((opt) => (
+                <div
+                  key={opt}
+                  className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 flex items-center gap-2 ${
+                    pendingSelected.includes(opt)
+                      ? 'bg-blue-50 text-blue-600 font-medium'
+                      : 'text-slate-700'
+                  }`}
+                  onClick={() => toggleOption(opt)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={pendingSelected.includes(opt)}
+                    onChange={() => {}}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                  />
+                  {opt}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 bg-slate-50 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-500">
+              {pendingSelected.length} selected
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100"
               >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(opt)}
-                  onChange={() => {}}
-                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                />
-                {opt}
-              </div>
-            ))
-          )}
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDone}
+                className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -390,9 +393,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
   const [generatedLink, setGeneratedLink] = useState<string>('');
   const [planId, setPlanId] = useState<string | null>(null);
 
-  // -----------------------------------------------------------------
-  // DRAWER STATE
-  // -----------------------------------------------------------------
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isAllDay, setIsAllDay] = useState<boolean>(false);
@@ -410,28 +410,25 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     description: '',
   });
 
-  // 12-hour time selection state
   const [timeStart12, setTimeStart12] = useState({ hour: 9, minute: '00', ampm: 'AM' });
   const [timeEnd12, setTimeEnd12] = useState({ hour: 10, minute: '00', ampm: 'AM' });
 
-  const [customLocation, setCustomLocation] = useState<string>('');
+  // External venue flag — when true, hide dropdown, show free-text input
+  const [isExternalVenue, setIsExternalVenue] = useState<boolean>(false);
+
   const [customDivision, setCustomDivision] = useState<string>('');
   const [stakeholderInput, setStakeholderInput] = useState<string>('');
 
-  // Department multi‑select state (with "Others" support)
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [showCustomDepartment, setShowCustomDepartment] = useState<boolean>(false);
   const [customDepartmentInput, setCustomDepartmentInput] = useState<string>('');
 
-  // 从 API 获取的部门列表（用于 Department 多选）
   const [departments, setDepartments] = useState<string[]>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState<boolean>(true);
 
-  // 从 API 获取的部门列表（用于 Division 多选）
   const [divisions, setDivisions] = useState<string[]>([]);
   const [divisionsLoading, setDivisionsLoading] = useState<boolean>(true);
 
-  // Synchronise selectedDepartments with formData.department
   useEffect(() => {
     setFormData((prev) => ({
       ...prev,
@@ -439,9 +436,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     }));
   }, [selectedDepartments]);
 
-  // =========================================================
-  // FETCH DEPARTMENTS (用于 Department)
-  // =========================================================
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
@@ -463,9 +457,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     fetchDepartments();
   }, []);
 
-  // =========================================================
-  // FETCH DIVISIONS (用于 Division)
-  // =========================================================
   useEffect(() => {
     const fetchDivisions = async () => {
       try {
@@ -487,9 +478,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     fetchDivisions();
   }, []);
 
-  // =========================================================
-  // FETCH THE MOST RECENT PLAN TO COPY TASKS & LEGEND
-  // =========================================================
   useEffect(() => {
     const fetchPreviousPlan = async () => {
       try {
@@ -523,9 +511,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     fetchPreviousPlan();
   }, []);
 
-  // =========================================================
-  // AUTO-GENERATE WEEK LABEL
-  // =========================================================
   useEffect(() => {
     if (startDate && endDate) {
       const start = new Date(startDate);
@@ -538,12 +523,10 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     }
   }, [weekNumber, startDate, endDate]);
 
-  // =========================================================
-  // DRAWER OPEN/CLOSE
-  // =========================================================
   const openDrawerForAdd = (day: string) => {
     setEditingIndex(null);
     setIsAllDay(false);
+    setIsExternalVenue(false);
     const defaultStart = { hour: 9, minute: '00', ampm: 'AM' };
     const defaultEnd = { hour: 10, minute: '00', ampm: 'AM' };
     setTimeStart12(defaultStart);
@@ -563,7 +546,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setSelectedDepartments([]);
     setShowCustomDepartment(false);
     setCustomDepartmentInput('');
-    setCustomLocation('');
     setCustomDivision('');
     setStakeholderInput('');
     setDrawerOpen(true);
@@ -575,7 +557,11 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     const isAllDayMeeting = !meeting.timeStart || !meeting.timeEnd;
     setIsAllDay(isAllDayMeeting);
     setFormData({ ...meeting });
-    // Populate selected departments from meeting.department
+
+    // If the saved venue isn't in the internal list, mark it as external
+    const venueIsInternal = meeting.location && LOCATION_OPTIONS.includes(meeting.location);
+    setIsExternalVenue(!!meeting.location && !venueIsInternal);
+
     const depts = meeting.department ? meeting.department.split(',').map(s => s.trim()).filter(Boolean) : [];
     setSelectedDepartments(depts);
     setShowCustomDepartment(false);
@@ -591,11 +577,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
       setTimeStart12(defaultStart);
       setTimeEnd12(defaultEnd);
     }
-    if (meeting.location && !LOCATION_OPTIONS.includes(meeting.location)) {
-      setCustomLocation(meeting.location);
-    } else {
-      setCustomLocation('');
-    }
     if (meeting.division && !DIVISIONS.includes(meeting.division)) {
       setCustomDivision(meeting.division);
     } else {
@@ -610,20 +591,12 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setEditingIndex(null);
   };
 
-  // =========================================================
-  // SAVE MEETING FROM DRAWER
-  // =========================================================
   const saveMeetingFromDrawer = () => {
     let start24 = '';
     let end24 = '';
     if (!isAllDay) {
       start24 = formatTimeTo24(timeStart12.hour, timeStart12.minute, timeStart12.ampm);
       end24 = formatTimeTo24(timeEnd12.hour, timeEnd12.minute, timeEnd12.ampm);
-    }
-
-    let finalLocation = formData.location;
-    if (formData.location === 'Others') {
-      finalLocation = customLocation || '';
     }
 
     let finalDivision = formData.division;
@@ -635,16 +608,12 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
       ...formData,
       timeStart: start24,
       timeEnd: end24,
-      location: finalLocation,
+      // location is already stored in formData.location (either pick from dropdown, or typed in external field)
       division: finalDivision,
     };
 
     if (!newMeeting.title.trim()) {
       alert('Meeting title is required.');
-      return;
-    }
-    if (!newMeeting.division) {
-      alert('Meeting type is required.');
       return;
     }
 
@@ -658,9 +627,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     closeDrawer();
   };
 
-  // =========================================================
-  // OTHER MEETING CRUD
-  // =========================================================
   const deleteMeetingFromDrawer = () => {
     if (editingIndex === null) return;
     if (!window.confirm('Delete this meeting?')) return;
@@ -687,13 +653,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setFormData({ ...formData, [field]: value });
   };
 
-  const handleLocationChange = (value: string) => {
-    setFormData({ ...formData, location: value });
-    if (value !== 'Others') {
-      setCustomLocation('');
-    }
-  };
-
   const handleDivisionChange = (value: string) => {
     setFormData({ ...formData, division: value });
     if (value !== 'Others') {
@@ -701,27 +660,19 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     }
   };
 
-  // 将逗号分隔的字符串转为数组
   const stringToArray = (str: string): string[] => {
     if (!str) return [];
     return str.split(',').map((s) => s.trim()).filter(Boolean);
   };
 
-  // =========================================================
-  // DEPARTMENT MULTI‑SELECT HANDLING (with "Others")
-  // =========================================================
   const handleDepartmentSelect = (selected: string[]) => {
-    // Check if "Others" was newly added
     const prev = selectedDepartments;
     const added = selected.find(s => !prev.includes(s));
     if (added === 'Others') {
-      // Show custom input and remove "Others" from selection
       setShowCustomDepartment(true);
-      // Keep previous selection (without "Others")
       setSelectedDepartments(prev);
       return;
     }
-    // If "Others" was deselected, just update
     setSelectedDepartments(selected);
   };
 
@@ -734,7 +685,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     }
     setSelectedDepartments([...selectedDepartments, val]);
     setCustomDepartmentInput('');
-    // Keep the input open for more additions
   };
 
   const cancelCustomDepartment = () => {
@@ -742,16 +692,10 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setCustomDepartmentInput('');
   };
 
-  // =========================================================
-  // DIVISION MULTI‑SELECT HANDLING
-  // =========================================================
   const handleDivisionNameChange = (selected: string[]) => {
     setFormData({ ...formData, divisionName: selected.join(', ') });
   };
 
-  // =========================================================
-  // STAKEHOLDER HANDLING
-  // =========================================================
   const getStakeholderArray = (stakeholdersStr: string): string[] => {
     if (!stakeholdersStr) return [];
     return stakeholdersStr.split(',').map((s) => s.trim()).filter(Boolean);
@@ -776,9 +720,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setFormData({ ...formData, stakeholders: updated.join(', ') });
   };
 
-  // =========================================================
-  // TASKS & LEGEND
-  // =========================================================
   const [tasks, setTasks] = useState<string[]>([]);
   const [legendItems, setLegendItems] = useState<{ key: string; value: string }[]>([]);
 
@@ -810,9 +751,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setLegendItems(updated);
   };
 
-  // =========================================================
-  // SUBMIT
-  // =========================================================
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -829,12 +767,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     const emptyTitle = meetings.some((m) => !m.title.trim());
     if (emptyTitle) {
       setMessage('All meetings must have a title');
-      return;
-    }
-
-    const emptyDivision = meetings.some((m) => !m.division);
-    if (emptyDivision) {
-      setMessage('All meetings must have a division assigned');
       return;
     }
 
@@ -911,22 +843,18 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setDrawerOpen(false);
     setEditingIndex(null);
     setIsAllDay(false);
+    setIsExternalVenue(false);
     setCustomDivision('');
-    setCustomLocation('');
     setSelectedDepartments([]);
     setShowCustomDepartment(false);
     setCustomDepartmentInput('');
   };
 
-  // =========================================================
-  // RENDER
-  // =========================================================
   return (
     <div className="flex bg-slate-50 min-h-screen">
       <Sidebar />
 
       <main className="flex-1 p-6 ml-64">
-        {/* Header */}
         <Flex align="center" justify="between" mb="5">
           <Box>
             <Heading size="6">Add Weekly Plan</Heading>
@@ -942,11 +870,9 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
           </Button>
         </Flex>
 
-        {/* Main Card */}
         <Card size="3">
           <form onSubmit={handleSubmit}>
             <Flex direction="column" gap="4">
-              {/* Status Badges */}
               <Flex gap="3" align="center" justify="between" wrap="wrap">
                 <Badge variant="soft" color="blue">✏️ Draft Mode</Badge>
                 {generatedLink && <Badge variant="solid" color="green">✅ Plan Created</Badge>}
@@ -954,7 +880,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
 
               <Separator size="4" />
 
-              {/* Plan Details Grid */}
               <div className="grid md:grid-cols-5 gap-4 items-end">
                 <Box>
                   <Text as="label" size="2" weight="medium">Week Number</Text>
@@ -1014,7 +939,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
 
               <Separator size="4" />
 
-              {/* Meetings Section */}
               <Flex align="center" justify="between">
                 <Box>
                   <Text size="3" weight="bold">📋 Meetings</Text>
@@ -1022,7 +946,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                 </Box>
               </Flex>
 
-              {/* 7-Day Grid - COMPACT CARDS */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7 gap-3 items-start">
                 {DAYS.map((day) => {
                   const dayMeetings = meetings
@@ -1031,7 +954,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   const hasMeetings = dayMeetings.length > 0;
                   const dateDisplay = startDate ? getDateForDay(startDate, day) : '';
 
-                  // Group meetings by timeStart (exact match)
                   const grouped = dayMeetings.reduce((acc, meeting) => {
                     const key = meeting.timeStart || 'All Day';
                     if (!acc[key]) acc[key] = [];
@@ -1046,7 +968,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                         hasMeetings ? 'min-h-[100px]' : 'min-h-[80px]'
                       }`}
                     >
-                      {/* Day Header */}
                       <div className="flex justify-between items-center mb-2">
                         <div>
                           <Text weight="bold" size="2">{day}</Text>
@@ -1064,10 +985,8 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                         </Button>
                       </div>
 
-                      {/* Meeting Groups – each group is a time slot */}
                       <div className="space-y-2">
                         {Object.entries(grouped).map(([timeKey, meetingsInGroup]) => {
-                          // Calculate flex basis for each meeting in group
                           const count = meetingsInGroup.length;
                           const flexBasis = count > 1 ? `calc(${100 / count}% - 4px)` : '100%';
 
@@ -1086,7 +1005,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                                     }}
                                     onClick={() => openDrawerForEdit(realIndex)}
                                   >
-                                    {/* Time (always at top) */}
                                     <div className="flex items-center justify-between">
                                       <Text size="2" weight="bold">
                                         {displayTime}
@@ -1117,46 +1035,54 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                                       </div>
                                     </div>
 
-                                    {/* 1. Meeting Title */}
                                     <Text size="2" weight="medium" className="mt-0.5">
                                       {meeting.title || '(Untitled)'}
                                     </Text>
 
-                                    {/* 2. Meeting Type */}
                                     <Text size="1" color="gray">
-                                      🏢 {meeting.division}
+                                      🏢 {meeting.division || '—'}
                                     </Text>
 
-                                    {/* 3. Venue */}
                                     {meeting.location && (
                                       <Text size="1" color="gray">
                                         📍 {meeting.location}
                                       </Text>
                                     )}
 
-                                    {/* 4. Department (blue badges) */}
                                     {meeting.department && (
                                       <div className="flex flex-wrap gap-1 mt-1">
-                                        {meeting.department.split(',').map((d) => (
-                                          <Badge key={d.trim()} variant="soft" color="blue" size="1">
-                                            {d.trim()}
-                                          </Badge>
-                                        ))}
+                                        {meeting.department.split(',').map((d) => {
+                                          const full = d.trim();
+                                          if (!full) return null;
+                                          return (
+                                            <AbbrBadge
+                                              key={full}
+                                              name={full}
+                                              abbr={abbrDept(full)}
+                                              color="blue"
+                                            />
+                                          );
+                                        })}
                                       </div>
                                     )}
 
-                                    {/* 5. Division (green badges) */}
                                     {meeting.divisionName && (
                                       <div className="flex flex-wrap gap-1 mt-1">
-                                        {meeting.divisionName.split(',').map((d) => (
-                                          <Badge key={d.trim()} variant="soft" color="green" size="1">
-                                            {d.trim()}
-                                          </Badge>
-                                        ))}
+                                        {meeting.divisionName.split(',').map((d) => {
+                                          const full = d.trim();
+                                          if (!full) return null;
+                                          return (
+                                            <AbbrBadge
+                                              key={full}
+                                              name={full}
+                                              abbr={abbrDiv(full)}
+                                              color="green"
+                                            />
+                                          );
+                                        })}
                                       </div>
                                     )}
 
-                                    {/* Stakeholders (always last) */}
                                     {meeting.stakeholders && (
                                       <div className="flex flex-wrap gap-1 mt-1">
                                         {meeting.stakeholders.split(',').map((s) => (
@@ -1196,9 +1122,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                 })}
               </div>
 
-              {/* ========================================================= */}
-              {/* TASKS & LEGEND SECTIONS */}
-              {/* ========================================================= */}
               <Separator size="4" />
 
               <Box>
@@ -1291,7 +1214,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
 
               <Separator size="4" />
 
-              {/* Form Actions */}
               <Flex gap="3" pt="2" wrap="wrap" align="center">
                 <Button type="submit" disabled={submitting}>
                   {submitting ? 'Creating...' : '📤 Create Week Plan'}
@@ -1328,7 +1250,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
           </form>
         </Card>
 
-        {/* Email Section (Placeholder) */}
         {planId && generatedLink && (
           <Card
             size="2"
@@ -1372,20 +1293,14 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
         )}
       </main>
 
-      {/* ========================================================= */}
-      {/* SLIDE-IN DRAWER (Right Panel) */}
-      {/* ========================================================= */}
       {drawerOpen && (
         <>
-          {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black bg-opacity-40 z-40 transition-opacity"
+            className="fixed inset-0 bg-black/15 backdrop-blur-[2px] z-40 transition-opacity"
             onClick={closeDrawer}
           />
-          {/* Drawer */}
           <div className="fixed top-0 right-0 w-full sm:w-[500px] md:w-[550px] h-full bg-white shadow-2xl z-50 overflow-y-auto transition-transform duration-300 ease-in-out">
             <div className="p-6">
-              {/* Drawer Header */}
               <div className="flex justify-between items-center mb-4">
                 <Heading size="5">
                   {editingIndex !== null ? 'Edit Meeting' : 'Add Meeting'}
@@ -1401,9 +1316,7 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
 
               <Separator className="mb-4" />
 
-              {/* Form Fields */}
               <div className="space-y-4">
-                {/* Day (disabled) */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Day
@@ -1415,7 +1328,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   />
                 </div>
 
-                {/* All Day Toggle */}
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -1437,7 +1349,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   </Text>
                 </div>
 
-                {/* Time 12-hour */}
                 {!isAllDay && (
                   <div>
                     <Text as="label" size="2" weight="medium" className="block mb-1">
@@ -1519,7 +1430,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   </div>
                 )}
 
-                {/* Title */}
                 <div>
                   <textarea
                     value={formData.title}
@@ -1530,28 +1440,52 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   />
                 </div>
 
-                {/* Meeting Venue */}
+                {/* ========================================================= */}
+                {/* MEETING VENUE — internal dropdown OR external free-text     */}
+                {/* ========================================================= */}
                 <div>
-                  <SearchableSelect
-                    value={formData.location}
-                    onChange={(val) => {
-                      handleLocationChange(val);
-                    }}
-                    options={LOCATION_OPTIONS}
-                    placeholder="Meeting Venue"
-                  />
-                  {formData.location === 'Others' && (
+                  <Text as="label" size="2" weight="medium" className="block mb-1">
+                    Meeting Venue
+                  </Text>
+
+                  {/* External venue toggle */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      id="externalVenueToggle"
+                      checked={isExternalVenue}
+                      onChange={(e) => {
+                        setIsExternalVenue(e.target.checked);
+                        // Clear the venue when switching modes, so stale values don't carry over
+                        setFormData({ ...formData, location: '' });
+                      }}
+                      className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                    />
+                    <Text as="label" htmlFor="externalVenueToggle" size="2" weight="medium">
+                      External venue (outside ACC)
+                    </Text>
+                  </div>
+
+                  {isExternalVenue ? (
+                    // Free-text input for external venue
                     <input
                       type="text"
-                      value={customLocation}
-                      onChange={(e) => setCustomLocation(e.target.value)}
-                      placeholder="Enter custom venue..."
-                      className="w-full border-2 border-blue-300 rounded px-3 py-2 mt-2 bg-blue-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      value={formData.location}
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      placeholder="Enter venue name (outside ACC)..."
+                      className="w-full border-2 border-amber-300 rounded px-3 py-2 bg-amber-50 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    />
+                  ) : (
+                    // Internal venue dropdown
+                    <SearchableSelect
+                      value={formData.location}
+                      onChange={(val) => setFormData({ ...formData, location: val })}
+                      options={LOCATION_OPTIONS}
+                      placeholder="Select internal venue"
                     />
                   )}
                 </div>
 
-                {/* Meeting Type (单选，硬编码) */}
                 <div>
                   <SearchableSelect
                     value={formData.division}
@@ -1572,15 +1506,11 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   )}
                 </div>
 
-                {/* ========================================================= */}
-                {/* INTERNAL ATTENDEES SECTION */}
-                {/* ========================================================= */}
                 <div>
                   <Text size="3" weight="bold" className="block mb-2">
                     Internal Attendees
                   </Text>
 
-                  {/* Department (first) – with "Others" support */}
                   <div className="mb-3">
                     <Text as="label" size="2" weight="medium" className="block mb-1">
                       Department
@@ -1590,11 +1520,11 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                       onChange={handleDepartmentSelect}
                       options={[...departments, 'Others']}
                       placeholder="Search departments..."
+                      abbrResolver={abbrDept}
                     />
                     {departmentsLoading && (
                       <Text size="1" color="gray" className="mt-1">Loading departments...</Text>
                     )}
-                    {/* Custom department input (shown when "Others" selected) */}
                     {showCustomDepartment && (
                       <div className="mt-2 flex items-center gap-2">
                         <input
@@ -1620,7 +1550,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                     )}
                   </div>
 
-                  {/* Division (second) – uses divisions API */}
                   <div>
                     <Text as="label" size="2" weight="medium" className="block mb-1">
                       Division
@@ -1630,6 +1559,7 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                       onChange={handleDivisionNameChange}
                       options={divisions}
                       placeholder="Search divisions..."
+                      abbrResolver={abbrDiv}
                     />
                     {divisionsLoading && (
                       <Text size="1" color="gray" className="mt-1">Loading divisions...</Text>
@@ -1642,7 +1572,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   </div>
                 </div>
 
-                {/* Stakeholders */}
                 <div>
                   <div className="flex gap-2">
                     <input
@@ -1697,7 +1626,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   )}
                 </div>
 
-                {/* Description */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Description (optional)
@@ -1711,7 +1639,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   />
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex gap-3 pt-2 border-t border-slate-200">
                   {editingIndex !== null && (
                     <Button

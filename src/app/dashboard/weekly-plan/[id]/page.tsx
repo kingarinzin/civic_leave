@@ -3,6 +3,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import AbbrBadge from '@/components/AbbrBadge';
+import { abbrDept, abbrDiv } from '@/lib/abbreviations';
+import {
+  DAYS,
+  DIVISIONS_BASE as DIVISIONS,
+  LOCATION_OPTIONS,
+  DIVISION_COLORS,
+} from '@/lib/weekly-plan-constants';
 import {
   Badge,
   Box,
@@ -47,41 +55,6 @@ interface WeekPlan {
   version: number;
   updatedAt: string;
 }
-
-// ============================================
-// CONSTANTS
-// ============================================
-const DAYS: string[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const DIVISIONS: string[] = [
-  'Commission meeting',
-  'Commisison meeting on case',
-  'CEC',
-  'HRC',
-  'Finance Committe meeting',
-  'Endowment Committee meeting',
-  'CM on ATR apprisal',
-  'CM on complaints, IE, & ATR',
-  'CM on Judgment Appraisal',
-];
-
-const LOCATION_OPTIONS = [
-  'Druk Dradhir Khang',
-  'Chungchen Phurkhang',
-  'Taagtshang Sherab Jorden Khang',
-  'Meeting Room adjacent to PPD',
-  'Chhoesham',
-  'Others',
-];
-
-const DIVISION_COLORS: Record<string, string> = {
-  IT: '#4caf50',
-  Finance: '#ff9800',
-  HR: '#f44336',
-  Administration: '#2196f3',
-  Operations: '#9c27b0',
-  Legal: '#607d8b',
-  Communications: '#00bcd4',
-};
 
 // =========================================================
 // TIME HELPER FUNCTIONS
@@ -130,10 +103,9 @@ function getDateForDay(startDateStr: string, dayName: string): string {
 }
 
 // =========================================================
-// SEARCHABLE DROPDOWN COMPONENTS (same as Add page)
+// SEARCHABLE DROPDOWN COMPONENTS
 // =========================================================
 
-// Single-select searchable dropdown
 function SearchableSelect({
   value,
   onChange,
@@ -213,45 +185,64 @@ function SearchableSelect({
   );
 }
 
-// Multi-select searchable dropdown
 function SearchableMultiSelect({
   selected,
   onChange,
   options,
   placeholder,
   className,
+  abbrResolver,
 }: {
   selected: string[];
   onChange: (selected: string[]) => void;
   options: string[];
   placeholder: string;
   className?: string;
+  abbrResolver?: (name: string) => string;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [pendingSelected, setPendingSelected] = useState<string[]>(selected);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleCancel = () => {
+    setPendingSelected(selected);
+    setIsOpen(false);
+  };
+
+  const handleDone = () => {
+    onChange(pendingSelected);
+    setIsOpen(false);
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+        if (isOpen) {
+          setPendingSelected(selected);
+          setIsOpen(false);
+        }
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen, selected]);
+
+  const handleOpen = () => {
+    setPendingSelected(selected);
+    setIsOpen(true);
+  };
 
   const filteredOptions = options.filter((opt) =>
     opt.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const toggleOption = (opt: string) => {
-    if (selected.includes(opt)) {
-      onChange(selected.filter((s) => s !== opt));
+    if (pendingSelected.includes(opt)) {
+      setPendingSelected(pendingSelected.filter((s) => s !== opt));
     } else {
-      onChange([...selected, opt]);
+      setPendingSelected([...pendingSelected, opt]);
     }
-    setIsOpen(false);
   };
 
   const removeOption = (opt: string) => {
@@ -263,14 +254,12 @@ function SearchableMultiSelect({
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-1">
           {selected.map((s) => (
-            <Badge
+            <AbbrBadge
               key={s}
-              variant="soft"
+              name={s}
+              abbr={(abbrResolver ?? ((x: string) => x))(s)}
               color="blue"
-              size="1"
-              className="flex items-center gap-1"
             >
-              {s}
               <button
                 type="button"
                 onClick={() => removeOption(s)}
@@ -278,14 +267,14 @@ function SearchableMultiSelect({
               >
                 ✕
               </button>
-            </Badge>
+            </AbbrBadge>
           ))}
         </div>
       )}
 
       <div
         className="flex items-center border border-slate-300 rounded px-3 py-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200 cursor-text"
-        onClick={() => setIsOpen(true)}
+        onClick={handleOpen}
       >
         <FaSearch className="text-slate-400 mr-2 flex-shrink-0" size={14} />
         <input
@@ -293,9 +282,9 @@ function SearchableMultiSelect({
           value={searchTerm}
           onChange={(e) => {
             setSearchTerm(e.target.value);
-            setIsOpen(true);
+            if (!isOpen) handleOpen();
           }}
-          onFocus={() => setIsOpen(true)}
+          onFocus={handleOpen}
           placeholder={selected.length > 0 ? '' : placeholder}
           className="flex-1 outline-none bg-transparent text-sm"
         />
@@ -306,28 +295,54 @@ function SearchableMultiSelect({
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-48 overflow-y-auto">
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-slate-500">No options found</div>
-          ) : (
-            filteredOptions.map((opt) => (
-              <div
-                key={opt}
-                className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 flex items-center gap-2 ${
-                  selected.includes(opt) ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-700'
-                }`}
-                onClick={() => toggleOption(opt)}
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded shadow-lg max-h-64 overflow-hidden flex flex-col">
+          <div className="overflow-y-auto max-h-48">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-slate-500">No options found</div>
+            ) : (
+              filteredOptions.map((opt) => (
+                <div
+                  key={opt}
+                  className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 flex items-center gap-2 ${
+                    pendingSelected.includes(opt)
+                      ? 'bg-blue-50 text-blue-600 font-medium'
+                      : 'text-slate-700'
+                  }`}
+                  onClick={() => toggleOption(opt)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={pendingSelected.includes(opt)}
+                    onChange={() => {}}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                  />
+                  {opt}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 bg-slate-50 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-500">
+              {pendingSelected.length} selected
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100"
               >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(opt)}
-                  onChange={() => {}}
-                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                />
-                {opt}
-              </div>
-            ))
-          )}
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDone}
+                className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -347,7 +362,10 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [saving, setSaving] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
 
-  const [customLocation, setCustomLocation] = useState<Record<string, string>>({});
+  // NOTE: The old `customLocation` Record<string, string> map has been removed.
+  // External venues now flow through formData.location → plan.meetings directly.
+  // No separate map, no override logic, no stale data.
+
   const [departments, setDepartments] = useState<string[]>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState<boolean>(true);
   const [divisions, setDivisions] = useState<string[]>([]);
@@ -356,12 +374,12 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [isSendingTestEmail, setIsSendingTestEmail] = useState<boolean>(false);
   const [isSendingMassEmail, setIsSendingMassEmail] = useState<boolean>(false);
 
-  // =========================================================
-  // DRAWER STATE
-  // =========================================================
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isAllDay, setIsAllDay] = useState<boolean>(false);
+
+  // External venue flag — when true, hide dropdown, show free-text input
+  const [isExternalVenue, setIsExternalVenue] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<Meeting>({
     _id: '',
@@ -380,7 +398,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [timeStart12, setTimeStart12] = useState({ hour: 9, minute: '00', ampm: 'AM' });
   const [timeEnd12, setTimeEnd12] = useState({ hour: 10, minute: '00', ampm: 'AM' });
 
-  const [customLocationDrawer, setCustomLocationDrawer] = useState<string>('');
   const [stakeholderInputDrawer, setStakeholderInputDrawer] = useState<string>('');
 
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
@@ -394,9 +411,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     }));
   }, [selectedDepartments]);
 
-  // =========================================================
-  // FETCH DEPARTMENTS & DIVISIONS
-  // =========================================================
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
@@ -435,9 +449,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     fetchDivisions();
   }, []);
 
-  // =========================================================
-  // FETCH PLAN
-  // =========================================================
   useEffect(() => {
     fetchPlan();
   }, [id]);
@@ -452,13 +463,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       if (res.ok) {
         const data: WeekPlan = await res.json();
         setPlan(data);
-        const customLocMap: Record<string, string> = {};
-        data.meetings.forEach((m) => {
-          if (m.location && !LOCATION_OPTIONS.includes(m.location)) {
-            customLocMap[m._id] = m.location;
-          }
-        });
-        setCustomLocation(customLocMap);
       } else {
         setMessage('❌ Plan not found');
       }
@@ -470,9 +474,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     }
   };
 
-  // =========================================================
-  // SAVE PLAN (including tasks & legend)
-  // =========================================================
   const handleSave = async (): Promise<void> => {
     if (!plan) return;
     try {
@@ -480,14 +481,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       setMessage('');
       const token = localStorage.getItem('token');
 
-      const meetingsWithCustom = plan.meetings.map((meeting) => {
-        let updated = { ...meeting };
-        if (customLocation[meeting._id] !== undefined) {
-          updated.location = customLocation[meeting._id];
-        }
-        return updated;
-      });
-
+      // Send plan.meetings directly — no customLocation override logic
       const res = await fetch(`/api/weekly-plans/${id}`, {
         method: 'PUT',
         headers: {
@@ -500,7 +494,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           startDate: plan.startDate,
           endDate: plan.endDate,
           weekLabel: plan.weekLabel,
-          meetings: meetingsWithCustom,
+          meetings: plan.meetings,
           tasks: plan.tasks || [],
           legend: plan.legend || [],
         }),
@@ -511,13 +505,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
         setMessage('✅ Plan updated successfully!');
         setIsEditing(false);
         setPlan(result.plan);
-        const customLocMap: Record<string, string> = {};
-        result.plan.meetings.forEach((m: Meeting) => {
-          if (m.location && !LOCATION_OPTIONS.includes(m.location)) {
-            customLocMap[m._id] = m.location;
-          }
-        });
-        setCustomLocation(customLocMap);
       } else {
         const error = await res.text();
         setMessage(`❌ Failed to update plan: ${error}`);
@@ -530,9 +517,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     }
   };
 
-  // =========================================================
-  // DELETE PLAN
-  // =========================================================
   const handleDelete = async (): Promise<void> => {
     if (!window.confirm(`Delete "${plan?.weekLabel}"? This cannot be undone.`)) return;
     try {
@@ -552,12 +536,10 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     }
   };
 
-  // =========================================================
-  // DRAWER HANDLERS (unchanged)
-  // =========================================================
   const openDrawerForAdd = (day: string) => {
     setEditingIndex(null);
     setIsAllDay(false);
+    setIsExternalVenue(false);
     const defaultStart = { hour: 9, minute: '00', ampm: 'AM' };
     const defaultEnd = { hour: 10, minute: '00', ampm: 'AM' };
     setTimeStart12(defaultStart);
@@ -578,7 +560,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setSelectedDepartments([]);
     setShowCustomDepartment(false);
     setCustomDepartmentInput('');
-    setCustomLocationDrawer('');
     setStakeholderInputDrawer('');
     setDrawerOpen(true);
   };
@@ -589,6 +570,11 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     const isAllDayMeeting = !meeting.timeStart || !meeting.timeEnd;
     setIsAllDay(isAllDayMeeting);
     setFormData({ ...meeting });
+
+    // If the saved venue isn't in the internal list, mark it as external
+    const venueIsInternal = meeting.location && LOCATION_OPTIONS.includes(meeting.location);
+    setIsExternalVenue(!!meeting.location && !venueIsInternal);
+
     const depts = meeting.department ? meeting.department.split(',').map(s => s.trim()).filter(Boolean) : [];
     setSelectedDepartments(depts);
     setShowCustomDepartment(false);
@@ -603,11 +589,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       const defaultEnd = { hour: 10, minute: '00', ampm: 'AM' };
       setTimeStart12(defaultStart);
       setTimeEnd12(defaultEnd);
-    }
-    if (meeting.location && !LOCATION_OPTIONS.includes(meeting.location)) {
-      setCustomLocationDrawer(meeting.location);
-    } else {
-      setCustomLocationDrawer('');
     }
     setStakeholderInputDrawer('');
     setDrawerOpen(true);
@@ -626,25 +607,16 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       end24 = formatTimeTo24(timeEnd12.hour, timeEnd12.minute, timeEnd12.ampm);
     }
 
-    let finalLocation = formData.location;
-    if (formData.location === 'Others') {
-      finalLocation = customLocationDrawer || '';
-    }
-
     const newMeeting: Meeting = {
       ...formData,
       timeStart: start24,
       timeEnd: end24,
-      location: finalLocation,
+      // location comes straight from formData — either the dropdown or the external text field
       department: selectedDepartments.join(', '),
     };
 
     if (!newMeeting.title.trim()) {
       alert('Meeting title is required.');
-      return;
-    }
-    if (!newMeeting.division) {
-      alert('Meeting type is required.');
       return;
     }
 
@@ -697,9 +669,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       if (res.ok) {
         const result = await res.json();
         setPlan(result.plan);
-        const newCustomLoc = { ...customLocation };
-        delete newCustomLoc[meetingId];
-        setCustomLocation(newCustomLoc);
         setMessage('✅ Meeting deleted successfully!');
       } else {
         const error = await res.text();
@@ -711,18 +680,8 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     }
   };
 
-  // =========================================================
-  // DRAWER FORM HANDLERS
-  // =========================================================
   const handleFormChange = (field: keyof Meeting, value: string) => {
     setFormData({ ...formData, [field]: value });
-  };
-
-  const handleLocationChange = (value: string) => {
-    setFormData({ ...formData, location: value });
-    if (value !== 'Others') {
-      setCustomLocationDrawer('');
-    }
   };
 
   const getDepartmentArray = (departmentsStr: string): string[] => {
@@ -785,9 +744,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setFormData({ ...formData, stakeholders: updated.join(', ') });
   };
 
-  // =========================================================
-  // TASKS & LEGEND EDIT HANDLERS
-  // =========================================================
   const addTask = () => {
     if (!plan) return;
     setPlan({ ...plan, tasks: [...(plan.tasks || []), ''] });
@@ -826,9 +782,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setPlan({ ...plan, legend: updated });
   };
 
-  // =========================================================
-  // GET MEETINGS BY DAY (with grouping for parallel display)
-  // =========================================================
   const getMeetingsForDay = (day: string): Meeting[] => {
     if (!plan) return [];
     return plan.meetings
@@ -836,9 +789,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       .sort((a, b) => (a.timeStart || '').localeCompare(b.timeStart || ''));
   };
 
-  // =========================================================
-  // RENDER
-  // =========================================================
   if (loading) {
     return (
       <div className="flex bg-slate-50 min-h-screen">
@@ -981,9 +931,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </div>
         </Card>
 
-        {/* ========================================================= */}
         {/* MEETINGS GRID */}
-        {/* ========================================================= */}
         <Card size="3">
           <Flex align="center" justify="between" mb="3">
             <Text size="3" weight="bold">📋 Meetings ({plan.meetings.length})</Text>
@@ -1095,7 +1043,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                                 </Text>
 
                                 <Text size="1" color="gray">
-                                  🏢 {meeting.division}
+                                  🏢 {meeting.division || '—'}
                                 </Text>
 
                                 {meeting.location && (
@@ -1106,21 +1054,35 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
 
                                 {meeting.department && (
                                   <div className="flex flex-wrap gap-1 mt-1">
-                                    {meeting.department.split(',').map((d) => (
-                                      <Badge key={d.trim()} variant="soft" color="blue" size="1">
-                                        {d.trim()}
-                                      </Badge>
-                                    ))}
+                                    {meeting.department.split(',').map((d) => {
+                                      const full = d.trim();
+                                      if (!full) return null;
+                                      return (
+                                        <AbbrBadge
+                                          key={full}
+                                          name={full}
+                                          abbr={abbrDept(full)}
+                                          color="blue"
+                                        />
+                                      );
+                                    })}
                                   </div>
                                 )}
 
                                 {meeting.divisionName && (
                                   <div className="flex flex-wrap gap-1 mt-1">
-                                    {meeting.divisionName.split(',').map((d) => (
-                                      <Badge key={d.trim()} variant="soft" color="green" size="1">
-                                        {d.trim()}
-                                      </Badge>
-                                    ))}
+                                    {meeting.divisionName.split(',').map((d) => {
+                                      const full = d.trim();
+                                      if (!full) return null;
+                                      return (
+                                        <AbbrBadge
+                                          key={full}
+                                          name={full}
+                                          abbr={abbrDiv(full)}
+                                          color="green"
+                                        />
+                                      );
+                                    })}
                                   </div>
                                 )}
 
@@ -1164,9 +1126,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </div>
         </Card>
 
-        {/* ========================================================= */}
-        {/* TASKS SECTION – Editable when in edit mode */}
-        {/* ========================================================= */}
+        {/* TASKS SECTION */}
         <Card size="3" mt="4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
           <Flex align="center" justify="between" mb="2">
             <Flex align="center" gap="2">
@@ -1226,9 +1186,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           )}
         </Card>
 
-        {/* ========================================================= */}
-        {/* LEGEND SECTION – Editable when in edit mode */}
-        {/* ========================================================= */}
+        {/* LEGEND SECTION */}
         <Card size="3" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
           <Flex align="center" justify="between" mb="2">
             <Flex align="center" gap="2">
@@ -1435,13 +1393,11 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
         </Card>
       </main>
 
-      {/* ========================================================= */}
-      {/* SLIDE-IN DRAWER – unchanged */}
-      {/* ========================================================= */}
+      {/* SLIDE-IN DRAWER */}
       {drawerOpen && (
         <>
           <div
-            className="fixed inset-0 bg-black bg-opacity-40 z-40 transition-opacity"
+            className="fixed inset-0 bg-black/15 backdrop-blur-[2px] z-40 transition-opacity"
             onClick={closeDrawer}
           />
           <div className="fixed top-0 right-0 w-full sm:w-[500px] md:w-[550px] h-full bg-white shadow-2xl z-50 overflow-y-auto transition-transform duration-300 ease-in-out">
@@ -1585,20 +1541,42 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
+                {/* MEETING VENUE — internal dropdown OR external free-text */}
                 <div>
-                  <SearchableSelect
-                    value={formData.location}
-                    onChange={(val) => handleLocationChange(val)}
-                    options={LOCATION_OPTIONS}
-                    placeholder="Meeting Venue"
-                  />
-                  {formData.location === 'Others' && (
+                  <Text as="label" size="2" weight="medium" className="block mb-1">
+                    Meeting Venue
+                  </Text>
+
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      id="externalVenueToggleEdit"
+                      checked={isExternalVenue}
+                      onChange={(e) => {
+                        setIsExternalVenue(e.target.checked);
+                        setFormData({ ...formData, location: '' });
+                      }}
+                      className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                    />
+                    <Text as="label" htmlFor="externalVenueToggleEdit" size="2" weight="medium">
+                      External venue (outside ACC)
+                    </Text>
+                  </div>
+
+                  {isExternalVenue ? (
                     <input
                       type="text"
-                      value={customLocationDrawer}
-                      onChange={(e) => setCustomLocationDrawer(e.target.value)}
-                      placeholder="Enter custom venue..."
-                      className="w-full border-2 border-blue-300 rounded px-3 py-2 mt-2 bg-blue-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      value={formData.location}
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      placeholder="Enter venue name (outside ACC)..."
+                      className="w-full border-2 border-amber-300 rounded px-3 py-2 bg-amber-50 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                    />
+                  ) : (
+                    <SearchableSelect
+                      value={formData.location}
+                      onChange={(val) => setFormData({ ...formData, location: val })}
+                      options={LOCATION_OPTIONS}
+                      placeholder="Select internal venue"
                     />
                   )}
                 </div>
@@ -1626,6 +1604,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                       onChange={handleDepartmentSelect}
                       options={[...departments, 'Others']}
                       placeholder="Search departments..."
+                      abbrResolver={abbrDept}
                     />
                     {departmentsLoading && (
                       <Text size="1" color="gray" className="mt-1">Loading departments...</Text>
@@ -1664,6 +1643,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                       onChange={handleDivisionNameChange}
                       options={divisions}
                       placeholder="Search divisions..."
+                      abbrResolver={abbrDiv}
                     />
                     {divisionsLoading && (
                       <Text size="1" color="gray" className="mt-1">Loading divisions...</Text>

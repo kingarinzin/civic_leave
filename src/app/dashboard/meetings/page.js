@@ -92,7 +92,7 @@ export default function LogMeetingPage() {
 
   const meetingsAllowedEmails = [
     "kwangmo@acc.org.bt",
-    "karamawang@acc.org.bt",
+    "karmawangmo@acc.org.bt",
     "skhando@acc.org.bt",
   ];
   const canManage = isAdminUser || meetingsAllowedEmails.includes(userEmail);
