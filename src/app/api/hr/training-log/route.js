@@ -17,25 +17,34 @@ mongoose.model("Institution", Institution.schema);
 mongoose.model("Employee", Employee.schema);
 mongoose.model("TrainingType", TrainingType.schema);
 
-// ─── GET ─────────────────────────────────────────────
+// ─── GET (OPTIMIZED) ─────────────────────────────────
 export async function GET() {
   try {
     await connectToDatabase();
 
     const logs = await TrainingLog.find()
+      // Top-level projection — only send fields the UI actually needs
+      .select(
+        "programTitle startDate endDate fundingAgency fundingModality institution place country numberOfParticipants totalCost hrcReference status certification employees createdAt updatedAt"
+      )
       .populate({
         path: "programTitle",
         select: "title trainingId locationCategory trainingGroup description",
         populate: {
           path: "trainingType",
-          select: "trainingType"
-        }
+          select: "trainingType",
+        },
       })
       .populate("fundingAgency", "name")
       .populate("fundingModality", "name")
       .populate("institution", "name")
-      .populate("employees", "fullName cidNumber positionTitle passportPhoto employeeNumber email positionLevel subLevel")
-      .sort({ createdAt: -1 });
+      // ⚠️ CRITICAL: do NOT include passportPhoto (huge base64)
+      .populate(
+        "employees",
+        "fullName cidNumber positionTitle employeeNumber email positionLevel subLevel"
+      )
+      .sort({ createdAt: -1 })
+      .lean(); // ⚡ 3-5x faster than Mongoose docs
 
     return NextResponse.json(logs);
   } catch (error) {
@@ -133,13 +142,17 @@ export async function POST(request) {
         select: "title trainingId locationCategory trainingGroup description",
         populate: {
           path: "trainingType",
-          select: "trainingType"
-        }
+          select: "trainingType",
+        },
       },
       { path: "fundingAgency", select: "name" },
       { path: "fundingModality", select: "name" },
       { path: "institution", select: "name" },
-      { path: "employees", select: "fullName cidNumber positionTitle passportPhoto employeeNumber email positionLevel subLevel" },
+      {
+        path: "employees",
+        select:
+          "fullName cidNumber positionTitle employeeNumber email positionLevel subLevel",
+      },
     ]);
 
     return NextResponse.json(newLog, { status: 201 });
@@ -180,13 +193,16 @@ export async function PUT(request) {
         select: "title trainingId locationCategory trainingGroup description",
         populate: {
           path: "trainingType",
-          select: "trainingType"
-        }
+          select: "trainingType",
+        },
       })
       .populate("fundingAgency", "name")
       .populate("fundingModality", "name")
       .populate("institution", "name")
-      .populate("employees", "fullName cidNumber positionTitle passportPhoto employeeNumber email positionLevel subLevel");
+      .populate(
+        "employees",
+        "fullName cidNumber positionTitle employeeNumber email positionLevel subLevel"
+      );
 
     if (!updated)
       return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -257,6 +257,13 @@ export default function TrainingLogPage() {
   const [expandedEmployeeData, setExpandedEmployeeData] = useState(null);
   const [loadingEmployee, setLoadingEmployee] = useState(false);
 
+  // ─── Lazy-loaded photo cache for employees ───
+  const [photoMap, setPhotoMap] = useState({});
+
+  // ─── Dropdown data loading state (lazy) ────────
+  const [dropdownsLoaded, setDropdownsLoaded] = useState(false);
+  const [dropdownsLoading, setDropdownsLoading] = useState(false);
+
   // ─── Program dropdown search state ────────────
   const [programSearchTerm, setProgramSearchTerm] = useState("");
   const [isProgramDropdownOpen, setIsProgramDropdownOpen] = useState(false);
@@ -319,8 +326,10 @@ export default function TrainingLogPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ─── FETCH DROPDOWN DATA ──────────────────────────
+  // ─── FETCH DROPDOWN DATA (lazy) ────────────────────
   const fetchDropdownData = async () => {
+    if (dropdownsLoaded || dropdownsLoading) return;
+    setDropdownsLoading(true);
     try {
       const [titlesRes, agenciesRes, modalitiesRes, instRes, empRes] = await Promise.all([
         fetch("/api/hr/program-title"),
@@ -339,13 +348,23 @@ export default function TrainingLogPage() {
       setFundingModalities(Array.isArray(modalities) ? modalities : []);
       setInstitutions(Array.isArray(insts) ? insts : []);
       setEmployeesList(Array.isArray(emps) ? emps : []);
+      setDropdownsLoaded(true);
     } catch (err) {
       console.error("Failed to fetch dropdown data:", err);
       showNotification("Failed to load reference data", "error");
+    } finally {
+      setDropdownsLoading(false);
     }
   };
 
-  // ─── FETCH TRAINING LOGS ───────────────────────────
+  // ─── Fetch dropdowns if not loaded ──────────────────
+  const loadDropdownsIfNeeded = () => {
+    if (!dropdownsLoaded && !dropdownsLoading) {
+      fetchDropdownData();
+    }
+  };
+
+  // ─── FETCH TRAINING LOGS (critical path) ───────────
   const fetchItems = async () => {
     setLoading(true);
     try {
@@ -365,9 +384,9 @@ export default function TrainingLogPage() {
     }
   };
 
+  // ─── OPTIMIZED: Only fetch logs on mount ────────────
   useEffect(() => {
     fetchItems();
-    fetchDropdownData();
   }, []);
 
   // ─── HANDLERS ──────────────────────────────────────
@@ -547,6 +566,7 @@ export default function TrainingLogPage() {
   };
 
   const handleView = async (item) => {
+    loadDropdownsIfNeeded();
     setShowAddForm(false);
     setViewedItemId(item._id);
     setEditData(item);
@@ -587,6 +607,17 @@ export default function TrainingLogPage() {
       }
     }
     setSelectedProgram(programData || null);
+  };
+
+  // ─── Open Add Form with lazy load ──────────────────
+  const openAddForm = () => {
+    if (viewedItemId) closeInlineView();
+    setShowAddForm(true);
+    setEditData(null);
+    setIsViewMode(false);
+    setActiveTab("program");
+    resetForm();
+    loadDropdownsIfNeeded();
   };
 
   const closeInlineView = () => {
@@ -926,7 +957,6 @@ export default function TrainingLogPage() {
       return 0;
     });
   } else {
-    // Default sorting: Newest first.
     sorted.sort((a, b) => {
       const getTimestamp = (item) => {
         if (item.createdAt) return new Date(item.createdAt).getTime();
@@ -1013,6 +1043,47 @@ export default function TrainingLogPage() {
   const totalEmpPages = Math.ceil(sortedEmployees.length / rowsPerPage);
   const startEmpIndex = (currentPage - 1) * rowsPerPage;
   const paginatedEmployees = sortedEmployees.slice(startEmpIndex, startEmpIndex + rowsPerPage);
+
+  // ─── Lazy-load photos for visible employees ───
+  const loadPhotosForEmployees = async (employeeList) => {
+    const missing = employeeList.filter(
+      (emp) => emp.cidNumber && !photoMap[emp.cidNumber]
+    );
+    if (missing.length === 0) return;
+
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < missing.length; i += BATCH_SIZE) {
+      const batch = missing.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (emp) => {
+          try {
+            const res = await fetch(`/api/hr/employee/${emp.cidNumber}/photo`);
+            if (!res.ok) return null;
+            const data = await res.json();
+            return { cid: emp.cidNumber, photo: data.passportPhoto };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      setPhotoMap((prev) => {
+        const next = { ...prev };
+        results.forEach((r) => {
+          if (r && r.photo) next[r.cid] = r.photo;
+        });
+        return next;
+      });
+    }
+  };
+
+  // ─── Trigger photo lazy-load when employee tab is active ───
+  useEffect(() => {
+    if (viewTab === "employee" && paginatedEmployees.length > 0) {
+      loadPhotosForEmployees(paginatedEmployees);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewTab, currentPage, rowsPerPage, search, employeesList.length]);
 
   // ─── Helpers ──────────────────────────────────────
   const getFundingAgencyName = (id) => {
@@ -1356,7 +1427,6 @@ export default function TrainingLogPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium">Funding Agency *</label>
-                      {/* ─── Searchable Funding Agency ─── */}
                       <SearchableDropdown
                         items={fundingAgencies}
                         value={formData.fundingAgency}
@@ -1386,7 +1456,6 @@ export default function TrainingLogPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium">Institution *</label>
-                      {/* ─── Searchable Institution ─── */}
                       <SearchableDropdown
                         items={institutions}
                         value={formData.institution}
@@ -1751,7 +1820,6 @@ export default function TrainingLogPage() {
               </div>
               <div>
                 <label className="text-sm font-medium">Funding Agency *</label>
-                {/* ─── Searchable Funding Agency ─── */}
                 <SearchableDropdown
                   items={fundingAgencies}
                   value={formData.fundingAgency}
@@ -1781,7 +1849,6 @@ export default function TrainingLogPage() {
               </div>
               <div>
                 <label className="text-sm font-medium">Institution *</label>
-                {/* ─── Searchable Institution ─── */}
                 <SearchableDropdown
                   items={institutions}
                   value={formData.institution}
@@ -2016,14 +2083,7 @@ export default function TrainingLogPage() {
           <h1 className="text-2xl font-bold">Training Log</h1>
           {!showAddForm && viewTab === "training" && !viewedItemId && (
             <button
-              onClick={() => {
-                if (viewedItemId) closeInlineView();
-                setShowAddForm(true);
-                setEditData(null);
-                setIsViewMode(false);
-                setActiveTab("program");
-                resetForm();
-              }}
+              onClick={openAddForm}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
               <Plus size={14} /> Add Training Log
@@ -2084,7 +2144,7 @@ export default function TrainingLogPage() {
                     ? "Search by ID, title, status, location, category, type, or cost..."
                     : "Search by employee name, CID, position, or training..."
                 }
-                className="w-full px-4 py-2 pr-10 border rounded focus:ring-2 focus:ring-blue-400 outline-none"
+                className="w-full px-4 py-2 pr-10 border border-gray-400 rounded focus:ring-2 focus:ring-blue-400 outline-none"
               />
               <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
             </div>
@@ -2440,7 +2500,6 @@ export default function TrainingLogPage() {
                   <tr><td colSpan="9" className="text-center py-6 text-gray-500">Loading...</td></tr>
                 ) : paginatedEmployees.length > 0 ? (
                   paginatedEmployees.map((emp) => {
-                    const photoUrl = emp.passportPhoto;
                     const isExpanded = expandedEmpRow === emp._id;
 
                     let gapBadgeClass = "bg-gray-100 text-gray-700";
@@ -2459,9 +2518,9 @@ export default function TrainingLogPage() {
                         <tr className="hover:bg-gray-100 transition-colors">
                           <td className="px-6 py-3 text-sm">
                             <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-200 overflow-hidden relative">
-                              {photoUrl ? (
+                              {photoMap[emp.cidNumber] ? (
                                 <img
-                                  src={photoUrl}
+                                  src={photoMap[emp.cidNumber]}
                                   alt={emp.fullName}
                                   className="w-10 h-10 rounded-full object-cover"
                                   onError={(e) => {
@@ -2469,7 +2528,7 @@ export default function TrainingLogPage() {
                                   }}
                                 />
                               ) : null}
-                              <div className={`absolute inset-0 flex items-center justify-center text-sm font-semibold text-gray-600 bg-blue-100 ${photoUrl ? 'opacity-0 hover:opacity-75' : ''}`}>
+                              <div className={`absolute inset-0 flex items-center justify-center text-sm font-semibold text-gray-600 bg-blue-100 ${photoMap[emp.cidNumber] ? 'opacity-0 hover:opacity-75' : ''}`}>
                                 {emp.fullName?.charAt(0) || "?"}
                               </div>
                             </div>

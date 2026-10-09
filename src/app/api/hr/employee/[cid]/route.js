@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Employee } from '@/models/Employee';
 
-// ---------- GET (existing) ----------
+// ---------- External HR API config ----------
 const TOKEN_URL = process.env.HR_TOKEN_URL;
 const EMPLOYEE_API_URL = process.env.HR_EMPLOYEE_API_URL;
 const CLIENT_ID = process.env.HR_CLIENT_ID;
@@ -16,7 +16,10 @@ async function getAccessToken() {
   const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
-    headers: { Authorization: `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
     body: new URLSearchParams({ grant_type: 'client_credentials' }),
   });
   if (!response.ok) {
@@ -29,14 +32,31 @@ async function getAccessToken() {
   return cachedToken;
 }
 
+// ---------- GET – read from MongoDB FIRST, fallback to HR API ----------
 export async function GET(request, { params }) {
   try {
     const { cid } = await params;
     if (!cid) return NextResponse.json({ error: 'CID required' }, { status: 400 });
+
+    // 1. Try MongoDB first (FAST)
+    await connectToDatabase();
+    const localEmployee = await Employee.findOne({ cidNumber: cid }).lean();
+
+    if (localEmployee) {
+      return NextResponse.json(localEmployee);
+    }
+
+    // 2. Not in DB — fetch from external HR API
     const token = await getAccessToken();
-    const baseUrl = EMPLOYEE_API_URL.endsWith('/') ? EMPLOYEE_API_URL.slice(0, -1) : EMPLOYEE_API_URL;
+    const baseUrl = EMPLOYEE_API_URL.endsWith('/')
+      ? EMPLOYEE_API_URL.slice(0, -1)
+      : EMPLOYEE_API_URL;
     const externalUrl = `${baseUrl}/${cid}`;
-    const response = await fetch(externalUrl, { headers: { Authorization: `Bearer ${token}` } });
+
+    const response = await fetch(externalUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
     if (response.status === 404) {
       return NextResponse.json({ error: 'Employee not found with this CID' }, { status: 404 });
     }
@@ -44,12 +64,15 @@ export async function GET(request, { params }) {
       const errorText = await response.text();
       return NextResponse.json({ error: `HR API error: ${response.status}` }, { status: response.status });
     }
+
     const rawData = await response.json();
     const employee = rawData?.employeeDetails?.employeeDetail?.[0] ||
                      rawData?.employeedetails?.employeedetail?.[0];
+
     if (!employee) {
       return NextResponse.json({ error: 'Employee data not found' }, { status: 404 });
     }
+
     const mappedEmployee = {
       fullName: `${employee.firstName || ''} ${employee.middleName || ''} ${employee.lastName || ''}`.trim(),
       firstName: employee.firstName || '',
@@ -71,13 +94,27 @@ export async function GET(request, { params }) {
       empType: employee.empType || '',
       fullAgencyPath: employee.FullWorkingAgency || '',
     };
+
+    // 3. Save to MongoDB so next time it's instant
+    await Employee.findOneAndUpdate(
+      { cidNumber: mappedEmployee.cidNumber },
+      {
+        $set: { ...mappedEmployee, lastUpdated: new Date() },
+        $setOnInsert: { createdAt: new Date() },
+      },
+      { upsert: true, new: true }
+    );
+
     return NextResponse.json(mappedEmployee);
   } catch (error) {
-    return NextResponse.json({ error: 'Internal error', details: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal error', details: error.message },
+      { status: 500 }
+    );
   }
 }
 
-// ---------- PUT – update custom fields ----------
+// ---------- PUT – update custom fields (UNCHANGED) ----------
 export async function PUT(request, { params }) {
   try {
     const { cid } = await params;
@@ -87,7 +124,6 @@ export async function PUT(request, { params }) {
     const body = await request.json();
 
     const allowedUpdates = {
-      // Existing fields
       gender: body.gender,
       parentAgency: body.parentAgency,
       mog: body.mog,
@@ -97,14 +133,11 @@ export async function PUT(request, { params }) {
       degree: body.degree,
       qualification: body.qualification,
       remarks: body.remarks,
-
-      // ✅ NEW FIELDS
       currentStatus: body.currentStatus,
       dateOfJoining: body.dateOfJoining,
       intactType: body.intactType,
     };
 
-    // Remove undefined fields
     Object.keys(allowedUpdates).forEach(key => {
       if (allowedUpdates[key] === undefined) delete allowedUpdates[key];
     });
@@ -115,7 +148,7 @@ export async function PUT(request, { params }) {
 
     const updated = await Employee.findOneAndUpdate(
       { cidNumber: cid },
-      { $set: allowedUpdates, lastUpdated: new Date() },
+      { $set: { ...allowedUpdates, lastUpdated: new Date() } },
       { new: true, runValidators: true }
     );
 
@@ -123,6 +156,9 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Update failed', details: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Update failed', details: error.message },
+      { status: 500 }
+    );
   }
 }

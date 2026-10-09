@@ -101,9 +101,13 @@ export async function POST(req) {
               lastUpdated: new Date(),
             };
 
+            // ✅ Use $set so custom HR fields (gender, degree, mog, etc.) are preserved
             await Employee.findOneAndUpdate(
               { cidNumber: employeeData.cidNumber },
-              employeeData,
+              {
+                $set: employeeData,
+                $setOnInsert: { createdAt: new Date() },
+              },
               { upsert: true, new: true }
             );
             synced++;

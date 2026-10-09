@@ -3,6 +3,35 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { Employee } from '@/models/Employee';
 
 // ------------------------------------------------------------------
+// GET – Return ONLY the passportPhoto (lightweight, for lazy loading)
+// ------------------------------------------------------------------
+export async function GET(request, { params }) {
+  try {
+    const { cid } = await params;
+    if (!cid) return NextResponse.json({ error: 'CID required' }, { status: 400 });
+
+    await connectToDatabase();
+    const employee = await Employee.findOne({ cidNumber: cid })
+      .select('passportPhoto')
+      .lean();
+
+    if (!employee) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      cidNumber: cid,
+      passportPhoto: employee.passportPhoto || null,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to fetch photo', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// ------------------------------------------------------------------
 // POST – Upload or replace photo
 // ------------------------------------------------------------------
 export async function POST(request, { params }) {

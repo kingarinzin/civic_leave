@@ -7,7 +7,7 @@ export async function GET() {
   try {
     // Connect and ensure the connection is ready
     await connectToDatabase();
-    
+
     // Wait for the connection to be fully open
     if (mongoose.connection.readyState !== 1) {
       console.error('MongoDB connection not ready, state:', mongoose.connection.readyState);
@@ -17,7 +17,11 @@ export async function GET() {
       );
     }
 
-    const employees = await Employee.find().sort({ fullName: 1 });
+    const employees = await Employee.find()
+      .select('-passportPhoto')   // ✅ Exclude heavy base64 photos from list
+      .sort({ fullName: 1 })
+      .lean();                    // ✅ Faster, plain JS objects
+
     return NextResponse.json(employees);
   } catch (error) {
     console.error('Error fetching employees:', error);

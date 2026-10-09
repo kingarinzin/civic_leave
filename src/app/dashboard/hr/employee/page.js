@@ -130,6 +130,9 @@ export default function HREmployeePage() {
   const fileInputRef = useRef(null);
   const printRef = useRef(null);
 
+  // ─── Lazy-loaded photo cache ───
+  const [photoMap, setPhotoMap] = useState({});
+
   // ---------- Crop positioning state ----------
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [imageSrc, setImageSrc] = useState(null);
@@ -269,12 +272,15 @@ export default function HREmployeePage() {
     }
   };
 
+  // ================== PRINT (FIXED) ==================
   const handlePrint = () => {
     setIsPrinting(true);
+    // Give React time to mount the print view before printing
     setTimeout(() => {
       window.print();
-      setIsPrinting(false);
-    }, 300);
+      // Clear after the print dialog closes
+      setTimeout(() => setIsPrinting(false), 200);
+    }, 150);
   };
 
   // ================== EDIT START ==================
@@ -337,6 +343,11 @@ export default function HREmployeePage() {
             emp.cidNumber === cid ? data.employee : emp
           )
         );
+        setPhotoMap((prev) => {
+          const next = { ...prev };
+          delete next[cid];
+          return next;
+        });
         showPhotoNotification("Photo deleted successfully", "success");
       } else {
         const errorData = await res.json();
@@ -449,6 +460,11 @@ export default function HREmployeePage() {
             emp.cidNumber === currentCidForUpload ? data.employee : emp
           )
         );
+        setPhotoMap((prev) => {
+          const next = { ...prev };
+          delete next[currentCidForUpload];
+          return next;
+        });
         showPhotoNotification(
           isEditingExistingPhoto ? "Photo repositioned successfully" : "Photo uploaded successfully",
           "success"
@@ -523,6 +539,46 @@ export default function HREmployeePage() {
   const totalPages = Math.ceil(sorted.length / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
   const paginated = sorted.slice(startIndex, startIndex + rowsPerPage);
+
+  // ─── Lazy-load photos for visible employees ───
+  const loadPhotosForEmployees = async (employeeList) => {
+    const missing = employeeList.filter(
+      (emp) => !photoMap[emp.cidNumber]
+    );
+    if (missing.length === 0) return;
+
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < missing.length; i += BATCH_SIZE) {
+      const batch = missing.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (emp) => {
+          try {
+            const res = await fetch(`/api/hr/employee/${emp.cidNumber}/photo`);
+            if (!res.ok) return null;
+            const data = await res.json();
+            return { cid: emp.cidNumber, photo: data.passportPhoto };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      setPhotoMap((prev) => {
+        const next = { ...prev };
+        results.forEach((r) => {
+          if (r && r.photo) next[r.cid] = r.photo;
+        });
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (paginated.length > 0 && !loadingAll) {
+      loadPhotosForEmployees(paginated);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, rowsPerPage, search, employees.length, loadingAll]);
 
   return (
     <div className="flex">
@@ -686,9 +742,9 @@ export default function HREmployeePage() {
                       <tr className="hover:bg-gray-100 transition-colors">
                         <td className="px-4 py-3 text-sm">
                           <div className="flex-shrink-0 w-10 h-10 rounded-full overflow-hidden bg-blue-100 flex items-center justify-center border border-gray-200">
-                            {item.passportPhoto ? (
+                            {photoMap[item.cidNumber] ? (
                               <img
-                                src={item.passportPhoto}
+                                src={photoMap[item.cidNumber]}
                                 alt={item.fullName}
                                 className="w-full h-full object-cover"
                               />
@@ -743,17 +799,15 @@ export default function HREmployeePage() {
                         </td>
                       </tr>
 
-                      {/* Expanded row */}
                       {isExpanded && (
                         <tr>
                           <td colSpan="7" className="px-6 py-6 bg-blue-50/50">
                             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                              {/* Header */}
                               <div className="flex items-center gap-6 p-6 bg-gradient-to-r from-blue-50 to-white border-b border-gray-200">
                                 <div className="flex-shrink-0 relative">
-                                  {item.passportPhoto ? (
+                                  {photoMap[item.cidNumber] ? (
                                     <img
-                                      src={item.passportPhoto}
+                                      src={photoMap[item.cidNumber]}
                                       alt="Passport"
                                       className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md"
                                     />
@@ -771,10 +825,10 @@ export default function HREmployeePage() {
                                       disabled={uploadingPhoto}
                                       onChange={handleFileSelect}
                                     />
-                                    {item.passportPhoto ? (
+                                    {photoMap[item.cidNumber] ? (
                                       <>
                                         <button
-                                          onClick={() => editExistingPhoto(item.cidNumber, item.passportPhoto)}
+                                          onClick={() => editExistingPhoto(item.cidNumber, photoMap[item.cidNumber])}
                                           disabled={uploadingPhoto}
                                           className="p-1.5 rounded-full hover:bg-blue-50 transition disabled:opacity-50"
                                           title="Edit Photo"
@@ -824,7 +878,6 @@ export default function HREmployeePage() {
                                 </div>
                               </div>
 
-                              {/* Photo Notification - hidden in print */}
                               {photoNotification && (
                                 <div
                                   className={`px-4 py-2 text-sm no-print ${
@@ -837,9 +890,6 @@ export default function HREmployeePage() {
                                 </div>
                               )}
 
-                              {/* =========================================== */}
-                              {/* EDIT MODE – full grid (unchanged)           */}
-                              {/* =========================================== */}
                               {isEditing ? (
                                 <div className="p-6 no-print">
                                   <div className="flex justify-between items-center mb-4">
@@ -943,11 +993,7 @@ export default function HREmployeePage() {
                                   </div>
                                 </div>
                               ) : (
-                                /* =========================================== */
-                                /* DISPLAY MODE – TABBED LAYOUT                */
-                                /* =========================================== */
                                 <div className="p-6">
-                                  {/* Tab Buttons - no background, blue underline only */}
                                   <div className="flex gap-1 mb-6">
                                     <TabButton
                                       active={activeTab === "personal"}
@@ -979,7 +1025,6 @@ export default function HREmployeePage() {
                                       icon={Layout}
                                       label="All"
                                     />
-                                    {/* Print button – only text, no icon */}
                                     {activeTab === "all" && (
                                       <button
                                         onClick={handlePrint}
@@ -990,7 +1035,6 @@ export default function HREmployeePage() {
                                     )}
                                   </div>
 
-                                  {/* Tab Panels */}
                                   <div className="mt-2">
                                     {activeTab === "personal" && (
                                       <TabPanel>
@@ -1147,9 +1191,9 @@ export default function HREmployeePage() {
               <div key={item.cidNumber} className="print-container">
                 <div className="print-header">
                   <div className="print-avatar">
-                    {item.passportPhoto ? (
+                    {photoMap[item.cidNumber] ? (
                       <img
-                        src={item.passportPhoto}
+                        src={photoMap[item.cidNumber]}
                         alt={item.fullName}
                         className="w-32 h-32 rounded-full object-cover border-4 border-gray-300"
                       />
@@ -1309,105 +1353,144 @@ export default function HREmployeePage() {
         }
 
         @media print {
-          .no-print {
-            display: none !important;
+          /* Reset page */
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
           }
 
+          /* Hide everything by default */
           body * {
             visibility: hidden;
           }
+
+          /* Show only the print view */
           .print-view,
           .print-view * {
             visibility: visible;
           }
+
+          /* Print view takes the full page, in normal flow */
           .print-view {
-            position: fixed;
+            position: absolute;
             left: 0;
             top: 0;
             width: 100%;
-            padding: 40px;
+            padding: 15mm 12mm;
             background: white;
+            box-sizing: border-box;
           }
 
+          /* Container */
           .print-container {
-            max-width: 1000px;
+            max-width: 100%;
             margin: 0 auto;
             font-family: Arial, Helvetica, sans-serif;
           }
 
+          /* Header: keep avatar + name together on the same page */
           .print-header {
             display: flex;
-            align-items: center;
-            gap: 30px;
-            padding-bottom: 20px;
+            align-items: flex-start;
+            gap: 24px;
+            padding-bottom: 16px;
             border-bottom: 3px solid #2563eb;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            page-break-after: avoid;
+            break-after: avoid;
+          }
+
+          .print-avatar {
+            flex-shrink: 0;
           }
 
           .print-avatar img,
           .print-avatar div {
-            width: 120px;
-            height: 120px;
+            width: 100px;
+            height: 100px;
             border-radius: 50%;
             border: 4px solid #d1d5db;
+            object-fit: cover;
+            display: block;
+          }
+
+          .print-name {
+            flex: 1;
+            min-width: 0;
           }
 
           .print-name h1 {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: bold;
             color: #1f2937;
-            margin: 0;
+            margin: 0 0 6px 0;
+            line-height: 1.2;
+            page-break-after: avoid;
+            break-after: avoid;
           }
 
           .print-name p {
-            font-size: 16px;
+            font-size: 13px;
             color: #4b5563;
-            margin: 5px 0;
+            margin: 2px 0;
           }
 
+          /* Body */
+          .print-body {
+            padding: 0;
+          }
+
+          /* Sections: don't split across pages */
           .print-section {
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             page-break-inside: avoid;
+            break-inside: avoid;
           }
 
           .print-section h3 {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
             color: #2563eb;
             border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 8px;
-            margin-bottom: 15px;
+            padding-bottom: 6px;
+            margin-bottom: 10px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            page-break-after: avoid;
+            break-after: avoid;
           }
 
+          /* Two-column grid */
           .print-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px 30px;
+            gap: 8px 30px;
           }
 
           .print-grid > div {
             display: flex;
             flex-direction: column;
-            padding: 4px 0;
+            padding: 2px 0;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
 
           .print-grid > div span {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             color: #6b7280;
             text-transform: uppercase;
             letter-spacing: 0.3px;
+            margin-bottom: 2px;
           }
 
           .print-grid > div {
-            font-size: 14px;
+            font-size: 12px;
             color: #1f2937;
-          }
-
-          .print-body {
-            padding: 0 10px;
           }
         }
       `}</style>
@@ -1416,7 +1499,7 @@ export default function HREmployeePage() {
 }
 
 // ============================================
-// TAB COMPONENTS – with blue underline only
+// TAB COMPONENTS (unchanged)
 // ============================================
 function TabButton({ active, onClick, icon: Icon, label }) {
   return (
@@ -1438,9 +1521,6 @@ function TabPanel({ children }) {
   return <div className="py-2">{children}</div>;
 }
 
-// ============================================
-// DISPLAY HELPERS – two‑column grid
-// ============================================
 function Section({ title, icon: Icon, children }) {
   return (
     <div>
@@ -1472,7 +1552,6 @@ function DetailItem({ icon: Icon, label, value, isLink }) {
   );
 }
 
-// ----- Original helper components (kept as they were) -----
 function DisplayField({ label, value, isLink }) {
   if (!value) return null;
   return (
