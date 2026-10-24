@@ -6,9 +6,6 @@ import { logAudit, getClientIP } from "@/lib/rb-audit";
 import { sendMail } from "@/lib/mailer";
 import { ObjectId } from "mongodb";
 
-/**
- * GET /api/room-booking/bookings?status=&mine=
- */
 export async function GET(req: NextRequest) {
   try {
     const auth = await verifyBookingUser(req);
@@ -23,7 +20,6 @@ export async function GET(req: NextRequest) {
     const filter: Record<string, any> = {};
     if (status) filter.bookingStatus = status;
 
-    // Non-admin sees only their own (unless explicitly requesting all as admin)
     if (!auth.user.isAdmin || mine) {
       filter.bookedByStaffId = new ObjectId(auth.user.userId);
     }
@@ -55,135 +51,82 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/**
- * POST /api/room-booking/bookings
- * Body: {
- *   occupant: {
- *     occupantType: "ACC_STAFF" | "FAMILY" | "CO_AGENCY" | "STAKEHOLDER" | "RESIDENT_STAFF",
- *     fullName, idType, idNumber, relationship?, familyRegistryId?, agencyName?, designation?, contactNo?, email?
- *   },
- *   roomId,
- *   bedIds: [ "..." ],   // 1 bed (single) or all beds in room (whole-room)
- *   bookingScope: "SINGLE_BED" | "WHOLE_ROOM",
- *   checkIn, checkOut,
- *   purpose, caseRefNo?,
- *   paymentMode: "PAYROLL_DEDUCTION" | "M_BOB" | "CASH"
- * }
- */
 export async function POST(req: NextRequest) {
   try {
-    // Pending-bill gate + role check
     const auth = await canBook(req);
     if (!auth.valid) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const body = await req.json();
-
-    // Validate required fields
-    if (!body.occupant?.occupantType) {
-      return NextResponse.json({ error: "occupant.occupantType required" }, { status: 400 });
+    let body;
+    try {
+      body = await req.json();
+    } catch (err) {
+      return NextResponse.json({ error: "Invalid JSON payload received" }, { status: 400 });
     }
+
     if (!body.roomId || !ObjectId.isValid(body.roomId)) {
       return NextResponse.json({ error: "Valid roomId required" }, { status: 400 });
     }
     if (!Array.isArray(body.bedIds) || body.bedIds.length === 0) {
       return NextResponse.json({ error: "At least one bedId required" }, { status: 400 });
     }
-    if (!body.checkIn || !body.checkOut) {
-      return NextResponse.json({ error: "checkIn and checkOut required" }, { status: 400 });
+
+    const guestsList = Array.isArray(body.guests) ? body.guests : [];
+    if (guestsList.length === 0) {
+      return NextResponse.json({ error: "At least one guest is required" }, { status: 400 });
+    }
+
+    // 🚨 FIXED: Ensure dates are valid and saved correctly
+    for (const g of guestsList) {
+      if (!g.checkIn || !g.checkOut) {
+        return NextResponse.json({ error: `Dates missing for guest: ${g.fullName || 'Unknown'}` }, { status: 400 });
+      }
+      const gIn = new Date(g.checkIn);
+      const gOut = new Date(g.checkOut);
+      
+      if (isNaN(gIn.getTime()) || isNaN(gOut.getTime())) {
+         return NextResponse.json({ error: `Invalid date format for guest: ${g.fullName || 'Unknown'}` }, { status: 400 });
+      }
+      if (gOut <= gIn) {
+        return NextResponse.json({ error: `Check-out must be after Check-in for guest: ${g.fullName || 'Unknown'}` }, { status: 400 });
+      }
     }
 
     const client = await clientPromise;
     const db = client.db("civic_leave_db");
 
-    const occupantType = body.occupant.occupantType;
-
-    // Validate permissions by occupant type
-    if (occupantType === "STAKEHOLDER" && !auth.user.isAdmin) {
-      const allowed = ["Commissioner", "Chairperson", "SecretaryService"].includes(auth.user.role);
-      if (!allowed) {
-        return NextResponse.json(
-          { error: "Only Commissioner/Chairperson/SecretaryService can book for stakeholders" },
-          { status: 403 },
-        );
-      }
-    }
-
-    // Validate FAMILY occupant → must be verified
-    let familyRegistry = null;
-    if (occupantType === "FAMILY") {
-      if (!body.occupant.familyRegistryId) {
-        return NextResponse.json(
-          { error: "familyRegistryId required for FAMILY bookings" },
-          { status: 400 },
-        );
-      }
-      if (!ObjectId.isValid(body.occupant.familyRegistryId)) {
-        return NextResponse.json({ error: "Invalid familyRegistryId" }, { status: 400 });
-      }
-      familyRegistry = await db.collection("rb_family_registry").findOne({
-        _id: new ObjectId(body.occupant.familyRegistryId),
-      });
-      if (!familyRegistry) {
-        return NextResponse.json({ error: "Family registry not found" }, { status: 404 });
-      }
-      if (familyRegistry.status !== "VERIFIED") {
-        return NextResponse.json(
-          { error: "Family member is not verified. Cannot book at family rate." },
-          { status: 403 },
-        );
-      }
-      // Verify ownership
-      if (!auth.user.isAdmin && familyRegistry.staffId.toString() !== auth.user.userId) {
-        return NextResponse.json(
-          { error: "You can only book for your own verified family members" },
-          { status: 403 },
-        );
-      }
-    }
-
-    // Get room
     const room = await db.collection("rb_rooms").findOne({ _id: new ObjectId(body.roomId) });
     if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
     if (room.status !== "ACTIVE") {
       return NextResponse.json({ error: `Room is ${room.status}` }, { status: 400 });
     }
 
-    // Get beds
     const bedObjectIds = body.bedIds.map((id: string) => new ObjectId(id));
     const beds = await db.collection("rb_beds").find({ _id: { $in: bedObjectIds } }).toArray();
     if (beds.length !== body.bedIds.length) {
       return NextResponse.json({ error: "One or more beds not found" }, { status: 404 });
     }
 
-    // Verify beds belong to room
     for (const bed of beds) {
       if (bed.roomId.toString() !== body.roomId) {
         return NextResponse.json({ error: "Bed does not belong to selected room" }, { status: 400 });
       }
       if (bed.status !== "AVAILABLE") {
-        return NextResponse.json(
-          { error: `Bed ${bed.bedLabel} is ${bed.status}` },
-          { status: 409 },
-        );
+        return NextResponse.json({ error: `Bed ${bed.bedLabel} is ${bed.status}` }, { status: 409 });
       }
     }
 
-    // Check date conflicts
-    const checkIn = new Date(body.checkIn);
-    const checkOut = new Date(body.checkOut);
-    if (checkOut <= checkIn) {
-      return NextResponse.json({ error: "checkOut must be after checkIn" }, { status: 400 });
-    }
+    const minDate = new Date(Math.min(...guestsList.map((g: any) => new Date(g.checkIn).getTime())));
+    const maxDate = new Date(Math.max(...guestsList.map((g: any) => new Date(g.checkOut).getTime())));
 
     const conflicts = await db
       .collection("rb_bookings")
       .find({
         bookingStatus: { $in: ["CONFIRMED", "PENDING_APPROVAL", "CHECKED_IN"] },
         bedIds: { $in: bedObjectIds },
-        checkIn: { $lt: checkOut },
-        checkOut: { $gt: checkIn },
+        "guests.checkIn": { $lt: maxDate },
+        "guests.checkOut": { $gt: minDate },
       })
       .toArray();
 
@@ -194,7 +137,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Rate engine
     const TIER_MAP: Record<string, string> = {
       RESIDENT_STAFF: "tier1",
       ACC_STAFF: "tier2",
@@ -210,48 +152,72 @@ export async function POST(req: NextRequest) {
       STAKEHOLDER: "TIER5",
     };
 
-    const tierKey = TIER_MAP[occupantType] || "tier2";
-    const rateTier = TIER_LABEL[occupantType] || "TIER2";
+    let totalAmount = 0;
+    let hasStakeholder = false;
+    const processedGuests = [];
 
-    const ratePerBed = beds.reduce(
-      (sum: number, b: any) => sum + Number(b.rates?.[tierKey] || 0),
-      0,
-    );
+    for (const guest of guestsList) {
+      const type = guest.occupantType || "ACC_STAFF";
+      if (type === "STAKEHOLDER") hasStakeholder = true;
+      
+      const tierKey = TIER_MAP[type] || "tier2";
+      const rateTier = TIER_LABEL[type] || "TIER2";
 
-    const nights = Math.ceil(
-      (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24),
-    );
+      let ratePerBed = 0;
+      beds.forEach((b: any) => {
+        const rate = Number(b.rates?.[tierKey] || 0);
+        if (rate > ratePerBed) ratePerBed = rate;
+      });
 
-    const totalAmount = ratePerBed * nights;
+      const gCheckIn = new Date(guest.checkIn);
+      const gCheckOut = new Date(guest.checkOut);
+      const gNights = Math.max(1, Math.ceil((gCheckOut.getTime() - gCheckIn.getTime()) / (1000 * 60 * 60 * 24)));
+      
+      const guestTotal = ratePerBed * gNights;
+      totalAmount += guestTotal;
 
-    // Generate booking reference
+      processedGuests.push({
+        ...guest,
+        rateTier,
+        ratePerBed,
+        nights: gNights,
+        totalAmount: guestTotal,
+        parsedCheckIn: gCheckIn,
+        parsedCheckOut: gCheckOut
+      });
+    }
+
     const year = new Date().getFullYear();
     const count = await db.collection("rb_bookings").countDocuments({});
     const bookingRef = `ACC/PRO/BK/${year}/${String(count + 1).padStart(4, "0")}`;
 
     const now = new Date();
 
-    // Create occupant record
-    const occupantDoc = {
-      fullName: body.occupant.fullName || auth.user.name,
-      idType: body.occupant.idType || "EMPLOYEE_ID",
-      idNumber: body.occupant.idNumber || "",
-      occupantType,
-      familyRegistryId: familyRegistry?._id || null,
-      relationship: familyRegistry?.relationshipCode || body.occupant.relationship || null,
-      agencyName: body.occupant.agencyName || null,
-      designation: body.occupant.designation || null,
-      contactNo: body.occupant.contactNo || null,
-      email: body.occupant.email || null,
-      staffId: occupantType === "ACC_STAFF" || occupantType === "RESIDENT_STAFF"
-        ? new ObjectId(auth.user.userId)
-        : null,
-      createdAt: now,
-    };
+    const occupantIds = [];
+    for (const guest of processedGuests) {
+      const occupantDoc = {
+        fullName: guest.fullName || auth.user.name,
+        idType: "EMPLOYEE_ID",
+        idNumber: guest.familyRegistryId || "",
+        occupantType: guest.occupantType,
+        familyRegistryId: guest.familyRegistryId ? new ObjectId(guest.familyRegistryId) : null,
+        relationship: guest.relationship || null,
+        agencyName: guest.agencyName || null,
+        designation: guest.designation || null,
+        contactNo: guest.contactNo || null,
+        email: auth.user.email,
+        staffId: (guest.occupantType === "ACC_STAFF" || guest.occupantType === "RESIDENT_STAFF") 
+          ? new ObjectId(auth.user.userId) 
+          : null,
+        createdAt: now,
+      };
+      
+      const insertResult = await db.collection("rb_occupants").insertOne(occupantDoc);
+      occupantIds.push(insertResult.insertedId);
+    }
 
-    const occupantInsert = await db.collection("rb_occupants").insertOne(occupantDoc);
-
-    // Create booking record
+    const primaryOccupantType = processedGuests[0]?.occupantType || "ACC_STAFF";
+    
     const bookingDoc = {
       bookingRef,
       bookedByStaffId: new ObjectId(auth.user.userId),
@@ -259,46 +225,41 @@ export async function POST(req: NextRequest) {
         name: auth.user.name,
         email: auth.user.email,
         role: auth.user.role,
-        departmentId: auth.user.departmentId || null,
-        divisionId: auth.user.divisionId || null,
       },
-      occupantId: occupantInsert.insertedId,
+      occupantId: occupantIds[0],
+      occupantIds: occupantIds,
       occupantSnapshot: {
-        fullName: occupantDoc.fullName,
-        cid: occupantDoc.idNumber,
-        occupantType,
-        relationship: occupantDoc.relationship,
+        fullName: processedGuests[0]?.fullName || auth.user.name,
+        occupantType: primaryOccupantType,
       },
       roomId: room._id,
       roomNumberSnapshot: room.roomNumber,
       bedIds: bedObjectIds,
       bookingScope: body.bookingScope || (beds.length === 1 ? "SINGLE_BED" : "WHOLE_ROOM"),
-      checkIn,
-      checkOut,
-      nights,
+      guests: processedGuests.map(g => ({
+        fullName: g.fullName,
+        occupantType: g.occupantType,
+        checkIn: g.parsedCheckIn.toISOString(),
+        checkOut: g.parsedCheckOut.toISOString(),
+        nights: g.nights,
+        rateApplied: g.ratePerBed,
+        totalAmount: g.totalAmount,
+        rateTier: g.rateTier
+      })),
+      guestsCount: processedGuests.length,
       purpose: body.purpose || "",
-      caseRefNo: body.caseRefNo || null,
-      rateTier,
-      rateApplied: ratePerBed,
       totalAmount,
       paymentStatus: "PENDING",
-      paymentMode: body.paymentMode || "PAYROLL_DEDUCTION",
-      waiverReasonCode: null,
-      waiverNote: null,
-      approvedByWaiverStaffId: null,
+      paymentMode: "M_BOB",
       approvalId: null,
-      bookingStatus:
-        occupantType === "STAKEHOLDER" ? "PENDING_APPROVAL" : "CONFIRMED",
-      checkInAt: null,
-      checkOutAt: null,
+      bookingStatus: hasStakeholder ? "PENDING_APPROVAL" : "CONFIRMED",
       createdAt: now,
       updatedAt: now,
     };
 
     const bookingInsert = await db.collection("rb_bookings").insertOne(bookingDoc);
 
-    // Lock beds (mark OCCUPIED) — or leave RESERVED for pending approval
-    const newBedStatus = occupantType === "STAKEHOLDER" ? "RESERVED" : "OCCUPIED";
+    const newBedStatus = hasStakeholder ? "RESERVED" : "OCCUPIED";
     await db.collection("rb_beds").updateMany(
       { _id: { $in: bedObjectIds } },
       {
@@ -310,31 +271,27 @@ export async function POST(req: NextRequest) {
       },
     );
 
-    // Create ledger entry (PENDING)
-    await db.collection("rb_ledger").insertOne({
-      bookingId: bookingInsert.insertedId,
-      staffId: new ObjectId(auth.user.userId),
-      amount: totalAmount,
-      type: "BOOKING",
-      status: "UNPAID",
-      dueDate: checkOut,
-      settledAt: null,
-      settledByStaffId: null,
-      createdAt: now,
-    });
+    for (const g of processedGuests) {
+      await db.collection("rb_ledger").insertOne({
+        bookingId: bookingInsert.insertedId,
+        staffId: new ObjectId(auth.user.userId),
+        guestName: g.fullName,
+        description: `Room Booking for ${g.fullName} (${g.nights} nights)`,
+        amount: g.totalAmount,
+        type: "BOOKING",
+        status: "UNPAID",
+        dueDate: g.parsedCheckOut,
+        settledAt: null,
+        settledByStaffId: null,
+        createdAt: now,
+      });
+    }
 
-    // Create approval record if STAKEHOLDER
-    if (occupantType === "STAKEHOLDER") {
+    if (hasStakeholder) {
       await db.collection("rb_approvals").insertOne({
         bookingId: bookingInsert.insertedId,
         requestedByStaffId: new ObjectId(auth.user.userId),
-        apicStaffId: null,
-        apicAgency: null,
-        approvalRefNo: null,
-        approvalDate: null,
-        approvalLetterUrl: null,
         status: "PENDING",
-        remarks: null,
         createdAt: now,
         updatedAt: now,
       });
@@ -350,31 +307,45 @@ export async function POST(req: NextRequest) {
         bookingRef,
         roomNumber: room.roomNumber,
         beds: beds.map((b: any) => b.bedLabel),
-        occupantType,
-        rateTier,
+        guestsCount: processedGuests.length,
         totalAmount,
       },
     });
 
-    // Send confirmation email (fire & forget)
     (async () => {
       try {
         const bedsList = beds.map((b: any) => b.bedLabel).join(", ");
+        let guestRows = processedGuests.map(g => `
+          <tr>
+            <td style="padding:8px;border:1px solid #ddd">${g.fullName}</td>
+            <td style="padding:8px;border:1px solid #ddd">${g.parsedCheckIn.toDateString()} to ${g.parsedCheckOut.toDateString()}</td>
+            <td style="padding:8px;border:1px solid #ddd">Nu. ${g.totalAmount}</td>
+          </tr>
+        `).join("");
+
         const html = `
           <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
             <h2 style="color:#059669">✅ Booking Confirmed</h2>
             <p>Dear <b>${auth.user.name}</b>,</p>
             <p>Your room booking has been confirmed.</p>
+            <p><b>Booking Ref:</b> ${bookingRef}</p>
+            <p><b>Room / Bed:</b> ${room.roomNumber} · Bed ${bedsList}</p>
             <table style="border-collapse:collapse;width:100%;margin:16px 0">
-              <tr><td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Booking Ref</b></td><td style="padding:8px;border:1px solid #ddd">${bookingRef}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Room / Bed</b></td><td style="padding:8px;border:1px solid #ddd">${room.roomNumber} · Bed ${bedsList}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Occupant</b></td><td style="padding:8px;border:1px solid #ddd">${occupantDoc.fullName}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Check-in</b></td><td style="padding:8px;border:1px solid #ddd">${checkIn.toDateString()}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Check-out</b></td><td style="padding:8px;border:1px solid #ddd">${checkOut.toDateString()}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Nights</b></td><td style="padding:8px;border:1px solid #ddd">${nights}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Total</b></td><td style="padding:8px;border:1px solid #ddd"><b>Nu. ${totalAmount}</b></td></tr>
+              <thead style="background:#f9fafb">
+                <tr>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Guest</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Dates</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Total</th>
+                </tr>
+              </thead>
+              <tbody>${guestRows}</tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2" style="padding:8px;border:1px solid #ddd;text-align:right"><b>Grand Total:</b></td>
+                  <td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Nu. ${totalAmount}</b></td>
+                </tr>
+              </tfoot>
             </table>
-            ${occupantType === "STAKEHOLDER" ? "<p style='color:#d97706'><b>Note:</b> This booking is pending APIC approval.</p>" : ""}
           </div>
         `;
         await sendMail({
@@ -394,12 +365,12 @@ export async function POST(req: NextRequest) {
         bookingId: bookingInsert.insertedId.toString(),
         bookingStatus: bookingDoc.bookingStatus,
         totalAmount,
-        nights,
+        guestsCount: processedGuests.length,
       },
       { status: 201 },
     );
   } catch (error: any) {
     console.error("POST /bookings error:", error);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Server error" }, { status: 500 });
   }
 }

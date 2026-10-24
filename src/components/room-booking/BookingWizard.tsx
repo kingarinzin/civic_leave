@@ -1,164 +1,114 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowLeft, ArrowRight, Check, Calendar } from "lucide-react";
-import VerifiedFamilySelector, { VerifiedFamily } from "./VerifiedFamilySelector";
-
-interface Bed {
-  _id: string;
-  bedLabel: string;
-  bedTypeCode: string;
-  status: string;
-  rates: Record<string, number>;
-  roomId: string;
-}
-
-interface Room {
-  _id: string;
-  roomNumber: string;
-  roomTypeCode: string;
-  roomTypeName: string;
-  floor: number;
-}
-
-interface Props {
-  room: Room;
-  beds: Bed[];
-  preselectedBedIds?: string[];
-}
-
-const OCCUPANT_TYPES = [
-  { code: "ACC_STAFF", label: "Self (ACC Staff)", tier: "tier2" },
-  { code: "FAMILY", label: "Family (Verified)", tier: "tier3" },
-  { code: "CO_AGENCY", label: "Co-Agency Officer", tier: "tier4" },
-];
+import { 
+  ArrowLeft, ArrowRight, Loader2, CheckCircle2, CalendarDays, 
+  BedDouble, Users, Building2, UserCheck, Plus, X, Edit3
+} from "lucide-react";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 
 export default function BookingWizard({
   room,
   beds,
-  preselectedBedIds = [],
-}: Props) {
+  preselectedBedIds,
+  isInsideModal = false,
+  onCloseModal,
+}: any) {
   const router = useRouter();
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   const [step, setStep] = useState(1);
-  const [saving, setSaving] = useState(false);
-  const [notification, setNotification] = useState<{
-    message: string;
-    type: "success" | "error";
-  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [purpose, setPurpose] = useState("");
 
-  const [form, setForm] = useState({
-    occupantType: "ACC_STAFF",
-    familyRegistryId: "",
-    familyMember: null as VerifiedFamily | null,
-    fullName: "",
-    idType: "EMPLOYEE_ID",
-    idNumber: "",
-    agencyName: "",
-    designation: "",
-    contactNo: "",
-    email: "",
-    selectedBedIds: preselectedBedIds as string[],
-    checkIn: "",
-    checkOut: "",
-    purpose: "",
-    caseRefNo: "",
-    paymentMode: "PAYROLL_DEDUCTION",
-    declaration: false,
+  const [guests, setGuests] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState("ACC_STAFF"); 
+  const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadFamily() {
+      try {
+        const res = await fetch("/api/room-booking/family/my", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        setFamilyMembers((data.items || []).filter((f: any) => f.status === "VERIFIED"));
+      } catch (err) {
+        console.error("Failed to load family", err);
+      }
+    }
+    loadFamily();
+  }, [token]);
+
+  const getTierKey = (type: string) => {
+    switch(type) {
+      case "ACC_STAFF": return "tier2";
+      case "FAMILY": return "tier3";
+      case "CO_AGENCY": return "tier4";
+      case "STAKEHOLDER": return "tier5";
+      default: return "tier2";
+    }
+  };
+
+  let totalCost = 0;
+  const guestCosts = guests.map(guest => {
+    const tierKey = getTierKey(guest.type);
+    
+    const assignedBed = beds.find((b: any) => b._id === guest.bedId);
+    const fallbackBed = beds[0];
+    const usedBed = assignedBed || fallbackBed;
+
+    const tierRate = Number(usedBed?.rates?.[tierKey] || 0);
+
+    let guestNights = 0;
+    if (guest.checkIn && guest.checkOut) {
+      guestNights = Math.max(1, Math.ceil((new Date(guest.checkOut).getTime() - new Date(guest.checkIn).getTime()) / (1000 * 3600 * 24)));
+    }
+
+    const guestTotal = tierRate * guestNights;
+    totalCost += guestTotal;
+
+    return { ...guest, tierRate, nights: guestNights, total: guestTotal };
   });
 
-  const notify = (message: string, type: "success" | "error") => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
+  const isStep1Valid = () => {
+    if (guests.length === 0) return false;
+    for (const g of guests) {
+      if (!g.checkIn || !g.checkOut) return false;
+      if ((g.type === "CO_AGENCY" || g.type === "STAKEHOLDER") && (!g.fullName?.trim() || g.fullName === "Unknown Guest")) return false;
+    }
+    return true;
   };
 
-  const selectedBeds = beds.filter((b) => form.selectedBedIds.includes(b._id));
-
-  const tierKey =
-    form.occupantType === "ACC_STAFF"
-      ? "tier2"
-      : form.occupantType === "FAMILY"
-        ? "tier3"
-        : form.occupantType === "CO_AGENCY"
-          ? "tier4"
-          : "tier5";
-
-  const ratePerBed = selectedBeds.reduce(
-    (sum, b) => sum + Number(b.rates?.[tierKey] || 0),
-    0,
-  );
-
-  const nights = (() => {
-    if (!form.checkIn || !form.checkOut) return 0;
-    const diff =
-      (new Date(form.checkOut).getTime() - new Date(form.checkIn).getTime()) /
-      (1000 * 60 * 60 * 24);
-    return Math.max(0, Math.ceil(diff));
-  })();
-
-  const totalAmount = ratePerBed * nights;
-
-  const toggleBed = (bedId: string) => {
-    setForm((f) => ({
-      ...f,
-      selectedBedIds: f.selectedBedIds.includes(bedId)
-        ? f.selectedBedIds.filter((id) => id !== bedId)
-        : [...f.selectedBedIds, bedId],
-    }));
+  const handleCancel = () => {
+    if (isInsideModal && onCloseModal) onCloseModal();
+    else router.push("/room-booking");
   };
-
-  const canProceedStep1 = form.selectedBedIds.length > 0;
-  const canProceedStep2 =
-    form.occupantType === "FAMILY"
-      ? !!form.familyMember
-      : form.occupantType === "ACC_STAFF"
-        ? true
-        : !!form.fullName && !!form.idNumber && !!form.agencyName;
-  const canProceedStep3 =
-    !!form.checkIn && !!form.checkOut && nights > 0 && !!form.purpose;
 
   const handleSubmit = async () => {
-    if (!form.declaration) {
-      notify("Please accept the declaration", "error");
-      return;
-    }
-    setSaving(true);
+    setLoading(true);
     try {
-      const occupant: any = {
-        occupantType: form.occupantType,
-        fullName: form.fullName,
-        idType: form.idType,
-        idNumber: form.idNumber,
-      };
-      if (form.occupantType === "FAMILY") {
-        occupant.familyRegistryId = form.familyRegistryId;
-        if (form.familyMember) {
-          occupant.fullName = form.familyMember.fullName;
-          occupant.idNumber = form.familyMember.cid;
-        }
-      }
-      if (form.occupantType === "CO_AGENCY") {
-        occupant.agencyName = form.agencyName;
-        occupant.designation = form.designation;
-        occupant.contactNo = form.contactNo;
-        occupant.email = form.email;
-      }
+      const formattedGuests = guests.map(g => {
+        // Safety fallback for dates
+        const checkInDate = g.checkIn ? new Date(g.checkIn).toISOString() : new Date().toISOString();
+        const checkOutDate = g.checkOut ? new Date(g.checkOut).toISOString() : new Date(Date.now() + 86400000).toISOString();
 
-      const payload = {
-        occupant,
-        roomId: room._id,
-        bedIds: form.selectedBedIds,
-        bookingScope:
-          form.selectedBedIds.length === beds.length ? "WHOLE_ROOM" : "SINGLE_BED",
-        checkIn: form.checkIn,
-        checkOut: form.checkOut,
-        purpose: form.purpose,
-        caseRefNo: form.caseRefNo || null,
-        paymentMode: form.paymentMode,
-      };
+        return {
+          occupantType: g.type,
+          fullName: g.fullName,
+          familyRegistryId: g.familyId,
+          agencyName: g.agencyName,
+          contactNo: g.contactNo,
+          checkIn: checkInDate,
+          checkOut: checkOutDate,
+          bedId: g.bedId || beds[0]?._id,
+        };
+      });
+
+      const uniqueBedIds = Array.from(new Set(guests.map(g => g.bedId || beds[0]?._id).filter(Boolean)));
 
       const res = await fetch("/api/room-booking/bookings", {
         method: "POST",
@@ -166,433 +116,412 @@ export default function BookingWizard({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          roomId: room._id,
+          bedIds: uniqueBedIds,
+          purpose,
+          guests: formattedGuests, 
+        }),
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Booking failed");
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Booking failed.");
       }
 
-      const data = await res.json();
-      notify("Booking created! Ref: " + data.bookingRef, "success");
-      setTimeout(() => router.push("/room-booking/my-bookings"), 1500);
+      alert("🎉 Booking Successful!");
+      if (isInsideModal && onCloseModal) {
+        onCloseModal();
+        router.refresh();
+      } else {
+        router.push("/room-booking/my-bookings");
+      }
     } catch (err: any) {
-      notify(err.message, "error");
+      alert(err.message);
     } finally {
-      setSaving(false);
+      setLoading(false);
+    }
+  };
+
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    if (tabId === "ACC_STAFF") {
+      const hasStaff = guests.some(g => g.type === "ACC_STAFF");
+      if (!hasStaff) {
+        const newId = Date.now().toString();
+        setGuests(prev => [
+          ...prev, 
+          { id: newId, type: "ACC_STAFF", fullName: "Myself (ACC Staff)", checkIn: null, checkOut: null, bedId: "" }
+        ]);
+        setEditingGuestId(newId);
+      }
+    }
+  };
+
+  const addFamilyMember = (fam: any) => {
+    if (guests.some(g => g.familyId === fam._id)) return;
+    const newId = Date.now().toString();
+    setGuests([...guests, {
+      id: newId,
+      type: "FAMILY",
+      familyId: fam._id,
+      fullName: fam.fullName,
+      relationship: fam.relationshipCode,
+      checkIn: null,
+      checkOut: null,
+      bedId: ""
+    }]);
+    setEditingGuestId(newId);
+  };
+
+  const addManualGuest = (type: "CO_AGENCY" | "STAKEHOLDER") => {
+    const newId = Date.now().toString();
+    setGuests([...guests, {
+      id: newId,
+      type,
+      fullName: "",
+      agencyName: "",
+      contactNo: "",
+      checkIn: null,
+      checkOut: null,
+      bedId: ""
+    }]);
+    setEditingGuestId(newId); 
+  };
+
+  const removeGuest = (id: string) => {
+    setGuests(guests.filter(g => g.id !== id));
+    if (editingGuestId === id) setEditingGuestId(null);
+  };
+
+  const updateGuestField = (id: string, field: string, value: any) => {
+    setGuests(guests.map(g => g.id === id ? { ...g, [field]: value } : g));
+  };
+
+  const finishEditing = () => {
+    const currentGuest = guests.find(g => g.id === editingGuestId);
+    if (currentGuest && !currentGuest.fullName?.trim()) {
+       updateGuestField(editingGuestId!, "fullName", "Unknown Guest");
+    }
+    setEditingGuestId(null);
+  };
+
+  const getPillColor = (type: string) => {
+    switch(type) {
+      case "ACC_STAFF": return "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200";
+      case "FAMILY": return "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100";
+      case "CO_AGENCY": return "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100";
+      case "STAKEHOLDER": return "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100";
+      default: return "bg-gray-100 text-gray-700";
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
-      {notification && (
-        <div
-          className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-lg text-white ${
-            notification.type === "success" ? "bg-green-600" : "bg-red-600"
-          }`}
-        >
-          {notification.message}
-        </div>
-      )}
-
-      {/* Stepper */}
-      <div className="flex items-center justify-center gap-2 mb-8">
-        {[1, 2, 3, 4].map((n) => (
-          <div key={n} className="flex items-center gap-2">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
-                step >= n ? "bg-black text-white" : "bg-gray-200 text-gray-500"
-              }`}
-            >
-              {step > n ? <Check size={14} /> : n}
-            </div>
-            {n < 4 && (
-              <div
-                className={`w-12 h-0.5 ${
-                  step > n ? "bg-black" : "bg-gray-200"
-                }`}
-              />
-            )}
+    <div className={`w-full ${isInsideModal ? "" : "max-w-3xl mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"}`}>
+      
+      <div className="px-6 pt-6 pb-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Complete your booking</h2>
+            <p className="text-sm text-gray-500">Room {room.roomNumber} · {room.roomTypeName}</p>
           </div>
-        ))}
+        </div>
+        <div className="flex items-center justify-between relative">
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-gray-100 -z-10 rounded-full"></div>
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-blue-600 -z-10 rounded-full transition-all duration-300" style={{ width: `${((step - 1) / 2) * 100}%` }}></div>
+          {[1, 2, 3].map((num) => (
+            <div key={num} className="flex flex-col items-center gap-2 bg-white px-2">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                step > num ? "bg-blue-600 text-white" : 
+                step === num ? "bg-blue-600 text-white ring-4 ring-blue-100" : 
+                "bg-gray-100 text-gray-400"
+              }`}>
+                {step > num ? <CheckCircle2 size={18} /> : num}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        {/* STEP 1 — Select Bed */}
+      <div className="p-6 min-h-[400px]">
+        
         {step === 1 && (
-          <div>
-            <h2 className="text-lg font-semibold mb-1">Select Bed</h2>
-            <p className="text-sm text-gray-500 mb-4">
-              Room {room.roomNumber} · {room.roomTypeName} · Floor {room.floor}
-            </p>
-            <div className="space-y-2">
-              {beds.map((b) => {
-                const isSelected = form.selectedBedIds.includes(b._id);
-                const isAvailable = b.status === "AVAILABLE";
-                return (
+          <div className="space-y-6 animate-in fade-in">
+            
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Add Guests (Select Tier)</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {[
+                  { id: "ACC_STAFF", label: "Staff", icon: UserCheck },
+                  { id: "FAMILY", label: "Family", icon: Users },
+                  { id: "CO_AGENCY", label: "Co-Agency", icon: Building2 },
+                  { id: "STAKEHOLDER", label: "Stakeholder", icon: Users },
+                ].map((type) => (
                   <button
-                    key={b._id}
-                    onClick={() => isAvailable && toggleBed(b._id)}
-                    disabled={!isAvailable}
-                    className={`w-full flex items-center justify-between p-4 border rounded-lg text-left ${
-                      isSelected
-                        ? "border-black bg-gray-50"
-                        : isAvailable
-                          ? "border-gray-200 hover:border-gray-400"
-                          : "border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed"
+                    key={type.id}
+                    onClick={() => handleTabChange(type.id)}
+                    className={`flex flex-col items-center p-3 rounded-xl border-2 transition-all ${
+                      activeTab === type.id ? "border-blue-600 bg-blue-50 text-blue-700 shadow-sm" : "border-gray-200 text-gray-600 hover:border-gray-300"
                     }`}
                   >
-                    <div>
-                      <p className="font-medium">
-                        Bed {b.bedLabel} — {b.bedTypeCode}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {isAvailable
-                          ? `Nu. ${b.rates?.[tierKey] ?? 0}/night`
-                          : b.status}
-                      </p>
-                    </div>
-                    {isSelected && <Check size={18} className="text-black" />}
+                    <type.icon size={20} className="mb-1" />
+                    <span className="text-xs font-bold">{type.label}</span>
                   </button>
-                );
-              })}
-            </div>
-            {selectedBeds.length === beds.length && beds.length > 1 && (
-              <p className="text-xs text-green-700 bg-green-50 p-2 rounded mt-3">
-                ✓ Whole room selected ({beds.length} beds)
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* STEP 2 — Occupant */}
-        {step === 2 && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold mb-1">Occupant Details</h2>
-              <p className="text-sm text-gray-500 mb-4">Who is staying?</p>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Occupant Type
-              </label>
-              <select
-                value={form.occupantType}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    occupantType: e.target.value,
-                    familyMember: null,
-                    familyRegistryId: "",
-                  })
-                }
-                className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-              >
-                {OCCUPANT_TYPES.map((t) => (
-                  <option key={t.code} value={t.code}>
-                    {t.label}
-                  </option>
                 ))}
-              </select>
-            </div>
-
-            {form.occupantType === "ACC_STAFF" && (
-              <p className="text-sm text-gray-500 bg-gray-50 p-3 rounded">
-                Booking for yourself at ACC staff rate.
-              </p>
-            )}
-
-            {form.occupantType === "FAMILY" && (
-              <VerifiedFamilySelector
-                value={form.familyRegistryId}
-                onChange={(member) =>
-                  setForm({
-                    ...form,
-                    familyMember: member,
-                    familyRegistryId: member?._id || "",
-                  })
-                }
-              />
-            )}
-
-            {form.occupantType === "CO_AGENCY" && (
-              <>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">
-                    Full Name *
-                  </label>
-                  <input
-                    value={form.fullName}
-                    onChange={(e) =>
-                      setForm({ ...form, fullName: e.target.value })
-                    }
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">
-                    Agency Name *
-                  </label>
-                  <input
-                    value={form.agencyName}
-                    onChange={(e) =>
-                      setForm({ ...form, agencyName: e.target.value })
-                    }
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">
-                      CID/ID *
-                    </label>
-                    <input
-                      value={form.idNumber}
-                      onChange={(e) =>
-                        setForm({ ...form, idNumber: e.target.value })
-                      }
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">
-                      Designation
-                    </label>
-                    <input
-                      value={form.designation}
-                      onChange={(e) =>
-                        setForm({ ...form, designation: e.target.value })
-                      }
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">
-                      Contact
-                    </label>
-                    <input
-                      value={form.contactNo}
-                      onChange={(e) =>
-                        setForm({ ...form, contactNo: e.target.value })
-                      }
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">
-                      Email
-                    </label>
-                    <input
-                      value={form.email}
-                      onChange={(e) =>
-                        setForm({ ...form, email: e.target.value })
-                      }
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* STEP 3 — Dates */}
-        {step === 3 && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold mb-1">Stay Details</h2>
-              <p className="text-sm text-gray-500 mb-4">
-                Dates, purpose, and payment
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Check-in *
-                </label>
-                <input
-                  type="date"
-                  value={form.checkIn}
-                  onChange={(e) =>
-                    setForm({ ...form, checkIn: e.target.value })
-                  }
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Check-out *
-                </label>
-                <input
-                  type="date"
-                  value={form.checkOut}
-                  onChange={(e) =>
-                    setForm({ ...form, checkOut: e.target.value })
-                  }
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-                />
               </div>
             </div>
 
-            {nights > 0 && (
-              <p className="text-sm text-gray-600">
-                <Calendar size={14} className="inline mr-1" />
-                {nights} night{nights > 1 ? "s" : ""}
-              </p>
-            )}
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Purpose of Stay *
-              </label>
-              <textarea
-                value={form.purpose}
-                onChange={(e) =>
-                  setForm({ ...form, purpose: e.target.value })
-                }
-                rows={2}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Case Reference No. (optional)
-              </label>
-              <input
-                value={form.caseRefNo}
-                onChange={(e) =>
-                  setForm({ ...form, caseRefNo: e.target.value })
-                }
-                className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Payment Mode
-              </label>
-              <select
-                value={form.paymentMode}
-                onChange={(e) =>
-                  setForm({ ...form, paymentMode: e.target.value })
-                }
-                className="w-full border border-gray-300 rounded-md px-3 py-2 mt-1"
-              >
-                <option value="PAYROLL_DEDUCTION">Payroll Deduction</option>
-                <option value="M_BOB">M-BOB</option>
-                <option value="CASH">Cash</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 4 — Review */}
-        {step === 4 && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold mb-1">Review &amp; Confirm</h2>
-              <p className="text-sm text-gray-500 mb-4">
-                Verify details before submitting
-              </p>
-            </div>
-
-            <div className="bg-gray-50 rounded-lg p-4 text-sm space-y-2">
-              <p>
-                <b>Room:</b> {room.roomNumber} · {room.roomTypeName}
-              </p>
-              <p>
-                <b>Beds:</b> {selectedBeds.map((b) => b.bedLabel).join(", ")}
-              </p>
-              <p>
-                <b>Occupant:</b>{" "}
-                {form.occupantType === "FAMILY"
-                  ? `${form.familyMember?.fullName} (${form.familyMember?.relationshipCode})`
-                  : form.occupantType === "ACC_STAFF"
-                    ? "Self (ACC Staff)"
-                    : `${form.fullName} (${form.agencyName})`}
-              </p>
-              <p>
-                <b>Check-in:</b> {form.checkIn}
-              </p>
-              <p>
-                <b>Check-out:</b> {form.checkOut} ({nights} nights)
-              </p>
-              <p>
-                <b>Purpose:</b> {form.purpose}
-              </p>
-              <p>
-                <b>Payment Mode:</b> {form.paymentMode}
-              </p>
-              <hr className="my-2" />
-              <p>
-                <b>Rate per bed:</b> Nu. {ratePerBed}/night
-              </p>
-              <p className="text-lg">
-                <b>Total:</b> Nu. {totalAmount}
-              </p>
-            </div>
-
-            <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.declaration}
-                onChange={(e) =>
-                  setForm({ ...form, declaration: e.target.checked })
-                }
-                className="mt-0.5"
-              />
-              <span>
-                I confirm the information is true. I take responsibility for
-                this booking and any charges. False information will lead to
-                disciplinary action.
-              </span>
-            </label>
-          </div>
-        )}
-
-        {/* Nav buttons */}
-        <div className="flex justify-between mt-6 pt-4 border-t">
-          <button
-            onClick={() => (step === 1 ? router.back() : setStep(step - 1))}
-            className="flex items-center gap-1.5 px-4 py-2 border rounded-md text-sm"
-          >
-            <ArrowLeft size={14} />
-            {step === 1 ? "Cancel" : "Back"}
-          </button>
-
-          {step < 4 ? (
-            <button
-              onClick={() => setStep(step + 1)}
-              disabled={
-                (step === 1 && !canProceedStep1) ||
-                (step === 2 && !canProceedStep2) ||
-                (step === 3 && !canProceedStep3)
-              }
-              className="flex items-center gap-1.5 px-4 py-2 bg-black text-white rounded-md text-sm disabled:opacity-50"
-            >
-              Next <ArrowRight size={14} />
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={saving || !form.declaration}
-              className="flex items-center gap-1.5 px-4 py-2 bg-black text-white rounded-md text-sm disabled:opacity-50"
-            >
-              {saving ? (
-                <Loader2 className="animate-spin" size={14} />
-              ) : (
-                <Check size={14} />
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              {activeTab === "ACC_STAFF" && (
+                <div className="text-center text-sm text-gray-500 py-4">
+                  {guests.some(g => g.type === "ACC_STAFF") 
+                    ? "You have been added. Please assign your bed and dates." 
+                    : "Click the Staff tab again to add yourself as a guest."}
+                </div>
               )}
-              Confirm Booking
-            </button>
-          )}
-        </div>
+
+              {activeTab === "FAMILY" && (
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">Select Verified Family Members</label>
+                  <div className="max-h-48 overflow-y-auto space-y-2">
+                    {familyMembers.length === 0 ? (
+                      <p className="text-sm text-gray-500">No verified family members found.</p>
+                    ) : (
+                      familyMembers.map((f) => {
+                        const isAdded = guests.some(g => g.familyId === f._id);
+                        return (
+                          <label key={f._id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${isAdded ? "bg-blue-50 border-blue-200" : "bg-white border-gray-200 hover:bg-gray-50"}`}>
+                            <input 
+                              type="checkbox" 
+                              checked={isAdded}
+                              onChange={(e) => e.target.checked ? addFamilyMember(f) : removeGuest(guests.find(g => g.familyId === f._id)?.id)}
+                              className="w-4 h-4 accent-blue-600 rounded" 
+                            />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">{f.fullName}</p>
+                              <p className="text-xs text-gray-500">{f.relationshipCode} · CID: {f.cid}</p>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "CO_AGENCY" && (
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-gray-600">Add co-agency officers.</span>
+                  <button onClick={() => addManualGuest("CO_AGENCY")} className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-full hover:bg-blue-200 transition">
+                    <Plus size={14} /> Add Co-Agency
+                  </button>
+                </div>
+              )}
+
+              {activeTab === "STAKEHOLDER" && (
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-gray-600">Add stakeholders.</span>
+                  <button onClick={() => addManualGuest("STAKEHOLDER")} className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-full hover:bg-blue-200 transition">
+                    <Plus size={14} /> Add Stakeholder
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center justify-between">
+                <span>Selected Guests, Beds & Dates</span>
+                <span className="bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-bold">{guests.length} Total</span>
+              </h3>
+              
+              <div className="flex flex-wrap gap-2 mb-4">
+                {guests.length === 0 && (
+                  <span className="text-sm text-gray-400 italic">No guests added yet.</span>
+                )}
+                {guests.map((g) => (
+                  <div 
+                    key={g.id} 
+                    onClick={() => setEditingGuestId(g.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition cursor-pointer ${getPillColor(g.type)} ${editingGuestId === g.id ? "ring-2 ring-black" : ""}`}
+                  >
+                    <span>{g.fullName || `New ${g.type.replace("_", " ")}`}</span>
+                    {g.bedId && (
+                      <span className="text-[10px] bg-white/50 px-1.5 py-0.5 rounded text-gray-700 font-bold">
+                        Bed {beds.find((b:any) => b._id === g.bedId)?.bedLabel || "?"}
+                      </span>
+                    )}
+                    <Edit3 size={12} className="opacity-50" />
+                    <button onClick={(e) => { e.stopPropagation(); removeGuest(g.id); }} className="hover:bg-black/10 rounded-full p-0.5 transition">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {editingGuestId && (
+                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm animate-in fade-in">
+                  {(() => {
+                    const g = guests.find(x => x.id === editingGuestId);
+                    if (!g) return null;
+                    
+                    return (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getPillColor(g.type)}`}>{g.type.replace("_", " ")}</span>
+                            <span className="text-xs font-semibold text-gray-600">Details, Bed & Dates</span>
+                          </div>
+                          <button onClick={finishEditing} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full hover:bg-blue-100">
+                            Done
+                          </button>
+                        </div>
+
+                        <input 
+                          type="text" 
+                          placeholder="Full Name *" 
+                          value={g.fullName || ""} 
+                          onChange={(e) => updateGuestField(g.id, "fullName", e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" 
+                        />
+                        
+                        {g.type === "CO_AGENCY" && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <input type="text" placeholder="Agency Name" value={g.agencyName || ""} onChange={(e) => updateGuestField(g.id, "agencyName", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" />
+                            <input type="text" placeholder="Contact No" value={g.contactNo || ""} onChange={(e) => updateGuestField(g.id, "contactNo", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" />
+                          </div>
+                        )}
+
+                        {g.type === "STAKEHOLDER" && (
+                          <input type="text" placeholder="Organization / Designation" value={g.agencyName || ""} onChange={(e) => updateGuestField(g.id, "agencyName", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" />
+                        )}
+
+                        <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100">
+                          <label className="block text-xs font-bold text-gray-700 mb-1">Assign Bed (Optional)</label>
+                          <select
+                            value={g.bedId || ""}
+                            onChange={(e) => updateGuestField(g.id, "bedId", e.target.value)}
+                            className="w-full border border-gray-300 rounded-md p-2 text-sm outline-none focus:border-blue-600 bg-white"
+                          >
+                            <option value="">-- Select Bed --</option>
+                            {beds.map((b: any) => (
+                              <option key={b._id} value={b._id}>
+                                Bed {b.bedLabel} ({b.bedTypeCode})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                          <label className="block text-xs font-bold text-gray-700 mb-2">Stay Dates <span className="text-red-500">*</span></label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Check-in</span>
+                              <DatePicker
+                                selected={g.checkIn ? new Date(g.checkIn) : null}
+                                onChange={(date: Date | null) => updateGuestField(g.id, "checkIn", date)}
+                                selectsStart
+                                startDate={g.checkIn ? new Date(g.checkIn) : null}
+                                endDate={g.checkOut ? new Date(g.checkOut) : null}
+                                minDate={new Date()}
+                                placeholderText="Select"
+                                className="w-full border border-gray-300 rounded-md p-2 text-sm outline-none focus:border-blue-600"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Check-out</span>
+                              <DatePicker
+                                selected={g.checkOut ? new Date(g.checkOut) : null}
+                                onChange={(date: Date | null) => updateGuestField(g.id, "checkOut", date)}
+                                selectsEnd
+                                startDate={g.checkIn ? new Date(g.checkIn) : null}
+                                endDate={g.checkOut ? new Date(g.checkOut) : null}
+                                minDate={g.checkIn ? new Date(g.checkIn) : new Date()}
+                                placeholderText="Select"
+                                className="w-full border border-gray-300 rounded-md p-2 text-sm outline-none focus:border-blue-600"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="animate-in fade-in">
+            <h3 className="text-lg font-semibold mb-4">Purpose of Stay</h3>
+            <textarea 
+              value={purpose} 
+              onChange={(e) => setPurpose(e.target.value)} 
+              className="w-full border rounded-xl p-4 h-32 focus:ring-2 focus:ring-blue-600 outline-none" 
+              placeholder="Reason for stay..."
+            ></textarea>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="animate-in fade-in py-6">
+            <div className="text-center mb-6">
+              <CheckCircle2 size={48} className="text-green-500 mx-auto mb-4" />
+              <h3 className="text-2xl font-bold text-gray-900">Review & Confirm</h3>
+            </div>
+            
+            <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200 max-w-md mx-auto space-y-4">
+              
+              <div className="border-b border-gray-200 pb-4">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Individual Guest Breakdown</p>
+                
+                <div className="space-y-4">
+                  {guestCosts.map((g, idx) => (
+                    <div key={idx} className="flex justify-between items-start text-sm text-gray-700 bg-white p-3 rounded-lg border border-gray-100">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-900">{g.fullName}</span>
+                          {g.bedId && (
+                            <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded font-bold">Bed {beds.find((b:any) => b._id === g.bedId)?.bedLabel || "?"}</span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-500 mt-1">
+                          {g.checkIn ? new Date(g.checkIn).toLocaleDateString() : ""} to {g.checkOut ? new Date(g.checkOut).toLocaleDateString() : ""}
+                        </span>
+                        <span className="text-xs text-gray-500 mt-1">
+                          Nu. {g.tierRate.toLocaleString()} × {g.nights} nights
+                        </span>
+                      </div>
+                      <span className="font-semibold mt-1">Nu. {g.total.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-between items-center">
+                <span className="font-bold text-gray-900">Total Cost</span>
+                <span className="font-bold text-blue-600 text-xl">Nu. {totalCost.toLocaleString()}</span>
+              </div>
+
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-6 border-t border-gray-100 flex items-center justify-between">
+        <button onClick={step === 1 ? handleCancel : () => setStep(step - 1)} className="px-5 py-2.5 font-semibold text-gray-600">
+          {step === 1 ? "Cancel" : "Back"}
+        </button>
+        {step < 3 ? (
+          <button onClick={() => setStep(step + 1)} disabled={!isStep1Valid()} className="px-8 py-2.5 font-bold text-white bg-blue-600 rounded-lg disabled:opacity-50">
+            Continue
+          </button>
+        ) : (
+          <button onClick={handleSubmit} disabled={loading} className="px-8 py-2.5 font-bold text-white bg-green-600 rounded-lg disabled:opacity-50">
+            {loading ? <Loader2 className="animate-spin" /> : "Confirm Booking"}
+          </button>
+        )}
       </div>
     </div>
   );

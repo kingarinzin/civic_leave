@@ -25,3 +25,118 @@ body {
   background: #111111;
   color: #ffffff;
 }
+
+/* ─────────────────────────────────────────────
+   CUSTOM REACT-DATEPICKER STYLES (Trip.com Style)
+   ───────────────────────────────────────────── */
+
+.custom-calendar {
+  font-family: inherit;
+  border: none !important;
+  background: transparent !important;
+  width: 100% !important;
+  box-shadow: none !important;
+}
+
+/* Responsive: 2 months on desktop, 1 on mobile */
+.custom-calendar .react-datepicker__month-container {
+  float: left;
+  width: 50%;
+  padding: 0 10px;
+}
+
+@media (max-width: 768px) {
+  .custom-calendar .react-datepicker__month-container {
+    width: 100%;
+  }
+}
+
+.custom-calendar .react-datepicker__header {
+  background: transparent !important;
+  border-bottom: none !important;
+  padding-top: 10px;
+}
+
+.custom-calendar .react-datepicker__current-month {
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  color: #111827;
+  margin-bottom: 10px;
+}
+
+/* Day names (Sun, Mon, Tue...) */
+.custom-calendar .react-datepicker__day-name {
+  color: #6b7280 !important;
+  font-size: 0.75rem !important;
+  font-weight: 600;
+  width: 2.5rem !important;
+  line-height: 2.5rem !important;
+}
+
+/* Individual Days */
+.custom-calendar .react-datepicker__day {
+  width: 2.5rem !important;
+  line-height: 2.5rem !important;
+  margin: 0.15rem !important;
+  border-radius: 0.375rem !important; /* Rounded squares instead of circles */
+  color: #111827 !important;
+  font-size: 0.875rem !important;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.custom-calendar .react-datepicker__day:hover {
+  background-color: #eff6ff !important; /* Light blue hover */
+  color: #2563eb !important;
+}
+
+/* The gray background between selected dates (Range) */
+.custom-calendar .react-datepicker__day--in-range,
+.custom-calendar .react-datepicker__day--in-selecting-range {
+  background-color: #eff6ff !important; /* Light blue background */
+  border-radius: 0 !important;
+  color: #1d4ed8 !important; /* Darker blue text */
+}
+
+/* THE FIX: Trip.com Blue for Start and End dates */
+.custom-calendar .react-datepicker__day--selected,
+.custom-calendar .react-datepicker__day--range-start,
+.custom-calendar .react-datepicker__day--range-end,
+.custom-calendar .react-datepicker__day--selecting-range-start,
+.custom-calendar .react-datepicker__day--selecting-range-end {
+  background-color: #2563eb !important; /* Trip.com Blue */
+  color: white !important;
+  border-radius: 0.375rem !important; /* Rounded squares */
+  font-weight: 700 !important;
+  z-index: 10;
+}
+
+/* Remove the weird blue focus ring / double click issue */
+.custom-calendar .react-datepicker__day--keyboard-selected,
+.custom-calendar .react-datepicker__day:focus,
+.custom-calendar .react-datepicker__day:active {
+  background-color: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Ensure the active (blue) day stays blue even when focused */
+.custom-calendar .react-datepicker__day--selected:focus,
+.custom-calendar .react-datepicker__day--range-start:focus,
+.custom-calendar .react-datepicker__day--range-end:focus,
+.custom-calendar .react-datepicker__day--selecting-range-start:focus,
+.custom-calendar .react-datepicker__day--selecting-range-end:focus {
+  background-color: #2563eb !important;
+  color: white !important;
+}
+
+/* Hide the default triangle/arrow pointing up */
+.react-datepicker__triangle {
+  display: none !important;
+}
+
+/* Hide the default close button wrapper which adds padding */
+.react-datepicker__close-icon {
+  display: none !important;
+}

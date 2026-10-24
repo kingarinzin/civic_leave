@@ -61,11 +61,11 @@ export const LOCATION_OPTIONS: string[] = [
   'Druk Dradhir Khang',
   'Chungchen Phurkhang',
   'Taagtshang Sherab Jorden Khang',
+  'Singye Zilnoen Khang',
   'Meeting Room adjacent to PPD',
   'Chhoesham',
-  'Director incharge Chamber',
+  'Director Chamber',
   'Commisssioner incharge Chamber',
-  'Others',
 ];
 
 // =========================================================

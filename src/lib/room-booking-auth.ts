@@ -53,6 +53,12 @@ export async function verifyBookingUser(req: Request): Promise<VerifyResult> {
       .collection("rb_residents")
       .findOne({ staffId: user._id, status: "ACTIVE" });
 
+    const normalizedEmail = (user.email || "").toLowerCase().trim();
+    
+    // Add the Room Booking super-admins here
+    const roomAdmins = ["kingarinzin@acc.org.bt", "slham@acc.org.bt", "slhamo@acc.org.bt"];
+    const isRoomAdminEmail = roomAdmins.includes(normalizedEmail);
+
     return {
       valid: true,
       user: {
@@ -60,7 +66,8 @@ export async function verifyBookingUser(req: Request): Promise<VerifyResult> {
         email: user.email,
         name: user.name || "",
         role: user.role || "Officer",
-        isAdmin: !!user.isAdmin,
+        // If they are a room admin email, force isAdmin to true for room booking
+        isAdmin: !!user.isAdmin || isRoomAdminEmail, 
         isResident: !!resident,
         departmentId: user.departmentId?.toString(),
         divisionId: user.divisionId?.toString(),

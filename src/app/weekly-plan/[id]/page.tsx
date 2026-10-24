@@ -40,10 +40,6 @@ interface WeekPlan {
 }
 
 // =========================================================
-// ⚠️ Constants imported from `lib/weekly-plan-constants.ts`
-// =========================================================
-
-// =========================================================
 // Helper: Format time to 12-hour display
 // =========================================================
 function formatTimeDisplay(time: string): string {
@@ -87,6 +83,21 @@ function formatDateRange(startDateStr: string, endDateStr: string): string {
   const month = start.toLocaleString('default', { month: 'long' });
   const year = start.getFullYear();
   return `${startDay} - ${endDay} ${month}, ${year}`;
+}
+
+// =========================================================
+// Helper: Format the "Updated" timestamp with date and time
+// =========================================================
+function formatUpdatedDateTime(iso: string): string {
+  const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${day}/${month}/${year}, ${hours}:${minutes} ${ampm}`;
 }
 
 // =========================================================
@@ -163,7 +174,6 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
     );
   }
 
-  // Filter days: Show Saturday & Sunday ONLY if they have meetings
   const daysToShow = DAYS.filter((day) => {
     if (day === 'Saturday' || day === 'Sunday') {
       const hasMeetings = plan.meetings.some((m) => m.day === day);
@@ -174,152 +184,157 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
 
   const dateRange = formatDateRange(plan.startDate, plan.endDate);
 
-  // For each day, get morning and afternoon meetings
-  const dayData = daysToShow.map((day) => {
+  // Positional matrix
+  const morningPerDay: Record<string, Meeting[]> = {};
+  const afternoonPerDay: Record<string, Meeting[]> = {};
+
+  daysToShow.forEach((day) => {
     const dayMeetings = plan.meetings
       .filter((m) => m.day === day)
       .sort((a, b) => (a.timeStart || '').localeCompare(b.timeStart || ''));
 
-    const morning = dayMeetings.filter(isMorningMeeting);
-    const afternoon = dayMeetings.filter((m) => !isMorningMeeting(m));
-
-    return { day, morning, afternoon };
+    morningPerDay[day] = dayMeetings.filter(isMorningMeeting);
+    afternoonPerDay[day] = dayMeetings.filter((m) => !isMorningMeeting(m));
   });
 
-  // Group by timeStart for parallel display
-  const groupByTime = (meetings: Meeting[]): Record<string, Meeting[]> => {
-    return meetings.reduce<Record<string, Meeting[]>>((acc, meeting) => {
-      const key = meeting.timeStart || 'All Day';
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(meeting);
-      return acc;
-    }, {});
-  };
+  const maxMorningRows = Math.max(
+    0,
+    ...daysToShow.map((day) => morningPerDay[day]?.length || 0)
+  );
+  const maxAfternoonRows = Math.max(
+    0,
+    ...daysToShow.map((day) => afternoonPerDay[day]?.length || 0)
+  );
 
-  // Render meeting cards for a group — clean, flat design
-  const renderMeetingGroup = (meetings: Meeting[]) => {
-    const grouped = groupByTime(meetings);
-    return Object.entries(grouped).map(([timeStart, meetingsInGroup]) => {
-      const displayTime = formatTimeDisplay(timeStart);
+  const gridTemplateColumns = `40px repeat(${daysToShow.length}, minmax(0, 1fr))`;
 
-      return (
-        <div key={timeStart} className="mb-2 last:mb-0">
-          {/* Time label — small caps, muted, with thin rule */}
-          <div className="flex items-center gap-1 mb-1">
-            <span className="text-[10px] font-semibold text-slate-500 tracking-wide uppercase">
-              {displayTime}
-            </span>
-            <div className="flex-1 h-px bg-slate-200" />
-          </div>
-          <div className="space-y-1">
-            {meetingsInGroup.map((meeting) => (
-              <div
-                key={meeting._id}
-                className="pl-2 border-l-2"
-                style={{
-                  borderLeftColor: DIVISION_COLORS[meeting.division] || '#94a3b8',
-                  wordBreak: 'break-word',
-                }}
-              >
-                <Text weight="bold" className="block text-[11px] leading-snug text-slate-800">
-                  {meeting.title}
-                </Text>
-                {meeting.location && (
-                  <div className="text-[10px] text-slate-500 leading-snug mt-0.5">
-                    📍 {meeting.location}
-                  </div>
-                )}
+  const renderMeetingCell = (meeting: Meeting | undefined) => {
+    if (!meeting) {
+      return <div className="px-2 py-1.5 min-h-[60px]"></div>;
+    }
 
-                {/* Department + Division combined — inline */}
-                {(meeting.department || meeting.divisionName) && (
-                  <div className="flex flex-wrap items-center gap-1 mt-1">
-                    {meeting.department &&
-                      meeting.department.split(',').map((d) => {
-                        const full = d.trim();
-                        if (!full) return null;
-                        return (
-                          <AbbrBadge
-                            key={`dept-${full}`}
-                            name={full}
-                            abbr={abbrDept(full)}
-                            color="blue"
-                          />
-                        );
-                      })}
-                    {meeting.divisionName &&
-                      meeting.divisionName.split(',').map((d) => {
-                        const full = d.trim();
-                        if (!full) return null;
-                        return (
-                          <AbbrBadge
-                            key={`div-${full}`}
-                            name={full}
-                            abbr={abbrDiv(full)}
-                            color="green"
-                          />
-                        );
-                      })}
-                  </div>
-                )}
+    return (
+      <div className="px-2 py-1.5">
+        <div className="text-[13px] font-semibold text-slate-500 tracking-wide uppercase mb-0.5">
+          {formatTimeDisplay(meeting.timeStart)}
+        </div>
 
-                {/* Stakeholders */}
-                {meeting.stakeholders && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {meeting.stakeholders.split(',').map((s) => (
+        <div
+          className="pl-2 border-l-2"
+          style={{
+            borderLeftColor: DIVISION_COLORS[meeting.division] || '#94a3b8',
+            wordBreak: 'break-word',
+          }}
+        >
+          <Text weight="bold" className="block text-[14px] leading-snug text-slate-800">
+            {meeting.title}
+          </Text>
+          {meeting.location && (
+            <div className="text-[13px] text-slate-500 leading-snug mt-0.5">
+              📍 {meeting.location}
+            </div>
+          )}
+
+          {(meeting.department || meeting.divisionName) && (
+            <div className="flex flex-wrap items-center gap-1 mt-1">
+              {meeting.department &&
+                meeting.department.split(',').map((d) => {
+                  const full = d.trim();
+                  if (!full) return null;
+                  const abbr = abbrDept(full);
+                  if (abbr === 'Com') {
+                    return (
                       <Badge
-                        key={s.trim()}
+                        key={`dept-${full}`}
                         variant="solid"
-                        color="purple"
                         size="1"
+                        title={full}
                         style={{
-                          background: '#7c3aed',
+                          background: '#c9a227',
                           color: 'white',
-                          padding: '1px 6px',
+                          padding: '1px 7px',
                           borderRadius: '0',
-                          fontSize: '9px',
+                          fontSize: '11px',
                         }}
                       >
-                        👤 {s.trim()}
+                        {abbr}
                       </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    });
-  };
+                    );
+                  }
+                  return (
+                    <AbbrBadge
+                      key={`dept-${full}`}
+                      name={full}
+                      abbr={abbr}
+                      color="blue"
+                    />
+                  );
+                })}
+              {meeting.divisionName &&
+                meeting.divisionName.split(',').map((d) => {
+                  const full = d.trim();
+                  if (!full) return null;
+                  return (
+                    <AbbrBadge
+                      key={`div-${full}`}
+                      name={full}
+                      abbr={abbrDiv(full)}
+                      color="green"
+                    />
+                  );
+                })}
+            </div>
+          )}
 
-  const gridTemplateColumns = `60px repeat(${dayData.length}, minmax(0, 1fr))`;
+          {meeting.stakeholders && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {meeting.stakeholders.split(',').map((s) => (
+                <Badge
+                  key={s.trim()}
+                  variant="solid"
+                  size="1"
+                  style={{
+                    background: '#991b1b',
+                    color: 'white',
+                    padding: '1px 7px',
+                    borderRadius: '0',
+                    fontSize: '11px',
+                  }}
+                >
+                  👤 {s.trim()}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-white w-full max-w-full">
       <div className="w-full max-w-full">
         {/* ========================================================= */}
-        {/* MASTHEAD — both title lines now share the same font style */}
+        {/* MASTHEAD */}
         {/* ========================================================= */}
         <div className="border-b-2 border-slate-800 pb-3 mb-4 px-4 md:px-8 pt-6">
-          {/* Organization — bold, uppercase, letter-spaced, centered */}
           <div className="text-center">
-            <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-800">
+            <span className="text-base font-bold uppercase tracking-[0.2em] text-slate-800">
               Anti-Corruption Commission
             </span>
           </div>
 
-          {/* Title — same font style as the organization line above */}
-          <div className="text-center mt-2">
-            <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-800">
+          <div className="text-center">
+            <span className="text-base font-bold uppercase tracking-[0.2em] text-slate-800">
               Weekly Work Plan ({dateRange})
             </span>
           </div>
 
-          {/* Meta strip — single line, left-aligned, under the title */}
-          <div className="flex items-center justify-between mt-3 text-[11px] text-slate-600">
+          {/* Meta strip */}
+          <div className="flex items-center justify-between mt-3 text-[14px] text-slate-600">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="font-semibold text-slate-800">
-                Week {plan.weekNumber}, {plan.year}
+                Week {plan.weekNumber}
               </span>
               <span className="text-slate-400">|</span>
               <span>Version {plan.version}</span>
@@ -333,56 +348,46 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
               )}
             </div>
             <div className="text-slate-500 hidden sm:block">
-              Updated {new Date(plan.updatedAt).toLocaleDateString()}
+              Updated {formatUpdatedDateTime(plan.updatedAt)}
             </div>
           </div>
         </div>
 
         {/* ========================================================= */}
-        {/* MEETINGS CALENDAR — clean, no wrapper card */}
+        {/* MEETINGS CALENDAR */}
         {/* ========================================================= */}
         <div className="px-4 md:px-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              Weekly Schedule
-            </h2>
-            <div className="flex items-center gap-2 text-[10px] text-slate-500">
-              <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-              <span>Live — updates automatically</span>
-            </div>
-          </div>
-
           <div className="overflow-x-auto">
             <div
               className="grid border border-slate-300"
-              style={{
-                gridTemplateColumns,
-                gridTemplateRows: 'auto auto auto',
-              }}
+              style={{ gridTemplateColumns }}
             >
-              {/* ROW 1 — Day Headers */}
-              <div className="border-b border-r border-slate-300 bg-slate-800"></div>
-              {dayData.map(({ day }) => {
+              {/* Row 1 — Day Headers */}
+              <div className="bg-slate-800 border-b border-r border-slate-300"></div>
+              {daysToShow.map((day) => {
                 const dateDisplay = plan?.startDate ? getDateForDay(plan.startDate, day) : '';
                 return (
                   <div
                     key={`header-${day}`}
-                    className="border-b border-r border-slate-300 bg-slate-800 px-2 py-1.5 text-center text-white last:border-r-0"
+                    className="bg-slate-800 border-b border-r border-slate-300 px-2 py-1.5 text-center text-white last:border-r-0"
                   >
-                    <div className="text-[11px] font-bold uppercase tracking-wide">
+                    <div className="text-[13px] font-bold uppercase tracking-wide">
                       {day}
                     </div>
-                    <div className="text-[10px] font-normal text-slate-300">
+                    <div className="text-[12px] font-normal text-slate-300">
                       {dateDisplay}
                     </div>
                   </div>
                 );
               })}
 
-              {/* ROW 2 — MORNING label + morning content */}
-              <div className="border-b border-r border-slate-300 bg-amber-50 flex items-center justify-center py-3">
+              {/* MORNING VERTICAL LABEL */}
+              <div
+                className="bg-amber-50 border-b border-r border-slate-300 flex items-center justify-center py-3"
+                style={{ gridRow: `span ${maxMorningRows}` }}
+              >
                 <span
-                  className="text-[10px] font-bold text-amber-700 tracking-[0.25em]"
+                  className="text-[12px] font-bold text-amber-700 tracking-[0.25em]"
                   style={{
                     writingMode: 'vertical-rl',
                     transform: 'rotate(180deg)',
@@ -392,28 +397,28 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
                 </span>
               </div>
 
-              {dayData.map(({ day, morning }) => {
-                const hasMorning = morning.length > 0;
-                return (
-                  <div
-                    key={`am-${day}`}
-                    className="border-b border-r border-slate-300 p-2 last:border-r-0 align-top"
-                  >
-                    {hasMorning ? (
-                      <div>{renderMeetingGroup(morning)}</div>
-                    ) : (
-                      <div className="flex items-center justify-center h-12 text-[10px] text-slate-300 italic">
-                        no meetings
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {/* MORNING meeting rows */}
+              {Array.from({ length: maxMorningRows }).map((_, rowIndex) =>
+                daysToShow.map((day) => {
+                  const meeting = morningPerDay[day]?.[rowIndex];
+                  return (
+                    <div
+                      key={`am-${rowIndex}-${day}`}
+                      className="border-b border-r border-dashed border-slate-300 align-top last:border-r-0"
+                    >
+                      {renderMeetingCell(meeting)}
+                    </div>
+                  );
+                })
+              )}
 
-              {/* ROW 3 — AFTERNOON label + afternoon content */}
-              <div className="border-r border-slate-300 bg-blue-50 flex items-center justify-center py-3">
+              {/* AFTERNOON VERTICAL LABEL */}
+              <div
+                className="bg-blue-50 border-r border-slate-300 flex items-center justify-center py-3"
+                style={{ gridRow: `span ${maxAfternoonRows}` }}
+              >
                 <span
-                  className="text-[10px] font-bold text-blue-700 tracking-[0.25em]"
+                  className="text-[12px] font-bold text-blue-700 tracking-[0.25em]"
                   style={{
                     writingMode: 'vertical-rl',
                     transform: 'rotate(180deg)',
@@ -423,47 +428,44 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
                 </span>
               </div>
 
-              {dayData.map(({ day, afternoon }) => {
-                const hasAfternoon = afternoon.length > 0;
-                return (
-                  <div
-                    key={`pm-${day}`}
-                    className="border-r border-slate-300 p-2 last:border-r-0 align-top min-h-[80px]"
-                  >
-                    {hasAfternoon ? (
-                      <div>{renderMeetingGroup(afternoon)}</div>
-                    ) : (
-                      <div className="flex items-center justify-center h-12 text-[10px] text-slate-300 italic">
-                        no meetings
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {/* AFTERNOON meeting rows */}
+              {Array.from({ length: maxAfternoonRows }).map((_, rowIndex) =>
+                daysToShow.map((day) => {
+                  const meeting = afternoonPerDay[day]?.[rowIndex];
+                  return (
+                    <div
+                      key={`pm-${rowIndex}-${day}`}
+                      className="border-b border-r border-dashed border-slate-300 align-top last:border-r-0"
+                    >
+                      {renderMeetingCell(meeting)}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
 
         {/* ========================================================= */}
-        {/* WEEK-LONG TASKS — clean, no border */}
+        {/* WEEK-LONG TASKS */}
         {/* ========================================================= */}
         {plan.tasks && plan.tasks.length > 0 && (
           <div className="px-4 md:px-8 mt-6">
             <div className="flex items-center gap-2 mb-2">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+              <h2 className="text-base font-bold uppercase tracking-wider text-slate-700">
                 Week-long Tasks
               </h2>
-              <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 font-semibold">
+              <span className="text-[11px] bg-amber-100 text-amber-800 px-2 py-0.5 font-semibold">
                 {plan.tasks.length}
               </span>
             </div>
             <div className="border-t border-slate-200 pt-3 space-y-1.5">
               {plan.tasks.map((task, index) => (
                 <div key={index} className="flex items-start gap-2">
-                  <span className="text-amber-600 text-[11px] font-bold mt-0.5">
+                  <span className="text-amber-600 text-[13px] font-bold mt-0.5">
                     {String(index + 1).padStart(2, '0')}
                   </span>
-                  <Text size="2" className="text-slate-700 leading-relaxed">
+                  <Text size="2" className="text-slate-700 leading-relaxed text-[14px]">
                     {task}
                   </Text>
                 </div>
@@ -473,15 +475,15 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
         )}
 
         {/* ========================================================= */}
-        {/* LEGEND — clean, no border, muted */}
+        {/* LEGEND */}
         {/* ========================================================= */}
         {plan.legend && plan.legend.length > 0 && (
           <div className="px-4 md:px-8 mt-6">
             <div className="flex items-center gap-2 mb-2">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+              <h2 className="text-base font-bold uppercase tracking-wider text-slate-700">
                 Legend
               </h2>
-              <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 font-semibold">
+              <span className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 font-semibold">
                 {plan.legend.length}
               </span>
             </div>
@@ -490,7 +492,7 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
                 {plan.legend.map((item, index) => (
                   <div
                     key={index}
-                    className="flex items-baseline gap-2 text-[12px] py-0.5"
+                    className="flex items-baseline gap-2 text-[14px] py-0.5"
                   >
                     <span className="font-semibold text-slate-800 min-w-[44px]">
                       {item.key}
@@ -505,10 +507,10 @@ export default function PublicWeeklyPlanView(): React.ReactElement {
         )}
 
         {/* ========================================================= */}
-        {/* FOOTER — subtle, formal */}
+        {/* FOOTER */}
         {/* ========================================================= */}
         <div className="px-4 md:px-8 mt-8 mb-6 pt-4 border-t border-slate-200">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] text-slate-500">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[12px] text-slate-500">
             <div>
               This is an automated schedule from the Planning Office
               {plan.status === 'draft' && ' — draft version'}

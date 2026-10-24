@@ -3,7 +3,7 @@
 import React, { FormEvent, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
-import { FaPlus, FaTrash, FaCopy, FaEdit, FaTimes, FaSearch, FaChevronDown } from 'react-icons/fa';
+import { FaPlus, FaTrash, FaCopy, FaEdit, FaTimes, FaSearch, FaChevronDown, FaGripVertical } from 'react-icons/fa';
 import AbbrBadge from '@/components/AbbrBadge';
 import { abbrDept, abbrDiv } from '@/lib/abbreviations';
 import {
@@ -23,6 +23,23 @@ import {
   Text,
   TextField,
 } from '@radix-ui/themes';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // ============================================
 // TYPES
@@ -55,6 +72,56 @@ interface WeekPlan {
   version: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// =========================================================
+// SORTABLE ROW WRAPPER
+// =========================================================
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 10 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 ${
+        isDragging ? 'bg-slate-100 rounded shadow-sm' : ''
+      }`}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing p-1 touch-none"
+        title="Drag to reorder"
+        aria-label="Drag to reorder"
+      >
+        <FaGripVertical size={12} />
+      </button>
+      {children}
+    </div>
+  );
 }
 
 // =========================================================
@@ -368,7 +435,7 @@ function getDateForDay(startDateStr: string, dayName: string): string {
   const ordinal = (n: number): string => {
     const s = ['th', 'st', 'nd', 'rd'];
     const v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+    return n + (v % 10 === 1 && v !== 11 ? s[1] : v % 10 === 2 && v !== 12 ? s[2] : v % 10 === 3 && v !== 13 ? s[3] : s[0]);
   };
 
   return `${ordinal(day)} ${month}`;
@@ -413,7 +480,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
   const [timeStart12, setTimeStart12] = useState({ hour: 9, minute: '00', ampm: 'AM' });
   const [timeEnd12, setTimeEnd12] = useState({ hour: 10, minute: '00', ampm: 'AM' });
 
-  // External venue flag — when true, hide dropdown, show free-text input
   const [isExternalVenue, setIsExternalVenue] = useState<boolean>(false);
 
   const [customDivision, setCustomDivision] = useState<string>('');
@@ -428,6 +494,18 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
 
   const [divisions, setDivisions] = useState<string[]>([]);
   const [divisionsLoading, setDivisionsLoading] = useState<boolean>(true);
+
+  // =========================================================
+  // DnD SENSORS
+  // =========================================================
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     setFormData((prev) => ({
@@ -558,7 +636,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     setIsAllDay(isAllDayMeeting);
     setFormData({ ...meeting });
 
-    // If the saved venue isn't in the internal list, mark it as external
     const venueIsInternal = meeting.location && LOCATION_OPTIONS.includes(meeting.location);
     setIsExternalVenue(!!meeting.location && !venueIsInternal);
 
@@ -608,7 +685,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
       ...formData,
       timeStart: start24,
       timeEnd: end24,
-      // location is already stored in formData.location (either pick from dropdown, or typed in external field)
       division: finalDivision,
     };
 
@@ -736,6 +812,14 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     const updated = tasks.filter((_, i) => i !== index);
     setTasks(updated);
   };
+  const handleTaskDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = Number(active.id);
+    const newIndex = Number(over.id);
+    if (isNaN(oldIndex) || isNaN(newIndex)) return;
+    setTasks(arrayMove(tasks, oldIndex, newIndex));
+  };
 
   const addLegendItem = () => {
     setLegendItems([...legendItems, { key: '', value: '' }]);
@@ -749,6 +833,14 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
     if (!window.confirm('Delete this legend item?')) return;
     const updated = legendItems.filter((_, i) => i !== index);
     setLegendItems(updated);
+  };
+  const handleLegendDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = Number(active.id);
+    const newIndex = Number(over.id);
+    if (isNaN(oldIndex) || isNaN(newIndex)) return;
+    setLegendItems(arrayMove(legendItems, oldIndex, newIndex));
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -1039,12 +1131,26 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                                       {meeting.title || '(Untitled)'}
                                     </Text>
 
-                                    <Text size="1" color="gray">
-                                      🏢 {meeting.division || '—'}
-                                    </Text>
+                                    {meeting.division && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        <Badge
+                                          variant="solid"
+                                          size="1"
+                                          style={{
+                                            background: '#c9a227',
+                                            color: 'white',
+                                            padding: '2px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '10px',
+                                          }}
+                                        >
+                                          Com
+                                        </Badge>
+                                      </div>
+                                    )}
 
                                     {meeting.location && (
-                                      <Text size="1" color="gray">
+                                      <Text size="1" color="gray" className="block mt-0.5">
                                         📍 {meeting.location}
                                       </Text>
                                     )}
@@ -1054,11 +1160,31 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                                         {meeting.department.split(',').map((d) => {
                                           const full = d.trim();
                                           if (!full) return null;
+                                          const abbr = abbrDept(full);
+                                          if (abbr === 'Com') {
+                                            return (
+                                              <Badge
+                                                key={full}
+                                                variant="solid"
+                                                size="1"
+                                                title={full}
+                                                style={{
+                                                  background: '#c9a227',
+                                                  color: 'white',
+                                                  padding: '2px 8px',
+                                                  borderRadius: '4px',
+                                                  fontSize: '10px',
+                                                }}
+                                              >
+                                                {abbr}
+                                              </Badge>
+                                            );
+                                          }
                                           return (
                                             <AbbrBadge
                                               key={full}
                                               name={full}
-                                              abbr={abbrDept(full)}
+                                              abbr={abbr}
                                               color="blue"
                                             />
                                           );
@@ -1089,10 +1215,9 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                                           <Badge
                                             key={s.trim()}
                                             variant="solid"
-                                            color="purple"
                                             size="1"
                                             style={{
-                                              background: '#7c3aed',
+                                              background: '#991b1b',
                                               color: 'white',
                                               padding: '2px 8px',
                                               borderRadius: '4px',
@@ -1136,32 +1261,43 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                     <FaPlus /> Add Task
                   </Button>
                 </Flex>
-                <div className="space-y-2">
-                  {tasks.map((task, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={task}
-                        onChange={(e) => updateTask(index, e.target.value)}
-                        placeholder="Enter task description..."
-                        className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => deleteTask(index)}
-                        className="text-red-400 hover:text-red-600 p-1"
-                        title="Delete task"
-                      >
-                        <FaTrash size={14} />
-                      </button>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleTaskDragEnd}
+                >
+                  <SortableContext
+                    items={tasks.map((_, i) => String(i))}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-2">
+                      {tasks.map((task, index) => (
+                        <SortableRow key={index} id={String(index)}>
+                          <input
+                            type="text"
+                            value={task}
+                            onChange={(e) => updateTask(index, e.target.value)}
+                            placeholder="Enter task description..."
+                            className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => deleteTask(index)}
+                            className="text-red-400 hover:text-red-600 p-1"
+                            title="Delete task"
+                          >
+                            <FaTrash size={14} />
+                          </button>
+                        </SortableRow>
+                      ))}
+                      {tasks.length === 0 && (
+                        <Text size="2" color="gray" align="center" className="py-2">
+                          No tasks added yet. Click "Add Task" to create one.
+                        </Text>
+                      )}
                     </div>
-                  ))}
-                  {tasks.length === 0 && (
-                    <Text size="2" color="gray" align="center" className="py-2">
-                      No tasks added yet. Click "Add Task" to create one.
-                    </Text>
-                  )}
-                </div>
+                  </SortableContext>
+                </DndContext>
               </Box>
 
               <Box>
@@ -1176,40 +1312,51 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                     <FaPlus /> Add Legend Entry
                   </Button>
                 </Flex>
-                <div className="space-y-2">
-                  {legendItems.map((item, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={item.key}
-                        onChange={(e) => updateLegendItem(index, 'key', e.target.value)}
-                        placeholder="Acronym (e.g., ACC)"
-                        className="w-32 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                      <span className="text-slate-400">→</span>
-                      <input
-                        type="text"
-                        value={item.value}
-                        onChange={(e) => updateLegendItem(index, 'value', e.target.value)}
-                        placeholder="Full form (e.g., Anti-Corruption Commission)"
-                        className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => deleteLegendItem(index)}
-                        className="text-red-400 hover:text-red-600 p-1"
-                        title="Delete legend item"
-                      >
-                        <FaTrash size={14} />
-                      </button>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleLegendDragEnd}
+                >
+                  <SortableContext
+                    items={legendItems.map((_, i) => String(i))}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-2">
+                      {legendItems.map((item, index) => (
+                        <SortableRow key={index} id={String(index)}>
+                          <input
+                            type="text"
+                            value={item.key}
+                            onChange={(e) => updateLegendItem(index, 'key', e.target.value)}
+                            placeholder="Acronym (e.g., ACC)"
+                            className="w-32 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          />
+                          <span className="text-slate-400">→</span>
+                          <input
+                            type="text"
+                            value={item.value}
+                            onChange={(e) => updateLegendItem(index, 'value', e.target.value)}
+                            placeholder="Full form (e.g., Anti-Corruption Commission)"
+                            className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => deleteLegendItem(index)}
+                            className="text-red-400 hover:text-red-600 p-1"
+                            title="Delete legend item"
+                          >
+                            <FaTrash size={14} />
+                          </button>
+                        </SortableRow>
+                      ))}
+                      {legendItems.length === 0 && (
+                        <Text size="2" color="gray" align="center" className="py-2">
+                          No legend entries added yet. Click "Add Legend Entry" to create one.
+                        </Text>
+                      )}
                     </div>
-                  ))}
-                  {legendItems.length === 0 && (
-                    <Text size="2" color="gray" align="center" className="py-2">
-                      No legend entries added yet. Click "Add Legend Entry" to create one.
-                    </Text>
-                  )}
-                </div>
+                  </SortableContext>
+                </DndContext>
               </Box>
 
               <Separator size="4" />
@@ -1440,15 +1587,11 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   />
                 </div>
 
-                {/* ========================================================= */}
-                {/* MEETING VENUE — internal dropdown OR external free-text     */}
-                {/* ========================================================= */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Meeting Venue
                   </Text>
 
-                  {/* External venue toggle */}
                   <div className="flex items-center gap-2 mb-2">
                     <input
                       type="checkbox"
@@ -1456,7 +1599,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                       checked={isExternalVenue}
                       onChange={(e) => {
                         setIsExternalVenue(e.target.checked);
-                        // Clear the venue when switching modes, so stale values don't carry over
                         setFormData({ ...formData, location: '' });
                       }}
                       className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
@@ -1467,7 +1609,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                   </div>
 
                   {isExternalVenue ? (
-                    // Free-text input for external venue
                     <input
                       type="text"
                       value={formData.location}
@@ -1476,7 +1617,6 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                       className="w-full border-2 border-amber-300 rounded px-3 py-2 bg-amber-50 focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                     />
                   ) : (
-                    // Internal venue dropdown
                     <SearchableSelect
                       value={formData.location}
                       onChange={(val) => setFormData({ ...formData, location: val })}
@@ -1585,12 +1725,12 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                         }
                       }}
                       placeholder="External Attendees"
-                      className="flex-1 border border-slate-300 rounded px-3 py-2 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                      className="flex-1 border border-slate-300 rounded px-3 py-2 focus:border-red-500 focus:ring-2 focus:ring-red-200"
                     />
                     <button
                       type="button"
                       onClick={addStakeholder}
-                      className="px-4 py-2 rounded-full bg-purple-500 hover:bg-purple-600 text-white font-bold flex items-center justify-center"
+                      className="px-4 py-2 rounded-full bg-red-700 hover:bg-red-800 text-white font-bold flex items-center justify-center"
                     >
                       <FaPlus size={12} className="mr-1" /> Add
                     </button>
@@ -1601,11 +1741,10 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                         <Badge
                           key={s}
                           variant="solid"
-                          color="purple"
                           size="1"
                           className="flex items-center gap-1"
                           style={{
-                            background: '#7c3aed',
+                            background: '#991b1b',
                             color: 'white',
                             padding: '2px 8px',
                             borderRadius: '4px',
@@ -1616,7 +1755,7 @@ export default function AddWeeklyPlanPage(): React.ReactElement {
                           <button
                             type="button"
                             onClick={() => removeStakeholder(s)}
-                            className="text-white hover:text-purple-200 rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none hover:bg-purple-600"
+                            className="text-white hover:text-red-200 rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none hover:bg-red-800"
                           >
                             ✕
                           </button>

@@ -2,98 +2,76 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Loader2, ArrowLeft, Save, Plus, Trash2, X, Check } from "lucide-react";
-import RoomPhotoUploader, { RoomPhoto } from "@/components/room-booking/RoomPhotoUploader";
-import BedStatusBadge from "@/components/room-booking/BedStatusBadge";
+import { ArrowLeft, Loader2, Save, Upload, QrCode, Trash2 } from "lucide-react";
 
-interface Bed {
-  _id: string;
-  bedLabel: string;
-  bedTypeCode: string;
-  status: string;
-  rates: { tier1: number; tier2: number; tier3: number; tier4: number; tier5: number };
-  notes?: string | null;
-}
+const AVAILABLE_AMENITIES = [
+  "Chair",
+  "WiFi",
+  "Air Conditioning",
+  "Room Heater",
+  "Hot Water",
+  "Smart TV",
+  "Bathtub",
+  "Mini Fridge",
+  "Balcony",
+  "Work Desk",
+  "Wardrobe",
+];
 
-interface Room {
-  _id: string;
-  roomNumber: string;
-  roomName: string;
-  roomTypeCode: string;
-  roomTypeName: string;
-  floor: number;
-  areaSqm: number;
-  description: string;
-  amenities: string[];
-  wifiPassword: string;
-  emergencyContact: string;
-  photos: RoomPhoto[];
-  beds: Bed[];
-  status: string;
-}
-
-interface MasterItem {
-  _id: string;
-  code: string;
-  name: string;
-}
-
-export default function AdminEditRoomPage() {
+export default function EditRoomPage() {
   const router = useRouter();
   const params = useParams();
   const roomId = params?.id as string;
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  const [room, setRoom] = useState<Room | null>(null);
-  const [roomTypes, setRoomTypes] = useState<MasterItem[]>([]);
-  const [bedTypes, setBedTypes] = useState<MasterItem[]>([]);
-  const [amenities, setAmenities] = useState<MasterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
-
-  const [bedForm, setBedForm] = useState({
-    bedLabel: "",
-    bedTypeCode: "SINGLE",
-    rates: { tier1: 0, tier2: 0, tier3: 0, tier4: 0, tier5: 0 },
+  
+  // Form State
+  const [form, setForm] = useState({
+    roomNumber: "",
+    roomName: "",
+    roomTypeCode: "STANDARD",
+    floor: 1,
+    areaSqm: 20,
+    wifiPassword: "",
+    emergencyContact: "",
+    description: "",
+    amenities: [] as string[],
   });
-  const [showBedForm, setShowBedForm] = useState(false);
-
-  const notify = (message: string, type: "success" | "error") => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [roomRes, typesRes, bedsRes, amenRes] = await Promise.all([
-        fetch(`/api/room-booking/rooms/${roomId}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/room-booking/master/room-types", { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/room-booking/master/bed-types", { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/room-booking/master/amenities", { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
-      const roomData = await roomRes.json();
-      const typesData = await typesRes.json();
-      const bedsData = await bedsRes.json();
-      const amenData = await amenRes.json();
-      setRoom(roomData.room);
-      setRoomTypes(typesData.items || []);
-      setBedTypes(bedsData.items || []);
-      setAmenities(amenData.items || []);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    if (roomId) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+    async function loadRoom() {
+      try {
+        const res = await fetch(`/api/room-booking/rooms/${roomId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to load room");
+        const data = await res.json();
+        
+        // Populate the form with existing data
+        setForm({
+          roomNumber: data.room.roomNumber || "",
+          roomName: data.room.roomName || "",
+          roomTypeCode: data.room.roomTypeCode || "STANDARD",
+          floor: data.room.floor || 1,
+          areaSqm: data.room.areaSqm || 20,
+          wifiPassword: data.room.wifiPassword || "",
+          emergencyContact: data.room.emergencyContact || "",
+          description: data.room.description || "",
+          amenities: data.room.amenities || [],
+        });
+      } catch (err) {
+        console.error(err);
+        alert("Error loading room details");
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (roomId) loadRoom();
+  }, [roomId, token]);
 
-  const handleSaveRoom = async () => {
-    if (!room) return;
+  const handleSave = async () => {
     setSaving(true);
     try {
       const res = await fetch(`/api/room-booking/rooms/${roomId}`, {
@@ -102,339 +80,166 @@ export default function AdminEditRoomPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          roomNumber: room.roomNumber,
-          roomName: room.roomName,
-          roomTypeCode: room.roomTypeCode,
-          floor: room.floor,
-          areaSqm: room.areaSqm,
-          description: room.description,
-          amenities: room.amenities,
-          wifiPassword: room.wifiPassword,
-          emergencyContact: room.emergencyContact,
-          status: room.status,
-        }),
+        body: JSON.stringify(form),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Save failed");
-      }
-      notify("Room updated", "success");
-    } catch (err: any) {
-      notify(err.message, "error");
+      if (!res.ok) throw new Error("Failed to save room");
+      alert("Room updated successfully!");
+      router.refresh();
+    } catch (err) {
+      alert("Error saving room");
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleAmenity = (code: string) => {
-    if (!room) return;
-    setRoom({
-      ...room,
-      amenities: room.amenities.includes(code)
-        ? room.amenities.filter((a) => a !== code)
-        : [...room.amenities, code],
+  const toggleAmenity = (amenity: string) => {
+    setForm((prev) => {
+      const isSelected = prev.amenities.includes(amenity);
+      if (isSelected) {
+        return { ...prev, amenities: prev.amenities.filter((a) => a !== amenity) };
+      } else {
+        return { ...prev, amenities: [...prev.amenities, amenity] };
+      }
     });
   };
 
-  const handleAddBed = async () => {
-    if (!bedForm.bedLabel) {
-      notify("Bed label required", "error");
-      return;
-    }
-    try {
-      const res = await fetch("/api/room-booking/beds", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          roomId,
-          bedLabel: bedForm.bedLabel,
-          bedTypeCode: bedForm.bedTypeCode,
-          rates: bedForm.rates,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Add failed");
-      }
-      notify("Bed added", "success");
-      setBedForm({ bedLabel: "", bedTypeCode: "SINGLE", rates: { tier1: 0, tier2: 0, tier3: 0, tier4: 0, tier5: 0 } });
-      setShowBedForm(false);
-      load();
-    } catch (err: any) {
-      notify(err.message, "error");
-    }
-  };
-
-  const handleDeleteBed = async (bedId: string) => {
-    if (!confirm("Delete this bed?")) return;
-    try {
-      const res = await fetch(`/api/room-booking/beds/${bedId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || "Delete failed");
-        return;
-      }
-      load();
-    } catch {
-      alert("Delete failed");
-    }
-  };
-
-  if (loading || !room) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="animate-spin" size={28} />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="animate-spin text-gray-400" size={32} />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      {notification && (
-        <div
-          className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-lg text-white ${
-            notification.type === "success" ? "bg-green-600" : "bg-red-600"
-          }`}
-        >
-          {notification.message}
+      <div className="max-w-5xl mx-auto">
+        
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <button
+            onClick={() => router.back()}
+            className="p-2 bg-white border border-gray-200 rounded-full hover:bg-gray-100 transition"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Edit Room {form.roomNumber}
+            </h1>
+          </div>
         </div>
-      )}
 
-      <div className="max-w-4xl mx-auto">
-        <button
-          onClick={() => router.push("/room-booking/admin/rooms")}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-black mb-4"
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
-
-        <div className="bg-white rounded-xl border p-6 mb-6">
-          <h1 className="text-xl font-bold mb-4">Edit Room {room.roomNumber}</h1>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium">Room Number</label>
-              <input
-                value={room.roomNumber}
-                onChange={(e) => setRoom({ ...room, roomNumber: e.target.value })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              />
+        <div className="space-y-6">
+          {/* Main Form Card */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Room Number</label>
+                <input
+                  type="text"
+                  value={form.roomNumber}
+                  onChange={(e) => setForm({ ...form, roomNumber: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Room Name</label>
+                <input
+                  type="text"
+                  value={form.roomName}
+                  onChange={(e) => setForm({ ...form, roomName: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Floor</label>
+                <input
+                  type="number"
+                  value={form.floor}
+                  onChange={(e) => setForm({ ...form, floor: Number(e.target.value) })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">WiFi Password</label>
+                <input
+                  type="text"
+                  value={form.wifiPassword}
+                  onChange={(e) => setForm({ ...form, wifiPassword: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black outline-none"
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-sm font-medium">Room Name</label>
-              <input
-                value={room.roomName}
-                onChange={(e) => setRoom({ ...room, roomName: e.target.value })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              />
+
+            {/* RESTORED AMENITIES SECTION */}
+            <div className="mt-6 pt-6 border-t border-gray-100">
+              <label className="block text-sm font-medium text-gray-700 mb-3">Amenities</label>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_AMENITIES.map((amenity) => {
+                  const isSelected = form.amenities.includes(amenity);
+                  return (
+                    <button
+                      key={amenity}
+                      type="button"
+                      onClick={() => toggleAmenity(amenity)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        isSelected
+                          ? "bg-black text-white border-black"
+                          : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      {isSelected && "✓ "}
+                      {amenity}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div>
-              <label className="text-sm font-medium">Room Type</label>
-              <select
-                value={room.roomTypeCode}
-                onChange={(e) => setRoom({ ...room, roomTypeCode: e.target.value })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
+
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2 bg-black text-white rounded-md text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
               >
-                {roomTypes.map((t) => (
-                  <option key={t.code} value={t.code}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Status</label>
-              <select
-                value={room.status}
-                onChange={(e) => setRoom({ ...room, status: e.target.value })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="MAINTENANCE">Maintenance</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Floor</label>
-              <input
-                type="number"
-                value={room.floor}
-                onChange={(e) => setRoom({ ...room, floor: Number(e.target.value) })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Area (sq.m)</label>
-              <input
-                type="number"
-                value={room.areaSqm}
-                onChange={(e) => setRoom({ ...room, areaSqm: Number(e.target.value) })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">WiFi Password</label>
-              <input
-                value={room.wifiPassword}
-                onChange={(e) => setRoom({ ...room, wifiPassword: e.target.value })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Emergency Contact</label>
-              <input
-                value={room.emergencyContact}
-                onChange={(e) => setRoom({ ...room, emergencyContact: e.target.value })}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="text-sm font-medium">Description</label>
-              <textarea
-                value={room.description}
-                onChange={(e) => setRoom({ ...room, description: e.target.value })}
-                rows={2}
-                className="w-full border rounded-md px-3 py-2 mt-1 text-sm"
-              />
+                {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                Save Room
+              </button>
             </div>
           </div>
 
-          <div className="mt-4">
-            <label className="text-sm font-medium mb-2 block">Amenities</label>
-            <div className="flex flex-wrap gap-2">
-              {amenities.map((a) => {
-                const isActive = room.amenities.includes(a.code);
-                return (
-                  <button
-                    key={a.code}
-                    onClick={() => toggleAmenity(a.code)}
-                    className={`text-xs px-2.5 py-1 rounded-full border ${
-                      isActive ? "bg-black text-white border-black" : "bg-white text-gray-700"
-                    }`}
-                  >
-                    {isActive && <Check size={10} className="inline mr-1" />}
-                    {a.name}
-                  </button>
-                );
-              })}
+          {/* QR CODE SECTION */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <QrCode size={20} /> Room QR Code
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                This QR code is used by guests to quickly view room amenities and check-in details.
+              </p>
+            </div>
+            
+            {/* Display the QR code image. Ensure your database returns 'qrCodeUrl' */}
+            <div className="flex flex-col items-center gap-3">
+               <div className="w-32 h-32 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                 {/* Replace the span below with an actual img tag if you have the QR URL in your DB */}
+                 {/* <img src={`/api/room-booking/rooms/${roomId}/qrcode`} alt="Room QR" className="w-full h-full p-2" /> */}
+                 <span className="text-xs text-gray-400 text-center px-2">QR Code<br/>Generation</span>
+               </div>
+               <button className="text-xs text-blue-600 hover:underline">Download QR</button>
             </div>
           </div>
 
-          <div className="flex justify-end mt-6">
-            <button
-              onClick={handleSaveRoom}
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-md text-sm disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-              Save Room
-            </button>
-          </div>
-        </div>
-
-        {/* Photos */}
-        <div className="mb-6">
-          <RoomPhotoUploader
-            roomId={room._id}
-            photos={room.photos || []}
-            onChange={(photos) => setRoom({ ...room, photos })}
-          />
-        </div>
-
-        {/* Beds */}
-        <div className="bg-white rounded-xl border p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Beds ({room.beds.length})</h2>
-            <button
-              onClick={() => setShowBedForm(!showBedForm)}
-              className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs"
-            >
-              {showBedForm ? <X size={14} /> : <Plus size={14} />}
-              {showBedForm ? "Cancel" : "Add Bed"}
-            </button>
-          </div>
-
-          {showBedForm && (
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs font-medium">Label</label>
-                  <input
-                    value={bedForm.bedLabel}
-                    onChange={(e) => setBedForm({ ...bedForm, bedLabel: e.target.value })}
-                    placeholder="A / B / 1 / 2"
-                    className="w-full border rounded px-2 py-1.5 text-sm mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Type</label>
-                  <select
-                    value={bedForm.bedTypeCode}
-                    onChange={(e) => setBedForm({ ...bedForm, bedTypeCode: e.target.value })}
-                    className="w-full border rounded px-2 py-1.5 text-sm mt-1"
-                  >
-                    {bedTypes.map((b) => (
-                      <option key={b.code} value={b.code}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="mt-3">
-                <p className="text-xs font-medium mb-2">Rates (per night)</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {(["tier1", "tier2", "tier3", "tier4", "tier5"] as const).map((t) => (
-                    <input
-                      key={t}
-                      type="number"
-                      value={bedForm.rates[t]}
-                      onChange={(e) =>
-                        setBedForm({ ...bedForm, rates: { ...bedForm.rates, [t]: Number(e.target.value) } })
-                      }
-                      placeholder={t}
-                      className="border rounded px-2 py-1 text-xs"
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex justify-end mt-3">
-                <button
-                  onClick={handleAddBed}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-black text-white rounded-md text-xs"
-                >
-                  <Plus size={12} /> Add
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            {room.beds.map((b) => (
-              <div key={b._id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div>
-                  <p className="font-medium text-sm">Bed {b.bedLabel} · {b.bedTypeCode}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    T1: {b.rates?.tier1} · T2: {b.rates?.tier2} · T3: {b.rates?.tier3} · T4: {b.rates?.tier4} · T5: {b.rates?.tier5}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <BedStatusBadge status={b.status} size="sm" />
-                  <button
-                    onClick={() => handleDeleteBed(b._id)}
-                    disabled={b.status === "OCCUPIED"}
-                    className="p-1.5 hover:bg-red-50 text-red-600 rounded disabled:opacity-30"
-                    title="Delete"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>

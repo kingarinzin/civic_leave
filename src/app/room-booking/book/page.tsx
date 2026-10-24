@@ -15,6 +15,9 @@ function BookPageInner() {
   const preselectedBedIds = (searchParams.get("bedIds") || "")
     .split(",")
     .filter(Boolean);
+    
+  // Check if the page is being rendered inside the Modal iframe
+  const isEmbedded = searchParams.get("embedded") === "true";
 
   const [room, setRoom] = useState<any>(null);
   const [beds, setBeds] = useState<any[]>([]);
@@ -48,18 +51,25 @@ function BookPageInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="animate-spin" size={32} />
+      <div className={isEmbedded ? "flex py-20 items-center justify-center" : "min-h-screen flex items-center justify-center"}>
+        <Loader2 className="animate-spin text-black" size={32} />
       </div>
     );
   }
 
   if (error || !room) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3">
+      <div className={isEmbedded ? "flex py-20 flex-col items-center justify-center gap-3" : "min-h-screen flex flex-col items-center justify-center gap-3"}>
         <p className="text-gray-600">{error || "Room not found"}</p>
         <button
-          onClick={() => router.push("/room-booking")}
+          onClick={() => {
+            if (isEmbedded) {
+              // If inside iframe, ask parent to close modal
+              window.parent.postMessage("close-modal", "*");
+            } else {
+              router.push("/room-booking");
+            }
+          }}
           className="text-sm text-blue-600 hover:underline"
         >
           ← Back to room list
@@ -69,15 +79,20 @@ function BookPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-3xl mx-auto mb-4">
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-black"
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
-      </div>
+    <div className={isEmbedded ? "p-4 sm:p-6" : "min-h-screen bg-gray-50 p-6"}>
+      
+      {/* Hide the Back button completely if inside the modal */}
+      {!isEmbedded && (
+        <div className="max-w-3xl mx-auto mb-4">
+          <button
+            onClick={() => router.back()}
+            className="flex items-center gap-2 text-sm text-gray-600 hover:text-black"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+        </div>
+      )}
+
       <BookingWizard
         room={room}
         beds={beds}

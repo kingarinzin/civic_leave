@@ -22,7 +22,24 @@ import {
   TextField,
   Separator,
 } from '@radix-ui/themes';
-import { FaArrowLeft, FaEdit, FaSave, FaTrash, FaCopy, FaPlus, FaTimes, FaSearch, FaChevronDown } from 'react-icons/fa';
+import { FaArrowLeft, FaEdit, FaSave, FaTrash, FaCopy, FaPlus, FaTimes, FaSearch, FaChevronDown, FaGripVertical } from 'react-icons/fa';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // ============================================
 // TYPES
@@ -54,6 +71,62 @@ interface WeekPlan {
   status: 'draft' | 'sent' | 'updated';
   version: number;
   updatedAt: string;
+}
+
+// =========================================================
+// SORTABLE ROW WRAPPER
+// ---------------------------------------------------------
+// Wraps a row (Legend entry or Task) and makes it draggable
+// via a grip handle on the left. Only the handle initiates
+// drag, so inputs inside the row remain clickable normally.
+// =========================================================
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 10 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 ${
+        isDragging ? 'bg-slate-100 rounded shadow-sm' : ''
+      }`}
+    >
+      {/* Drag handle — the only element that initiates the drag */}
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing p-1 touch-none"
+        title="Drag to reorder"
+        aria-label="Drag to reorder"
+      >
+        <FaGripVertical size={12} />
+      </button>
+
+      {children}
+    </div>
+  );
 }
 
 // =========================================================
@@ -97,7 +170,7 @@ function getDateForDay(startDateStr: string, dayName: string): string {
   const ordinal = (n: number): string => {
     const s = ['th', 'st', 'nd', 'rd'];
     const v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+    return n + (v % 10 === 1 && v !== 11 ? s[1] : v % 10 === 2 && v !== 12 ? s[2] : v % 10 === 3 && v !== 13 ? s[3] : s[0]);
   };
   return `${ordinal(day)} ${month}`;
 }
@@ -362,10 +435,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [saving, setSaving] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
 
-  // NOTE: The old `customLocation` Record<string, string> map has been removed.
-  // External venues now flow through formData.location → plan.meetings directly.
-  // No separate map, no override logic, no stale data.
-
   const [departments, setDepartments] = useState<string[]>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState<boolean>(true);
   const [divisions, setDivisions] = useState<string[]>([]);
@@ -378,7 +447,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isAllDay, setIsAllDay] = useState<boolean>(false);
 
-  // External venue flag — when true, hide dropdown, show free-text input
   const [isExternalVenue, setIsExternalVenue] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<Meeting>({
@@ -403,6 +471,18 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [showCustomDepartment, setShowCustomDepartment] = useState<boolean>(false);
   const [customDepartmentInput, setCustomDepartmentInput] = useState<string>('');
+
+  // =========================================================
+  // DnD SENSORS
+  // =========================================================
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     setFormData((prev) => ({
@@ -481,7 +561,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       setMessage('');
       const token = localStorage.getItem('token');
 
-      // Send plan.meetings directly — no customLocation override logic
       const res = await fetch(`/api/weekly-plans/${id}`, {
         method: 'PUT',
         headers: {
@@ -571,7 +650,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setIsAllDay(isAllDayMeeting);
     setFormData({ ...meeting });
 
-    // If the saved venue isn't in the internal list, mark it as external
     const venueIsInternal = meeting.location && LOCATION_OPTIONS.includes(meeting.location);
     setIsExternalVenue(!!meeting.location && !venueIsInternal);
 
@@ -611,7 +689,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       ...formData,
       timeStart: start24,
       timeEnd: end24,
-      // location comes straight from formData — either the dropdown or the external text field
       department: selectedDepartments.join(', '),
     };
 
@@ -782,6 +859,35 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
     setPlan({ ...plan, legend: updated });
   };
 
+  // =========================================================
+  // DRAG-END HANDLERS
+  // =========================================================
+  const handleTaskDragEnd = (event: DragEndEvent) => {
+    if (!plan) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const tasks = plan.tasks || [];
+    const oldIndex = Number(active.id);
+    const newIndex = Number(over.id);
+    if (isNaN(oldIndex) || isNaN(newIndex)) return;
+
+    setPlan({ ...plan, tasks: arrayMove(tasks, oldIndex, newIndex) });
+  };
+
+  const handleLegendDragEnd = (event: DragEndEvent) => {
+    if (!plan) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const legend = plan.legend || [];
+    const oldIndex = Number(active.id);
+    const newIndex = Number(over.id);
+    if (isNaN(oldIndex) || isNaN(newIndex)) return;
+
+    setPlan({ ...plan, legend: arrayMove(legend, oldIndex, newIndex) });
+  };
+
   const getMeetingsForDay = (day: string): Meeting[] => {
     if (!plan) return [];
     return plan.meetings
@@ -821,7 +927,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
       <Sidebar />
 
       <main className="flex-1 p-6 ml-64">
-        {/* Header */}
         <Flex align="center" justify="between" mb="5" wrap="wrap">
           <Box>
             <Flex align="center" gap="3">
@@ -873,7 +978,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </Text>
         )}
 
-        {/* Plan Details */}
         <Card size="3" mb="4">
           <div className="grid md:grid-cols-4 gap-4">
             <Box>
@@ -931,7 +1035,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </div>
         </Card>
 
-        {/* MEETINGS GRID */}
         <Card size="3">
           <Flex align="center" justify="between" mb="3">
             <Text size="3" weight="bold">📋 Meetings ({plan.meetings.length})</Text>
@@ -1042,12 +1145,26 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                                   {meeting.title || '(Untitled)'}
                                 </Text>
 
-                                <Text size="1" color="gray">
-                                  🏢 {meeting.division || '—'}
-                                </Text>
+                                {meeting.division && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    <Badge
+                                      variant="solid"
+                                      size="1"
+                                      style={{
+                                        background: '#c9a227',
+                                        color: 'white',
+                                        padding: '2px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '10px',
+                                      }}
+                                    >
+                                      Com
+                                    </Badge>
+                                  </div>
+                                )}
 
                                 {meeting.location && (
-                                  <Text size="1" color="gray">
+                                  <Text size="1" color="gray" className="block mt-0.5">
                                     📍 {meeting.location}
                                   </Text>
                                 )}
@@ -1057,11 +1174,31 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                                     {meeting.department.split(',').map((d) => {
                                       const full = d.trim();
                                       if (!full) return null;
+                                      const abbr = abbrDept(full);
+                                      if (abbr === 'Com') {
+                                        return (
+                                          <Badge
+                                            key={full}
+                                            variant="solid"
+                                            size="1"
+                                            title={full}
+                                            style={{
+                                              background: '#c9a227',
+                                              color: 'white',
+                                              padding: '2px 8px',
+                                              borderRadius: '4px',
+                                              fontSize: '10px',
+                                            }}
+                                          >
+                                            {abbr}
+                                          </Badge>
+                                        );
+                                      }
                                       return (
                                         <AbbrBadge
                                           key={full}
                                           name={full}
-                                          abbr={abbrDept(full)}
+                                          abbr={abbr}
                                           color="blue"
                                         />
                                       );
@@ -1092,10 +1229,9 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                                       <Badge
                                         key={s.trim()}
                                         variant="solid"
-                                        color="purple"
                                         size="1"
                                         style={{
-                                          background: '#7c3aed',
+                                          background: '#991b1b',
                                           color: 'white',
                                           padding: '2px 8px',
                                           borderRadius: '4px',
@@ -1126,7 +1262,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </div>
         </Card>
 
-        {/* TASKS SECTION */}
         <Card size="3" mt="4" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
           <Flex align="center" justify="between" mb="2">
             <Flex align="center" gap="2">
@@ -1143,32 +1278,43 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </Flex>
 
           {isEditing ? (
-            <div className="space-y-2">
-              {(plan.tasks || []).map((task, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={task}
-                    onChange={(e) => updateTask(index, e.target.value)}
-                    placeholder="Enter task description..."
-                    className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => deleteTask(index)}
-                    className="text-red-400 hover:text-red-600 p-1"
-                    title="Delete task"
-                  >
-                    <FaTrash size={14} />
-                  </button>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleTaskDragEnd}
+            >
+              <SortableContext
+                items={(plan.tasks || []).map((_, i) => String(i))}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-2">
+                  {(plan.tasks || []).map((task, index) => (
+                    <SortableRow key={index} id={String(index)}>
+                      <input
+                        type="text"
+                        value={task}
+                        onChange={(e) => updateTask(index, e.target.value)}
+                        placeholder="Enter task description..."
+                        className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => deleteTask(index)}
+                        className="text-red-400 hover:text-red-600 p-1"
+                        title="Delete task"
+                      >
+                        <FaTrash size={14} />
+                      </button>
+                    </SortableRow>
+                  ))}
+                  {(!plan.tasks || plan.tasks.length === 0) && (
+                    <Text size="2" color="gray" align="center" className="py-2">
+                      No tasks added yet. Click "Add Task" to create one.
+                    </Text>
+                  )}
                 </div>
-              ))}
-              {(!plan.tasks || plan.tasks.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No tasks added yet. Click "Add Task" to create one.
-                </Text>
-              )}
-            </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div className="space-y-1">
               {(plan.tasks || []).map((task, index) => (
@@ -1186,7 +1332,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           )}
         </Card>
 
-        {/* LEGEND SECTION */}
         <Card size="3" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
           <Flex align="center" justify="between" mb="2">
             <Flex align="center" gap="2">
@@ -1203,40 +1348,51 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </Flex>
 
           {isEditing ? (
-            <div className="space-y-2">
-              {(plan.legend || []).map((item, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={item.key}
-                    onChange={(e) => updateLegendItem(index, 'key', e.target.value)}
-                    placeholder="Acronym (e.g., ACC)"
-                    className="w-32 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <span className="text-slate-400">→</span>
-                  <input
-                    type="text"
-                    value={item.value}
-                    onChange={(e) => updateLegendItem(index, 'value', e.target.value)}
-                    placeholder="Full form (e.g., Anti-Corruption Commission)"
-                    className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => deleteLegendItem(index)}
-                    className="text-red-400 hover:text-red-600 p-1"
-                    title="Delete legend item"
-                  >
-                    <FaTrash size={14} />
-                  </button>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleLegendDragEnd}
+            >
+              <SortableContext
+                items={(plan.legend || []).map((_, i) => String(i))}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-2">
+                  {(plan.legend || []).map((item, index) => (
+                    <SortableRow key={index} id={String(index)}>
+                      <input
+                        type="text"
+                        value={item.key}
+                        onChange={(e) => updateLegendItem(index, 'key', e.target.value)}
+                        placeholder="Acronym (e.g., ACC)"
+                        className="w-32 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <span className="text-slate-400">→</span>
+                      <input
+                        type="text"
+                        value={item.value}
+                        onChange={(e) => updateLegendItem(index, 'value', e.target.value)}
+                        placeholder="Full form (e.g., Anti-Corruption Commission)"
+                        className="flex-1 text-sm border border-slate-200 rounded px-3 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => deleteLegendItem(index)}
+                        className="text-red-400 hover:text-red-600 p-1"
+                        title="Delete legend item"
+                      >
+                        <FaTrash size={14} />
+                      </button>
+                    </SortableRow>
+                  ))}
+                  {(!plan.legend || plan.legend.length === 0) && (
+                    <Text size="2" color="gray" align="center" className="py-2">
+                      No legend entries added yet. Click "Add Legend Entry" to create one.
+                    </Text>
+                  )}
                 </div>
-              ))}
-              {(!plan.legend || plan.legend.length === 0) && (
-                <Text size="2" color="gray" align="center" className="py-2">
-                  No legend entries added yet. Click "Add Legend Entry" to create one.
-                </Text>
-              )}
-            </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               {(plan.legend || []).map((item, index) => (
@@ -1255,7 +1411,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           )}
         </Card>
 
-        {/* Public Link */}
         <Card size="2" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
           <Flex align="center" justify="between" wrap="wrap" gap="3">
             <Box>
@@ -1280,7 +1435,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
           </Flex>
         </Card>
 
-        {/* Email Notification */}
         <Card size="2" mt="4" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
           <Flex align="center" justify="between" wrap="wrap" gap="3">
             <Box>
@@ -1393,7 +1547,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
         </Card>
       </main>
 
-      {/* SLIDE-IN DRAWER */}
       {drawerOpen && (
         <>
           <div
@@ -1541,7 +1694,6 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                   />
                 </div>
 
-                {/* MEETING VENUE — internal dropdown OR external free-text */}
                 <div>
                   <Text as="label" size="2" weight="medium" className="block mb-1">
                     Meeting Venue
@@ -1669,12 +1821,12 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                         }
                       }}
                       placeholder="External Attendees"
-                      className="flex-1 border border-slate-300 rounded px-3 py-2 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                      className="flex-1 border border-slate-300 rounded px-3 py-2 focus:border-red-500 focus:ring-2 focus:ring-red-200"
                     />
                     <button
                       type="button"
                       onClick={addStakeholder}
-                      className="px-4 py-2 rounded-full bg-purple-500 hover:bg-purple-600 text-white font-bold flex items-center justify-center"
+                      className="px-4 py-2 rounded-full bg-red-700 hover:bg-red-800 text-white font-bold flex items-center justify-center"
                     >
                       <FaPlus size={12} className="mr-1" /> Add
                     </button>
@@ -1685,11 +1837,10 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                         <Badge
                           key={s}
                           variant="solid"
-                          color="purple"
                           size="1"
                           className="flex items-center gap-1"
                           style={{
-                            background: '#7c3aed',
+                            background: '#991b1b',
                             color: 'white',
                             padding: '2px 8px',
                             borderRadius: '4px',
@@ -1700,7 +1851,7 @@ export default function AdminWeeklyPlanView(): React.ReactElement {
                           <button
                             type="button"
                             onClick={() => removeStakeholder(s)}
-                            className="text-white hover:text-purple-200 rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none hover:bg-purple-600"
+                            className="text-white hover:text-red-200 rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none hover:bg-red-800"
                           >
                             ✕
                           </button>

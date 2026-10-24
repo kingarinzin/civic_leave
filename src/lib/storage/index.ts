@@ -1,4 +1,4 @@
-// lib/storage/index.ts
+// src/lib/storage/index.ts
 import fs from "fs/promises";
 import path from "path";
 import { randomBytes } from "crypto";
@@ -25,14 +25,33 @@ export type UploadResult = {
   contentType?: string;
 };
 
-const BASE_DIR = path.join(
-  process.cwd(),
-  "public",
-  "uploads",
-  "acc",
-  "room-booking",
-);
-const PUBLIC_PREFIX = "/uploads/acc/room-booking";
+/**
+ * Base directory for all Room Booking files.
+ *
+ * Priority:
+ *   1. STORAGE_ROOT env var (set in .env.local)
+ *   2. Hard-coded fallback (works regardless of PM2 cwd)
+ *
+ * Files go into:  <STORAGE_ROOT>/acc/room-booking/<folder>/<file>
+ * Example:        /home/appplus/civic_leave/public/uploads/acc/room-booking/rooms/PRO-101/photo.webp
+ */
+const STORAGE_ROOT =
+  process.env.STORAGE_ROOT ||
+  "/home/appplus/civic_leave/public/uploads";
+
+const BASE_DIR = path.join(STORAGE_ROOT, "acc", "room-booking");
+
+/**
+ * Public URL prefix.
+ *
+ * IMPORTANT: We serve files through an API route (not /public/) so that
+ * newly-uploaded files are available immediately — without needing a rebuild.
+ *
+ * URL:    <APP_URL>/api/uploads/acc/room-booking/<folder>/<file>
+ * Route:  src/app/api/uploads/[...path]/route.ts
+ */
+const PUBLIC_PREFIX = "/api/uploads/acc/room-booking";
+
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 /**
@@ -55,8 +74,9 @@ function extFromName(name?: string, contentType?: string): string {
 
 /**
  * Upload a file buffer to local VM storage.
- * Written to: <project>/public/uploads/acc/room-booking/<folder>/<file>
- * Served at:  <APP_URL>/uploads/acc/room-booking/<folder>/<file>
+ *
+ * Written to: <STORAGE_ROOT>/acc/room-booking/<folder>/<file>
+ * Served at:  <APP_URL>/api/uploads/acc/room-booking/<folder>/<file>
  */
 export async function uploadFile(
   fileBuffer: Buffer,

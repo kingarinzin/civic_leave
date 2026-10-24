@@ -12,55 +12,64 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status");
-
-    const filter: Record<string, any> = {
-      bookedByStaffId: new ObjectId(auth.user.userId),
-    };
-    if (status) filter.bookingStatus = status;
+    const statusFilter = searchParams.get("status");
 
     const client = await clientPromise;
     const db = client.db("civic_leave_db");
 
+    // 1. Fetch Bookings
+    const query: any = { bookedByStaffId: new ObjectId(auth.user.userId) };
+    if (statusFilter) query.bookingStatus = statusFilter;
+
     const bookings = await db
       .collection("rb_bookings")
-      .find(filter)
+      .find(query)
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Fetch rooms + ledgers in bulk
-    const roomIds = bookings.map((b) => b.roomId).filter(Boolean);
-    const bookingIds = bookings.map((b) => b._id);
+    // 2. Fetch Ledgers to check the TRUE payment status
+    const bookingIds = bookings.map(b => b._id);
+    const ledgers = await db
+      .collection("rb_ledger")
+      .find({ bookingId: { $in: bookingIds } })
+      .toArray();
 
-    const [rooms, ledgers] = await Promise.all([
-      db.collection("rb_rooms").find({ _id: { $in: roomIds } }).toArray(),
-      db.collection("rb_ledger").find({ bookingId: { $in: bookingIds } }).toArray(),
-    ]);
-
-    const roomMap = Object.fromEntries(rooms.map((r) => [r._id.toString(), r]));
-    const ledgerMap = Object.fromEntries(
-      ledgers.map((l) => [l.bookingId?.toString(), l]),
-    );
-
-    return NextResponse.json({
-      bookings: bookings.map((b) => {
-        const room = roomMap[b.roomId?.toString()];
-        const ledger = ledgerMap[b._id.toString()];
-        return {
-          ...b,
-          _id: b._id.toString(),
-          bookedByStaffId: b.bookedByStaffId.toString(),
-          occupantId: b.occupantId.toString(),
-          roomId: b.roomId.toString(),
-          bedIds: (b.bedIds || []).map((id: any) => id.toString()),
-          approvalId: b.approvalId ? b.approvalId.toString() : null,
-          room: room ? { _id: room._id.toString(), roomNumber: room.roomNumber, roomTypeCode: room.roomTypeCode } : null,
-          ledger: ledger
-            ? { _id: ledger._id.toString(), amount: ledger.amount, status: ledger.status }
-            : null,
-        };
-      }),
+    // 3. Map the status
+    const ledgerMap = new Map();
+    ledgers.forEach(l => {
+      const bId = l.bookingId.toString();
+      const existing = ledgerMap.get(bId);
+      
+      // If ANY ledger is UNPAID or PENDING, the booking is considered unpaid.
+      // Otherwise, it's PAID (or PENDING_VERIFICATION).
+      if (!existing || l.status === "UNPAID" || l.status === "PENDING_VERIFICATION") {
+        ledgerMap.set(bId, l.status);
+      }
     });
+
+    // 4. Merge
+    const enrichedBookings = bookings.map(b => {
+      const ledgerStatus = ledgerMap.get(b._id.toString());
+      
+      // If the ledger says PAID, force the booking to show PAID
+      let finalPaymentStatus = b.paymentStatus;
+      if (ledgerStatus === "PAID") finalPaymentStatus = "PAID";
+      if (ledgerStatus === "PENDING_VERIFICATION") finalPaymentStatus = "PENDING_VERIFICATION";
+      if (ledgerStatus === "UNPAID") finalPaymentStatus = "UNPAID";
+
+      return {
+        ...b,
+        _id: b._id.toString(),
+        paymentStatus: finalPaymentStatus,
+        guests: (b.guests || []).map((g: any) => ({
+            ...g,
+            checkIn: g.checkIn?.toISOString ? g.checkIn.toISOString() : g.checkIn,
+            checkOut: g.checkOut?.toISOString ? g.checkOut.toISOString() : g.checkOut,
+        }))
+      };
+    });
+
+    return NextResponse.json({ bookings: enrichedBookings });
   } catch (error: any) {
     console.error("GET /bookings/my error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

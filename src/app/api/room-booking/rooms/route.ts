@@ -1,13 +1,9 @@
 // src/app/api/room-booking/rooms/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
-import { verifyBookingUser, verifyBookingAdmin } from "@/lib/room-booking-auth";
-import { logAudit, getClientIP } from "@/lib/rb-audit";
+import { verifyBookingUser } from "@/lib/room-booking-auth";
+import { ObjectId } from "mongodb";
 
-/**
- * GET /api/room-booking/rooms
- * List all rooms + bed summary (available/occupied).
- */
 export async function GET(req: NextRequest) {
   try {
     const auth = await verifyBookingUser(req);
@@ -15,27 +11,61 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
+    const { searchParams } = new URL(req.url);
+    const checkInStr = searchParams.get("checkIn");
+    const checkOutStr = searchParams.get("checkOut");
+
     const client = await clientPromise;
     const db = client.db("civic_leave_db");
 
-    const rooms = await db
-      .collection("rb_rooms")
-      .find({})
-      .sort({ roomNumber: 1 })
-      .toArray();
-
+    // 1. Fetch Rooms and Beds
+    const rooms = await db.collection("rb_rooms").find({}).toArray();
     const beds = await db.collection("rb_beds").find({}).toArray();
+    const roomTypes = await db.collection("rb_room_types").find({}).toArray();
+    const typeMap = Object.fromEntries(roomTypes.map((t) => [t.code, t]));
 
+    // 2. Find Conflicting Bookings for the requested dates
+    let bookedBedIds = new Set<string>();
+    
+    if (checkInStr && checkOutStr) {
+      const checkIn = new Date(checkInStr);
+      const checkOut = new Date(checkOutStr);
+
+      // Find all active bookings that overlap with these dates
+      const conflicts = await db.collection("rb_bookings").find({
+        bookingStatus: { $in: ["CONFIRMED", "PENDING_APPROVAL", "CHECKED_IN"] },
+        "guests.checkIn": { $lt: checkOut },
+        "guests.checkOut": { $gt: checkIn },
+      }).toArray();
+
+      // Collect all bed IDs from conflicting bookings
+      conflicts.forEach(booking => {
+        (booking.bedIds || []).forEach((id: any) => bookedBedIds.add(id.toString()));
+      });
+    }
+
+    // 3. Map Data
     const bedsByRoom: Record<string, any[]> = {};
     for (const bed of beds) {
       const key = bed.roomId.toString();
       if (!bedsByRoom[key]) bedsByRoom[key] = [];
-      bedsByRoom[key].push(bed);
+      
+      // If dates were provided, dynamically determine status
+      // If no dates provided, fallback to the static DB status
+      let dynamicStatus = bed.status;
+      if (checkInStr && checkOutStr) {
+        dynamicStatus = bookedBedIds.has(bed._id.toString()) ? "OCCUPIED" : "AVAILABLE";
+      }
+
+      bedsByRoom[key].push({
+        ...bed,
+        _id: bed._id.toString(),
+        roomId: bed.roomId.toString(),
+        status: dynamicStatus // Override with dynamic status
+      });
     }
 
-    const roomTypes = await db.collection("rb_room_types").find({}).toArray();
-    const typeMap = Object.fromEntries(roomTypes.map((t) => [t.code, t]));
-
+    // 4. Enrich Rooms
     const enriched = rooms.map((room) => {
       const roomBeds = bedsByRoom[room._id.toString()] || [];
       const available = roomBeds.filter((b) => b.status === "AVAILABLE").length;
@@ -47,11 +77,7 @@ export async function GET(req: NextRequest) {
         ...room,
         _id: room._id.toString(),
         roomTypeName: typeMap[room.roomTypeCode]?.name || room.roomTypeCode,
-        beds: roomBeds.map((b) => ({
-          ...b,
-          _id: b._id.toString(),
-          roomId: b.roomId.toString(),
-        })),
+        beds: roomBeds,
         bedSummary: {
           total: roomBeds.length,
           available,
@@ -65,109 +91,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ rooms: enriched });
   } catch (error: any) {
     console.error("GET /rooms error:", error);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
-  }
-}
-
-/**
- * POST /api/room-booking/rooms
- * Create a new room + optionally its default beds.
- */
-export async function POST(req: NextRequest) {
-  try {
-    const auth = await verifyBookingAdmin(req);
-    if (!auth.valid) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
-
-    const body = await req.json();
-
-    if (!body.roomNumber || !body.roomTypeCode) {
-      return NextResponse.json(
-        { error: "roomNumber and roomTypeCode are required" },
-        { status: 400 },
-      );
-    }
-
-    const client = await clientPromise;
-    const db = client.db("civic_leave_db");
-
-    const existing = await db
-      .collection("rb_rooms")
-      .findOne({ roomNumber: body.roomNumber });
-    if (existing) {
-      return NextResponse.json(
-        { error: `Room ${body.roomNumber} already exists` },
-        { status: 409 },
-      );
-    }
-
-    const roomType = await db
-      .collection("rb_room_types")
-      .findOne({ code: body.roomTypeCode });
-    if (!roomType) {
-      return NextResponse.json(
-        { error: `Invalid room type: ${body.roomTypeCode}` },
-        { status: 400 },
-      );
-    }
-
-    const now = new Date();
-    const beds = Array.isArray(body.beds) ? body.beds : [];
-
-    const roomDoc = {
-      roomNumber: body.roomNumber,
-      roomName: body.roomName || body.roomNumber,
-      roomTypeCode: body.roomTypeCode,
-      floor: Number(body.floor) || 1,
-      areaSqm: Number(body.areaSqm) || 0,
-      description: body.description || "",
-      amenities: Array.isArray(body.amenities) ? body.amenities : [],
-      photos: [],
-      wifiPassword: body.wifiPassword || "",
-      emergencyContact: body.emergencyContact || "",
-      bedCount: beds.length,
-      isResidentRoom: body.roomTypeCode === "RESIDENT",
-      residentStaffId: null,
-      status: "ACTIVE",
-      qrCodeUrl: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const result = await db.collection("rb_rooms").insertOne(roomDoc);
-
-    if (beds.length > 0) {
-      const bedDocs = beds.map((b: any) => ({
-        roomId: result.insertedId,
-        roomNumber: body.roomNumber,
-        bedLabel: b.bedLabel || b.label,
-        bedTypeCode: b.bedTypeCode || b.typeCode || "SINGLE",
-        status: "AVAILABLE",
-        currentBookingId: null,
-        rates: b.rates || { tier1: 0, tier2: 0, tier3: 0, tier4: 0, tier5: 0 },
-        notes: null,
-        createdAt: now,
-        updatedAt: now,
-      }));
-      await db.collection("rb_beds").insertMany(bedDocs);
-    }
-
-    await logAudit({
-      action: "ROOM_CREATE",
-      performedByStaffId: auth.user.userId,
-      targetType: "rb_rooms",
-      targetId: result.insertedId,
-      ipAddress: getClientIP(req),
-      details: { room: roomDoc, bedCount: beds.length },
-    });
-
-    return NextResponse.json(
-      { success: true, roomId: result.insertedId.toString() },
-      { status: 201 },
-    );
-  } catch (error: any) {
-    console.error("POST /rooms error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
