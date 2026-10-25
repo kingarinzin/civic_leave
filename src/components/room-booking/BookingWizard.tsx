@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { 
   ArrowLeft, ArrowRight, Loader2, CheckCircle2, CalendarDays, 
-  BedDouble, Users, Building2, UserCheck, Plus, X, Edit3
+  BedDouble, Users, Building2, UserCheck, Plus, X, Edit3, Shield
 } from "lucide-react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -28,6 +28,9 @@ export default function BookingWizard({
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
 
+  // New State for Approver Info
+  const [activeApprover, setActiveApprover] = useState<any>(null);
+
   useEffect(() => {
     async function loadFamily() {
       try {
@@ -40,7 +43,23 @@ export default function BookingWizard({
         console.error("Failed to load family", err);
       }
     }
+    
+    async function loadApprover() {
+      try {
+        // We fetch the list of approvers, and find the one marked as active
+        const res = await fetch("/api/room-booking/admin/approvers", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        const active = (data.approvers || []).find((a: any) => a.isRoomBookingApprover);
+        setActiveApprover(active || null);
+      } catch (err) {
+        console.error("Failed to load approver", err);
+      }
+    }
+
     loadFamily();
+    loadApprover();
   }, [token]);
 
   const getTierKey = (type: string) => {
@@ -92,7 +111,6 @@ export default function BookingWizard({
     setLoading(true);
     try {
       const formattedGuests = guests.map(g => {
-        // Safety fallback for dates
         const checkInDate = g.checkIn ? new Date(g.checkIn).toISOString() : new Date().toISOString();
         const checkOutDate = g.checkOut ? new Date(g.checkOut).toISOString() : new Date(Date.now() + 86400000).toISOString();
 
@@ -215,6 +233,9 @@ export default function BookingWizard({
       default: return "bg-gray-100 text-gray-700";
     }
   };
+
+  // Check if any guest requires approval
+  const requiresApproval = guests.some(g => g.type === "CO_AGENCY" || g.type === "STAKEHOLDER");
 
   return (
     <div className={`w-full ${isInsideModal ? "" : "max-w-3xl mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"}`}>
@@ -461,6 +482,27 @@ export default function BookingWizard({
               className="w-full border rounded-xl p-4 h-32 focus:ring-2 focus:ring-blue-600 outline-none" 
               placeholder="Reason for stay..."
             ></textarea>
+
+            {/* APPROVAL BANNER FOR TIER 4 & 5 */}
+            {requiresApproval && (
+              <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl animate-in fade-in">
+                <h4 className="text-sm font-bold text-amber-900 mb-1 flex items-center gap-2">
+                  <Shield size={16} /> Approval Required
+                </h4>
+                <p className="text-xs text-amber-700">
+                  Your booking includes a Co-Agency or Stakeholder. It will be reviewed by:
+                </p>
+                {activeApprover ? (
+                  <p className="text-sm font-semibold text-gray-800 mt-2">
+                    {activeApprover.name} ({activeApprover.email})
+                  </p>
+                ) : (
+                  <p className="text-sm font-semibold text-red-600 mt-2">
+                    Warning: No active approver found. Please contact the Room Admin.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -498,6 +540,15 @@ export default function BookingWizard({
                   ))}
                 </div>
               </div>
+
+              {requiresApproval && (
+                <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-2">
+                  <Shield size={16} className="text-amber-600 shrink-0" />
+                  <p className="text-xs text-amber-800 font-medium">
+                    This booking will be sent to {activeApprover?.name || "the Commissioner"} for final approval before confirmation.
+                  </p>
+                </div>
+              )}
 
               <div className="pt-2 flex justify-between items-center">
                 <span className="font-bold text-gray-900">Total Cost</span>

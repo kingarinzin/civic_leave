@@ -45,6 +45,11 @@ export default function Sidebar() {
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState("Officer");
   const [isAdminUser, setIsAdminUser] = useState(false);
+  
+  // Dynamic DB Flags
+  const [isRoomBookingAdmin, setIsRoomBookingAdmin] = useState(false);
+  const [isRoomBookingApprover, setIsRoomBookingApprover] = useState(false);
+
   const [openSection, setOpenSection] = useState<
     "master" | "leave" | "hrs" | "meetings" | "roomModule" | null
   >(null);
@@ -78,10 +83,23 @@ export default function Sidebar() {
         if (!res.ok) return;
         const data = await res.json();
         if (!data || typeof data !== "object") return;
-        const profile = data as { name?: string; email?: string; role?: string };
+        
+        const profile = data as { 
+          name?: string; 
+          email?: string; 
+          role?: string;
+          isRoomBookingAdmin?: boolean;
+          isRoomBookingApprover?: boolean;
+        };
+        
         setUserName((profile.name || "").trim());
         setUserEmail(profile.email || tokenEmail || "");
         setUserRole(normalizeRole(profile.role));
+        
+        // Set Dynamic DB Flags
+        setIsRoomBookingAdmin(!!profile.isRoomBookingAdmin);
+        setIsRoomBookingApprover(!!profile.isRoomBookingApprover);
+
       } catch (err) {
         console.error("Profile load error:", err);
       }
@@ -104,23 +122,27 @@ export default function Sidebar() {
   ];
   const showHRS = isAdmin || hrsAllowedEmails.includes(normalizedEmail);
 
-  // Emails that get FULL privileges in the Room Module
-  const roomModuleSuperEmails = [
-    "slham@acc.org.bt",
-    "slhamo@acc.org.bt",
+  // 🔥 UAT RESTRICTION: Add the Phuentsholing Staff emails here
+  const phuentsholingUATEmails = [
+    "kinley@acc.org.bt",    // <-- Replace with actual emails
+    "sonam@acc.org.bt",     // <-- Replace with actual emails
+    "admin@acc.org.bt",     // <-- Replace with actual emails
+    "slham@acc.org.bt",     // <-- Replace with actual emails
+    "slhamo@acc.org.bt",    // <-- Replace with actual emails
+    "kingarinzin@acc.org.bt" // <-- Replace with actual emails
   ];
 
-  // Anyone who can see the Room Module section at all
-  const roomModuleAllowedEmails = [
-    "kingarinzin@acc.org.bt",
-    ...roomModuleSuperEmails,
-  ];
-  const showRoomModule =
-    isAdmin || roomModuleAllowedEmails.includes(normalizedEmail);
+  const isPhuentsholingUAT = phuentsholingUATEmails.includes(normalizedEmail);
 
-  // Full room-admin access (Admin Panel + Approvals)
-  const isRoomAdmin =
-    isAdmin || roomModuleSuperEmails.includes(normalizedEmail);
+  // Room Module visibility
+  const isRoomAdmin = isAdmin || isRoomBookingAdmin;
+  
+  // Show Room Module if Admin, Phuentsholing UAT staff, or dynamically flagged users
+  const showRoomModule = 
+    isAdmin || 
+    isPhuentsholingUAT || 
+    isRoomBookingAdmin || 
+    isRoomBookingApprover;
 
   const isMasterActive =
     pathname === "/admin/department" || pathname === "/division";
@@ -157,9 +179,7 @@ export default function Sidebar() {
       "SecretaryService",
     ].includes(userRole);
 
-  const canApproveAPIC =
-    isRoomAdmin ||
-    ["Commissioner", "Chairperson", "SecretaryService"].includes(userRole);
+  const canApproveAPIC = isRoomAdmin || isRoomBookingApprover;
 
   const displayedOpenSection =
     openSection ||
@@ -509,7 +529,7 @@ export default function Sidebar() {
           </>
         )}
 
-        {/* Room Module */}
+        {/* Room Module - RESTRICTED TO PHUENTSHOLING UAT */}
         {showRoomModule && (
           <>
             <button
@@ -687,6 +707,18 @@ export default function Sidebar() {
                         <ShieldCheck size={14} /> Family Verifications
                       </span>
                     </button>
+                    
+                    <button
+                      onClick={() => router.push("/room-booking/admin/approvers")}
+                      className={navSubButtonClass(
+                        pathname.startsWith("/room-booking/admin/approvers"),
+                      )}
+                    >
+                      <span className="flex items-center gap-2">
+                        <UserCheck size={14} /> Approval Authority
+                      </span>
+                    </button>
+
                     <button
                       onClick={() =>
                         router.push("/room-booking/admin/ledger")

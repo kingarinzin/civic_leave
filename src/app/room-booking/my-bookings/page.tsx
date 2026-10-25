@@ -48,7 +48,6 @@ const STATUS_STYLE: Record<string, string> = {
   CHECKED_OUT: "bg-gray-100 text-gray-700 border-gray-200",
 };
 
-// SAFE DATE FORMATTER
 const formatDate = (dateString: any) => {
   if (!dateString) return "N/A";
   try {
@@ -63,6 +62,10 @@ const formatDate = (dateString: any) => {
 export default function MyBookingsPage() {
   const router = useRouter();
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  
+  // DYNAMIC ROUTING
+  const isAdmin = typeof window !== "undefined" && localStorage.getItem("isAdmin") === "true";
+  const dashboardUrl = isAdmin ? "/admin/pending-users" : "/dashboard/leave";
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -175,12 +178,16 @@ export default function MyBookingsPage() {
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
+            
+            {/* DYNAMIC HOME BUTTON */}
             <button
-              onClick={() => router.push("/room-booking")}
+              onClick={() => router.push(dashboardUrl)}
               className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors"
+              title="Back to Dashboard"
             >
               <Home size={20} />
             </button>
+            
             <div>
               <h1 className="text-2xl font-bold text-gray-900 tracking-tight">My Bookings</h1>
               <p className="text-sm text-gray-500 mt-0.5">Manage your room reservations, guests, and payments</p>

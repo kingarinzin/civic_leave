@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { verifyBookingUser, canBook } from "@/lib/room-booking-auth";
 import { logAudit, getClientIP } from "@/lib/rb-audit";
-import { sendMail } from "@/lib/mailer";
+import { createTransporter } from "@/lib/mailer";
 import { ObjectId } from "mongodb";
+import crypto from "crypto";
 
 export async function GET(req: NextRequest) {
   try {
@@ -153,12 +154,16 @@ export async function POST(req: NextRequest) {
     };
 
     let totalAmount = 0;
-    let hasStakeholder = false;
+    let hasApprovalRequirement = false; // Covers both CO_AGENCY and STAKEHOLDER
     const processedGuests = [];
 
     for (const guest of guestsList) {
       const type = guest.occupantType || "ACC_STAFF";
-      if (type === "STAKEHOLDER") hasStakeholder = true;
+      
+      // If any guest is Co-Agency or Stakeholder, we need approval
+      if (type === "STAKEHOLDER" || type === "CO_AGENCY") {
+        hasApprovalRequirement = true;
+      }
       
       const tierKey = TIER_MAP[type] || "tier2";
       const rateTier = TIER_LABEL[type] || "TIER2";
@@ -252,14 +257,14 @@ export async function POST(req: NextRequest) {
       paymentStatus: "PENDING",
       paymentMode: "M_BOB",
       approvalId: null,
-      bookingStatus: hasStakeholder ? "PENDING_APPROVAL" : "CONFIRMED",
+      bookingStatus: hasApprovalRequirement ? "PENDING_APPROVAL" : "CONFIRMED",
       createdAt: now,
       updatedAt: now,
     };
 
     const bookingInsert = await db.collection("rb_bookings").insertOne(bookingDoc);
 
-    const newBedStatus = hasStakeholder ? "RESERVED" : "OCCUPIED";
+    const newBedStatus = hasApprovalRequirement ? "RESERVED" : "OCCUPIED";
     await db.collection("rb_beds").updateMany(
       { _id: { $in: bedObjectIds } },
       {
@@ -287,10 +292,49 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (hasStakeholder) {
+    let approverEmail = "";
+    let divisionHeadEmail = "";
+    let deptHeadEmail = "";
+    let roomAdminEmail = "";
+    let approvalToken = "";
+
+    if (hasApprovalRequirement) {
+      // 1. Find the Active Approver (Commissioner)
+      const activeApprover = await db.collection("users").findOne({ isRoomBookingApprover: true });
+      if (activeApprover) approverEmail = activeApprover.email;
+
+      // 2. Find the Division Head
+      const divHead = await db.collection("users").findOne({ role: "DivisionHead" });
+      if (divHead) divisionHeadEmail = divHead.email;
+
+      // 3. Find the Department Head
+      const deptHead = await db.collection("users").findOne({ role: "DepartmentHead" });
+      if (deptHead) deptHeadEmail = deptHead.email;
+
+      // 4. Find the Room Admin
+      const roomAdmin = await db.collection("users").findOne({ isRoomBookingAdmin: true });
+      if (roomAdmin) roomAdminEmail = roomAdmin.email;
+
+      // 5. Generate the Approval Token
+      approvalToken = crypto.randomBytes(32).toString("hex");
+      const tokenExpiry = new Date();
+      tokenExpiry.setHours(tokenExpiry.getHours() + 72);
+
+      // 6. Save the Token
+      await db.collection("rb_action_tokens").insertOne({
+        token: approvalToken,
+        bookingId: bookingInsert.insertedId,
+        approverId: activeApprover ? activeApprover._id : null,
+        used: false,
+        expiresAt: tokenExpiry,
+        createdAt: now,
+      });
+
+      // 7. Create Approval Record
       await db.collection("rb_approvals").insertOne({
         bookingId: bookingInsert.insertedId,
         requestedByStaffId: new ObjectId(auth.user.userId),
+        assignedApproverId: activeApprover ? activeApprover._id : null,
         status: "PENDING",
         createdAt: now,
         updatedAt: now,
@@ -312,9 +356,77 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // ==========================================
+    // SEND EMAILS
+    // ==========================================
     (async () => {
       try {
-        const bedsList = beds.map((b: any) => b.bedLabel).join(", ");
+        const transporter = createTransporter();
+        const baseUrl = process.env.APP_URL || "http://localhost:3000";
+        
+        // 1. SEND APPROVAL EMAIL TO COMMISSIONER
+        if (hasApprovalRequirement && approverEmail && approvalToken) {
+          const approveLink = `${baseUrl}/api/room-booking/approvals/email-action?bookingId=${bookingInsert.insertedId}&token=${approvalToken}&action=approve`;
+          const rejectLink = `${baseUrl}/api/room-booking/approvals/email-action?bookingId=${bookingInsert.insertedId}&token=${approvalToken}&action=reject`;
+
+          const ccList = [auth.user.email, divisionHeadEmail, deptHeadEmail, roomAdminEmail].filter(Boolean);
+
+          const approvalHtml = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0; padding:0; background-color:#f4f7fc; font-family: 'Segoe UI', Arial, sans-serif;">
+  <table align="center" width="100%" style="max-width:600px; background:#ffffff; margin:20px auto; border-radius:8px;">
+    <tr>
+      <td style="padding:30px; text-align:center; border-bottom:1px solid #E5E7EB;">
+        <h2 style="color:#4F46E5; margin:0;">Room Booking Approval Required</h2>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:30px;">
+        <p>Hello <strong>Commissioner</strong>,</p>
+        <p>You have a new room booking request awaiting your action.</p>
+        
+        <div style="background:#F3F4F6; padding:15px; border-radius:8px; margin:20px 0;">
+          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+            <tr><td style="padding:6px; font-weight:600; width:40%;">Booking Ref:</td><td>${bookingRef}</td></tr>
+            <tr><td style="padding:6px; font-weight:600;">Requested By:</td><td>${auth.user.name}</td></tr>
+            <tr><td style="padding:6px; font-weight:600;">Room:</td><td>${room.roomNumber}</td></tr>
+            <tr><td style="padding:6px; font-weight:600;">Total Cost:</td><td>Nu. ${totalAmount}</td></tr>
+          </table>
+        </div>
+
+        ${body.purpose ? `
+          <div style="background:#F9FAFB; padding:12px; border-left:4px solid #4F46E5; margin:15px 0;">
+            <p style="margin:0;"><strong>Purpose:</strong><br>${body.purpose}</p>
+          </div>
+        ` : ''}
+
+        <div style="margin:30px 0; text-align:center;">
+          <a href="${approveLink}" style="background:#4F46E5; color:#fff; padding:12px 30px; text-decoration:none; border-radius:6px; margin-right:10px; display:inline-block;">Approve</a>
+          <a href="${rejectLink}" style="background:#dc3545; color:#fff; padding:12px 30px; text-decoration:none; border-radius:6px; display:inline-block;">Reject</a>
+        </div>
+        
+        <p style="font-size:12px; color:#9CA3AF; margin-top:25px;">
+          This email was CC'd to the Division Head, Department Head, and Room Admin.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+          `;
+
+          await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: approverEmail,
+            cc: ccList,
+            subject: `[Action Required] Room Booking Approval - ${bookingRef}`,
+            html: approvalHtml,
+          });
+        }
+
+        // 2. SEND CONFIRMATION TO USER
         let guestRows = processedGuests.map(g => `
           <tr>
             <td style="padding:8px;border:1px solid #ddd">${g.fullName}</td>
@@ -323,13 +435,12 @@ export async function POST(req: NextRequest) {
           </tr>
         `).join("");
 
-        const html = `
+        const userHtml = `
           <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
-            <h2 style="color:#059669">✅ Booking Confirmed</h2>
+            <h2 style="color:#059669">✅ Booking ${hasApprovalRequirement ? "Submitted" : "Confirmed"}</h2>
             <p>Dear <b>${auth.user.name}</b>,</p>
-            <p>Your room booking has been confirmed.</p>
-            <p><b>Booking Ref:</b> ${bookingRef}</p>
-            <p><b>Room / Bed:</b> ${room.roomNumber} · Bed ${bedsList}</p>
+            <p>Your room booking has been ${hasApprovalRequirement ? "submitted for approval" : "confirmed"}.</p>
+            ${hasApprovalRequirement ? "<p style='color:#d97706'><b>Note:</b> This booking requires approval from the Commissioner.</p>" : ""}
             <table style="border-collapse:collapse;width:100%;margin:16px 0">
               <thead style="background:#f9fafb">
                 <tr>
@@ -339,20 +450,17 @@ export async function POST(req: NextRequest) {
                 </tr>
               </thead>
               <tbody>${guestRows}</tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="2" style="padding:8px;border:1px solid #ddd;text-align:right"><b>Grand Total:</b></td>
-                  <td style="padding:8px;border:1px solid #ddd;background:#f9fafb"><b>Nu. ${totalAmount}</b></td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         `;
-        await sendMail({
+
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
           to: auth.user.email,
-          subject: `[Room Booking] Confirmation ${bookingRef}`,
-          html,
+          subject: `[Room Booking] ${hasApprovalRequirement ? "Submitted" : "Confirmed"} ${bookingRef}`,
+          html: userHtml,
         });
+
       } catch (e) {
         console.error("[BOOKING EMAIL ERROR]", e);
       }

@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"afe1290573c64f5b829d5b9123b1a023","collectionName":"rb_waiver_reasons","type":"collection"}

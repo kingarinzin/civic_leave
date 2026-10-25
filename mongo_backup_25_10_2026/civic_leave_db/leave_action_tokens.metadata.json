@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"4c8f436b8ff7406fb51c0adbbed578b6","collectionName":"leave_action_tokens","type":"collection"}

@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"6229a0f02a0a45f49d58d5a7f9ed6e98","collectionName":"rb_bed_types","type":"collection"}

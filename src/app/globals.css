@@ -140,3 +140,100 @@ body {
 .react-datepicker__close-icon {
   display: none !important;
 }
+
+/* ─────────────────────────────────────────────
+   NEW TRIP.COM POP-UP CALENDAR STYLES
+   ───────────────────────────────────────────── */
+
+.trip-calendar {
+  font-family: inherit;
+  border: none !important;
+  background: transparent !important;
+  width: 100% !important;
+}
+
+.trip-calendar .react-datepicker__month-container {
+  float: left;
+  width: 50%;
+  padding: 0 10px;
+}
+
+@media (max-width: 768px) {
+  .trip-calendar .react-datepicker__month-container {
+    width: 100%;
+  }
+}
+
+.trip-calendar .react-datepicker__header {
+  background: transparent !important;
+  border-bottom: none !important;
+  padding-top: 10px;
+}
+
+.trip-calendar .react-datepicker__current-month {
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #111827;
+  margin-bottom: 10px;
+}
+
+.trip-calendar .react-datepicker__day-name {
+  color: #6b7280 !important;
+  font-size: 0.75rem !important;
+  font-weight: 600;
+  width: 2.5rem !important;
+  line-height: 2.5rem !important;
+}
+
+.trip-calendar .react-datepicker__day {
+  width: 2.5rem !important;
+  line-height: 2.5rem !important;
+  margin: 0.15rem !important;
+  border-radius: 0.375rem !important; 
+  color: #111827 !important;
+  font-size: 0.875rem !important;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.trip-calendar .react-datepicker__day:hover {
+  background-color: #eff6ff !important; 
+  color: #2563eb !important;
+}
+
+.trip-calendar .react-datepicker__day--in-range,
+.trip-calendar .react-datepicker__day--in-selecting-range {
+  background-color: #eff6ff !important; 
+  border-radius: 0 !important;
+  color: #1d4ed8 !important; 
+}
+
+.trip-calendar .react-datepicker__day--selected,
+.trip-calendar .react-datepicker__day--range-start,
+.trip-calendar .react-datepicker__day--range-end,
+.trip-calendar .react-datepicker__day--selecting-range-start,
+.trip-calendar .react-datepicker__day--selecting-range-end {
+  background-color: #2563eb !important; 
+  color: white !important;
+  border-radius: 0.375rem !important; 
+  font-weight: 700 !important;
+  z-index: 10;
+}
+
+.trip-calendar .react-datepicker__day--keyboard-selected,
+.trip-calendar .react-datepicker__day:focus,
+.trip-calendar .react-datepicker__day:active {
+  background-color: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.trip-calendar .react-datepicker__day--selected:focus,
+.trip-calendar .react-datepicker__day--range-start:focus,
+.trip-calendar .react-datepicker__day--range-end:focus,
+.trip-calendar .react-datepicker__day--selecting-range-start:focus,
+.trip-calendar .react-datepicker__day--selecting-range-end:focus {
+  background-color: #2563eb !important;
+  color: white !important;
+}

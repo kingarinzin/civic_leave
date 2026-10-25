@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"commission":{"$numberInt":"1"}},"name":"commission_1","unique":true}],"uuid":"2d8016e73c5d4a67ae7151b249c9b917","collectionName":"commissions","type":"collection"}
