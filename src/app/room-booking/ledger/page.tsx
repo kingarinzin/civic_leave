@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowLeft, Wallet, CheckCircle2, X, RefreshCw } from "lucide-react";
+import { 
+  Loader2, 
+  ArrowLeft, 
+  Wallet, 
+  CheckCircle2, 
+  X, 
+  RefreshCw,
+  Search,
+  Filter,
+  Home
+} from "lucide-react";
 
 interface LedgerItem {
   _id: string;
@@ -26,6 +36,15 @@ export default function MyLedgerPage() {
   const [journeyNo, setJourneyNo] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Search & Pagination
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  const isAdmin = typeof window !== "undefined" && localStorage.getItem("isAdmin") === "true";
+  const dashboardUrl = isAdmin ? "/admin/pending-users" : "/dashboard/leave";
+
   const loadLedger = async () => {
     setLoading(true);
     try {
@@ -35,6 +54,7 @@ export default function MyLedgerPage() {
       if (!res.ok) throw new Error("Failed to load pending bills");
       const data = await res.json();
       setLedger(data.ledger || []);
+      setCurrentPage(1);
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {
@@ -77,24 +97,57 @@ export default function MyLedgerPage() {
     }
   };
 
+  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleFilterChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setFilterStatus(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleRowsChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setRowsPerPage(Number(e.target.value));
+    setCurrentPage(1);
+  };
+
+  // Filtering Logic
+  const filteredLedger = ledger.filter((item) => {
+    const searchStr = search.toLowerCase();
+    const matchesSearch = 
+      (item.bookingRef || "").toLowerCase().includes(searchStr) ||
+      (item.description || "").toLowerCase().includes(searchStr);
+      
+    const matchesStatus = filterStatus === "" || item.status === filterStatus;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredLedger.length / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const paginatedLedger = filteredLedger.slice(startIndex, startIndex + rowsPerPage);
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6 relative">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-100 p-4 lg:p-6 font-sans relative">
+      <div className="max-w-[1600px] mx-auto w-full">
         
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        {/* HEADER */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-4">
             <button
-              onClick={() => router.push("/room-booking")}
-              className="p-2 bg-white border border-gray-200 rounded-full hover:bg-gray-100 transition"
+              onClick={() => router.push(dashboardUrl)}
+              className="p-2.5 bg-white border border-gray-200 rounded-full hover:bg-gray-50 transition shadow-sm"
+              title="Back to Dashboard"
             >
-              <ArrowLeft size={18} />
+              <Home size={20} className="text-gray-700" />
             </button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                 <Wallet className="text-gray-700" /> Pending Bills & Ledger
               </h1>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 mt-1">
                 You must settle pending bills via mBop before booking a new room.
               </p>
             </div>
@@ -103,64 +156,118 @@ export default function MyLedgerPage() {
           <button 
             onClick={loadLedger} 
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition shadow-sm"
           >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh
           </button>
         </div>
 
-        {/* Content */}
+        {/* TOOLBAR */}
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+          
+          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+            {/* Search */}
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="text"
+                value={search}
+                onChange={handleSearchChange}
+                placeholder="Search Booking Ref..."
+                className="w-full pl-9 pr-3 py-1.5 text-sm border rounded focus:ring-2 focus:ring-blue-400 outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-gray-600 font-medium ml-2">
+              <Filter size={16} className="text-gray-400" />
+              Filters:
+            </div>
+
+            {/* Status Filter */}
+            <select
+              value={filterStatus}
+              onChange={handleFilterChange}
+              className="border rounded px-2 py-1.5 text-sm outline-none bg-gray-50 hover:bg-white transition"
+            >
+              <option value="">All Status</option>
+              <option value="UNPAID">Unpaid</option>
+              <option value="PENDING_VERIFICATION">Pending Verification</option>
+              <option value="PAID">Paid</option>
+            </select>
+          </div>
+
+          {/* Rows per page */}
+          <div className="flex items-center gap-2 text-sm whitespace-nowrap text-gray-600">
+            <span>Show</span>
+            <select 
+              value={rowsPerPage} 
+              onChange={handleRowsChange} 
+              className="border rounded px-2 py-1 outline-none bg-gray-50 hover:bg-white transition"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={30}>30</option>
+              <option value={50}>50</option>
+            </select>
+            <span className="font-medium text-gray-800">{filteredLedger.length} records</span>
+          </div>
+        </div>
+
+        {/* CONTENT */}
         {loading && ledger.length === 0 ? (
           <div className="flex justify-center py-20">
-            <Loader2 className="animate-spin text-gray-400" size={32} />
+            <Loader2 className="animate-spin text-blue-500" size={32} />
           </div>
         ) : error ? (
           <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200">
             {error}
           </div>
-        ) : ledger.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <CheckCircle2 className="mx-auto text-green-500 mb-3" size={40} />
-            <h3 className="text-lg font-medium text-gray-900">No Pending Bills</h3>
-            <p className="text-gray-500 mt-1">Your account is fully settled.</p>
+        ) : filteredLedger.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center shadow-sm">
+            <CheckCircle2 className="mx-auto text-green-500 mb-3" size={48} />
+            <h3 className="text-lg font-medium text-gray-900">No Bills Found</h3>
+            <p className="text-gray-500 mt-1">No bills match your search criteria.</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-medium">
+          <div className="bg-white shadow rounded-lg overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-4">Date</th>
-                  <th className="px-6 py-4">Booking Ref</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-right">Amount</th>
-                  <th className="px-6 py-4 text-center">Action</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Date</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Booking Ref</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Description</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Amount</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Status</th>
+                  <th className="px-6 py-4 text-center text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {ledger.map((item) => (
-                  <tr key={item._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-gray-500">
-                      {new Date(item.createdAt).toLocaleDateString()}
+              <tbody className="divide-y divide-gray-200 bg-white">
+                {paginatedLedger.map((item) => (
+                  <tr key={item._id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      {new Date(item.createdAt).toLocaleDateString('en-GB', {
+                        day: '2-digit', month: 'short', year: 'numeric'
+                      })}
                     </td>
-                    <td className="px-6 py-4 font-medium">{item.bookingRef}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">{item.bookingRef}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600 max-w-[200px] truncate">{item.description || "-"}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-gray-900 whitespace-nowrap">
+                      Nu. {item.amount.toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
                         item.status === "PAID" ? "bg-green-100 text-green-700" : 
                         item.status === "PENDING_VERIFICATION" ? "bg-amber-100 text-amber-700" :
                         "bg-red-100 text-red-700"
                       }`}>
-                        {item.status}
+                        {item.status.replace("_", " ")}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right font-medium">
-                      Nu. {item.amount.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      {/* ONLY SHOW PAY NOW IF UNPAID */}
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
                       {item.status === "UNPAID" && (
                         <button
                           onClick={() => setSelectedBill(item)}
-                          className="px-3 py-1.5 bg-black text-white rounded-md text-xs font-medium hover:bg-gray-800 transition"
+                          className="px-3 py-1.5 bg-black text-white rounded-md text-xs font-bold hover:bg-gray-800 transition shadow-sm"
                         >
                           Pay Now
                         </button>
@@ -178,9 +285,38 @@ export default function MyLedgerPage() {
             </table>
           </div>
         )}
+
+        {/* PAGINATION FOOTER */}
+        {totalPages > 0 && (
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-5 text-sm text-gray-600">
+            <div>
+              Showing <span className="font-semibold text-gray-800">{startIndex + 1}</span> to <span className="font-semibold text-gray-800">{Math.min(startIndex + rowsPerPage, filteredLedger.length)}</span> of <span className="font-semibold text-gray-800">{filteredLedger.length}</span> records
+            </div>
+            <div className="flex items-center gap-4">
+              <button 
+                disabled={currentPage === 1} 
+                onClick={() => setCurrentPage(p => p - 1)} 
+                className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+              >
+                &lt;
+              </button>
+              <span>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button 
+                disabled={currentPage === totalPages} 
+                onClick={() => setCurrentPage(p => p + 1)} 
+                className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+              >
+                &gt;
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
 
-      {/* Payment Modal with QR Code */}
+      {/* PAYMENT MODAL */}
       {selectedBill && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md p-6 relative">

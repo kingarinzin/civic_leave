@@ -20,6 +20,7 @@ import {
   ScrollText,
   BookOpen,
   ShieldCheck,
+  Flag, // <-- ADDED: Icon for Feedback
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -113,22 +114,30 @@ export default function Sidebar() {
   const normalizedEmail = (userEmail || "").toLowerCase().trim();
 
   const hrsAllowedEmails = [
-    "yangzom@acc.org.bt",
-    "skhando@acc.org.bt",
-    "bdorj@acc.org.bt",
-    "tshewangrinzin@acc.org.bt",
-    "chekiw@acc.org.bt",
-    "gyeltshencipo@acc.org.bt",
+    "kingarinzin@acc.org.bt",
+    //"yangzom@acc.org.bt",
+   // "skhando@acc.org.bt",
+    //"bdorj@acc.org.bt",
+    //"tshewangrinzin@acc.org.bt",
+    //"chekiw@acc.org.bt",
+    //"gyeltshencipo@acc.org.bt",
   ];
   const showHRS = isAdmin || hrsAllowedEmails.includes(normalizedEmail);
 
   // 🔥 UAT RESTRICTION: Add the Phuentsholing Staff emails here
   const phuentsholingUATEmails = [
-    "kinley@acc.org.bt",    // <-- Replace with actual emails
-    "sonam@acc.org.bt",     // <-- Replace with actual emails
-    "admin@acc.org.bt",     // <-- Replace with actual emails
-    "slham@acc.org.bt",     // <-- Replace with actual emails
-    "slhamo@acc.org.bt",    // <-- Replace with actual emails
+    "namgaydorji@acc.org.bt",    // <-- Replace with actual emails
+    "plhaden@acc.org.bt",     // <-- Replace with actual emails
+    "tandinw@acc.org.bt",     // <-- Replace with actual emails
+    "rkkatwal@acc.org.bt",     // <-- Replace with actual emails
+    "slham@acc.org.bt",    // <-- Replace with actual emails
+    "ndahal@acc.org.bt",    // <-- Replace with actual emails
+    "dmchettri@acc.org.bt",    // <-- Replace with actual emails
+    "kcdema@acc.org.bt",    // <-- Replace with actual emails
+    "skghalley@acc.org.bt",    // <-- Replace with actual emails
+    "sangayw@acc.org.bt",    // <-- Replace with actual emails
+    "nlhamo@acc.org.bt",    // <-- Replace with actual emails
+    "slham@acc.org.bt",    // <-- Replace with actual emails
     "kingarinzin@acc.org.bt" // <-- Replace with actual emails
   ];
 
@@ -338,6 +347,16 @@ export default function Sidebar() {
               <Clock size={18} />
               Weekly Plan
             </button>
+
+            {/* --- ADDED: FLAG FEEDBACK (ADMIN) --- */}
+            <button
+              onClick={() => router.push("/feedback")}
+              className={navButtonClass(pathname === "/feedback")}
+            >
+              <Flag size={18} />
+              <span className="flex-1 text-left">Flag Feedback</span>
+            </button>
+
             <button
               onClick={() => router.push("/admin/all-users")}
               className={navButtonClass(pathname === "/admin/all-users")}
@@ -390,6 +409,16 @@ export default function Sidebar() {
                 )}
               </div>
             )}
+
+            {/* --- ADDED: FLAG FEEDBACK (NON-ADMIN) --- */}
+            <button
+              onClick={() => router.push("/feedback")}
+              className={navButtonClass(pathname === "/feedback")}
+            >
+              <Flag size={18} />
+              <span className="flex-1 text-left">Flag Feedback</span>
+            </button>
+
             <button
               onClick={() => router.push("/settings")}
               className={navButtonClass(pathname === "/settings")}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Power, PowerOff, Trash2, Edit, Search } from "lucide-react";
+import { Loader2, Power, PowerOff, Trash2, Edit, Search, Filter, RefreshCw } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 interface User {
@@ -59,7 +59,13 @@ export default function AllUsersPage() {
     type: "success" | "error";
   } | null>(null);
 
+  // Filters
   const [search, setSearch] = useState("");
+  const [filterRole, setFilterRole] = useState("");
+  const [filterDept, setFilterDept] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -183,39 +189,55 @@ export default function AllUsersPage() {
     }
   };
 
-  // Filter & Pagination
-  const filteredUsers = users.filter(
-    (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.cid.includes(search) ||
-      u.departmentName.toLowerCase().includes(search.toLowerCase()) ||
-      u.divisionName.toLowerCase().includes(search.toLowerCase()) ||
-      (u.role || "").toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase()),
-  );
+  const handleClearFilters = () => {
+    setSearch("");
+    setFilterRole("");
+    setFilterDept("");
+    setFilterStatus("");
+    setCurrentPage(1);
+  };
+
+  // Get unique departments for the filter dropdown
+  const uniqueDepts = Array.from(new Set(users.map((u) => u.departmentName).filter(Boolean))).sort();
+
+  // Filter & Pagination Logic
+  const filteredUsers = users.filter((u) => {
+    const searchStr = search.toLowerCase();
+    const matchesSearch = 
+      u.name.toLowerCase().includes(searchStr) ||
+      u.cid.includes(searchStr) ||
+      u.email.toLowerCase().includes(searchStr) ||
+      u.designation.toLowerCase().includes(searchStr);
+      
+    const matchesRole = filterRole === "" || u.role === filterRole;
+    const matchesDept = filterDept === "" || u.departmentName === filterDept;
+    
+    const matchesStatus = 
+      filterStatus === "" || 
+      (filterStatus === "ACTIVE" && u.isActive) || 
+      (filterStatus === "INACTIVE" && !u.isActive);
+
+    return matchesSearch && matchesRole && matchesDept && matchesStatus;
+  });
 
   const totalPages = Math.ceil(filteredUsers.length / rowsPerPage);
-  const paginatedUsers = filteredUsers.slice(
-    (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage,
-  );
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + rowsPerPage);
 
   if (loading)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="animate-spin text-black" size={40} />
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <Loader2 className="animate-spin text-blue-500" size={40} />
       </div>
     );
 
   return (
-    <div className="flex min-h-screen bg-gray-50 relative text-black">
+    <div className="flex min-h-screen bg-gray-100 relative text-black font-sans">
       {/* Notification Toast */}
       {notification && (
         <div
           className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-lg shadow-lg transition-all duration-300 ${
-            notification.type === "success"
-              ? "bg-green-600 text-white"
-              : "bg-red-600 text-white"
+            notification.type === "success" ? "bg-green-600 text-white" : "bg-red-600 text-white"
           }`}
         >
           {notification.message}
@@ -225,193 +247,247 @@ export default function AllUsersPage() {
       <Sidebar />
 
       <main className="flex-1 p-4 md:p-6 lg:p-8 ml-0 lg:ml-64 w-full">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Manage all registered users – view, edit roles, activate/deactivate, or delete accounts
-            </p>
+        <div className="max-w-[1600px] mx-auto w-full">
+          
+          {/* HEADER */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Manage all registered users – view, edit roles, activate/deactivate, or delete accounts.
+              </p>
+            </div>
+            <div className="text-sm bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-200 font-medium">
+              Total users: <span className="font-bold text-blue-600">{users.length}</span>
+            </div>
           </div>
-          <div className="text-sm bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200">
-            Total users: <span className="font-semibold text-black">{users.length}</span>
-          </div>
-        </div>
 
-        {/* Search & Rows per page */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              type="text"
-              placeholder="Search by name, CID, department, division, role, email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition"
-            />
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-700">
-            <span>Show</span>
-            <select
-              value={rowsPerPage}
-              onChange={(e) => setRowsPerPage(Number(e.target.value))}
-              className="border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-black"
-            >
-              {[10, 20, 30, 50].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-            <span>entries</span>
-          </div>
-        </div>
+          {/* TOOLBAR */}
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+            
+            <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+              {/* Search */}
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+                  placeholder="Search name, CID, email..."
+                  className="w-full pl-9 pr-3 py-1.5 text-sm border rounded focus:ring-2 focus:ring-blue-400 outline-none"
+                />
+              </div>
 
-        {/* Users Table - Fully Responsive with Avatar Circle */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-[1000px] w-full table-auto">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <div className="flex items-center gap-2 text-sm text-gray-600 font-medium ml-2">
+                <Filter size={16} className="text-gray-400" />
+                Filters:
+              </div>
+
+              {/* Department Filter */}
+              <select
+                value={filterDept}
+                onChange={(e) => { setFilterDept(e.target.value); setCurrentPage(1); }}
+                className="border rounded px-2 py-1.5 text-sm outline-none bg-gray-50 hover:bg-white transition max-w-[150px]"
+              >
+                <option value="">All Depts</option>
+                {uniqueDepts.map((dept) => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+
+              {/* Role Filter */}
+              <select
+                value={filterRole}
+                onChange={(e) => { setFilterRole(e.target.value); setCurrentPage(1); }}
+                className="border rounded px-2 py-1.5 text-sm outline-none bg-gray-50 hover:bg-white transition"
+              >
+                <option value="">All Roles</option>
+                <option value="Officer">Officer</option>
+                <option value="DivisionHead">Division Head</option>
+                <option value="DepartmentHead">Department Head</option>
+                <option value="Commissioner">Commissioner</option>
+                <option value="Chairperson">Chairperson</option>
+                <option value="SecretaryService">Secretary Service</option>
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={filterStatus}
+                onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+                className="border rounded px-2 py-1.5 text-sm outline-none bg-gray-50 hover:bg-white transition"
+              >
+                <option value="">All Status</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+
+              {/* Clear Filters */}
+              {(search || filterRole || filterDept || filterStatus) && (
+                <button 
+                  onClick={handleClearFilters}
+                  className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1.5"
+                >
+                  <RefreshCw size={14} /> Clear
+                </button>
+              )}
+            </div>
+
+            {/* Rows per page */}
+            <div className="flex items-center gap-2 text-sm whitespace-nowrap text-gray-600">
+              <span>Show</span>
+              <select 
+                value={rowsPerPage} 
+                onChange={(e) => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }} 
+                className="border rounded px-2 py-1 outline-none bg-gray-50 hover:bg-white transition"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={50}>50</option>
+              </select>
+              <span className="font-medium text-gray-800">{filteredUsers.length} records</span>
+            </div>
+          </div>
+
+          {/* TABLE */}
+          <div className="bg-white shadow rounded-lg overflow-x-auto">
+            <table className="min-w-[1000px] w-full table-auto divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-                    User
-                  </th>
-                  {["CID", "Designation", "Phone", "Email", "Department", "Division", "Role / Change Role", "Actions"].map((col) => (
-                    <th
-                      key={col}
-                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600"
-                    >
-                      {col}
-                    </th>
-                  ))}
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">User</th>
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">CID</th>
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">Designation</th>
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">Email</th>
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">Department</th>
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">Division</th>
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-gray-500">Role</th>
+                  <th className="px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
+                  <th className="px-4 py-4 text-center text-xs font-bold uppercase tracking-wider text-gray-500">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-200 bg-white">
                 {paginatedUsers.length > 0 ? (
                   paginatedUsers.map((user) => (
                     <tr key={user._id} className="hover:bg-gray-50 transition-colors">
-                      {/* User column with avatar + name */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div
-                            className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold ${getAvatarColor(
-                              user.name
-                            )}`}
-                          >
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${getAvatarColor(user.name)}`}>
                             {getInitials(user.name)}
                           </div>
-                          <span className="text-sm font-medium text-gray-900">
-                            {user.name}
-                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{user.name}</p>
+                            <p className="text-xs text-gray-500">{user.phone}</p>
+                          </div>
                         </div>
-                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{user.cid}</td>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 font-mono">{user.cid}</td>
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[150px] truncate">{user.designation}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{user.phone}</td>
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate">{user.email}</td>
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[140px] truncate">{user.departmentName}</td>
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[140px] truncate">{user.divisionName}</td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 w-fit">
-                            {user.role || "Officer"}
-                          </span>
-                          <select
-                            value={user.role || "Officer"}
-                            onChange={(e) => handleRoleChange(user._id, e.target.value)}
-                            disabled={actionLoading === user._id}
-                            className="mt-1 border border-gray-300 rounded-md px-2 py-1 text-xs bg-white focus:ring-2 focus:ring-black focus:border-transparent outline-none"
-                          >
-                            <option value="Officer">Officer</option>
-                            <option value="DivisionHead">Division Head</option>
-                            <option value="DepartmentHead">Department Head</option>
-                            <option value="Commissioner">Commissioner</option>
-                            <option value="Chairperson">Chairperson</option>
-                            <option value="SecretaryService">Secretary Service</option>
-                          </select>
-                        </div>
-                       </td>
+                        <select
+                          value={user.role || "Officer"}
+                          onChange={(e) => handleRoleChange(user._id, e.target.value)}
+                          disabled={actionLoading === user._id}
+                          className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white focus:ring-2 focus:ring-blue-400 outline-none font-medium"
+                        >
+                          <option value="Officer">Officer</option>
+                          <option value="DivisionHead">Division Head</option>
+                          <option value="DepartmentHead">Department Head</option>
+                          <option value="Commissioner">Commissioner</option>
+                          <option value="Chairperson">Chairperson</option>
+                          <option value="SecretaryService">Secretary Service</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
+                          user.isActive ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"
+                        }`}>
+                          {user.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex justify-center gap-2">
                           <button
                             onClick={() => handleAction(user._id, "toggleStatus", user.isActive)}
                             disabled={actionLoading === user._id}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                              user.isActive
-                                ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
-                                : "bg-green-50 text-green-600 border border-green-200 hover:bg-green-100"
+                            className={`p-1.5 rounded-md transition ${
+                              user.isActive 
+                                ? "text-red-600 hover:bg-red-50" 
+                                : "text-green-600 hover:bg-green-50"
                             }`}
+                            title={user.isActive ? "Deactivate" : "Activate"}
                           >
                             {actionLoading === user._id ? (
-                              <Loader2 className="animate-spin" size={12} />
+                              <Loader2 className="animate-spin" size={16} />
                             ) : user.isActive ? (
-                              <PowerOff size={12} />
+                              <PowerOff size={16} />
                             ) : (
-                              <Power size={12} />
+                              <Power size={16} />
                             )}
-                            {user.isActive ? "Deactivate" : "Activate"}
                           </button>
 
                           <button
                             onClick={() => router.push(`/admin/all-users/${user._id}/edit`)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition"
+                            title="Edit"
                           >
-                            <Edit size={12} /> Edit
+                            <Edit size={16} />
                           </button>
 
                           <button
                             onClick={() => handleAction(user._id, "delete")}
                             disabled={actionLoading === user._id}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-50 transition"
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition"
+                            title="Delete"
                           >
-                            <Trash2 size={12} /> Delete
+                            <Trash2 size={16} />
                           </button>
                         </div>
-                       </td>
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
                     <td colSpan={9} className="text-center py-12 text-gray-500">
                       No users found matching your search.
-                     </td>
+                    </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-        </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-end items-center gap-4 mt-6 text-sm text-gray-700">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-              className={`px-3 py-1 rounded-lg border ${
-                currentPage === 1
-                  ? "text-gray-300 border-gray-200 cursor-not-allowed"
-                  : "hover:bg-gray-100 hover:border-gray-300"
-              }`}
-            >
-              &lt; Prev
-            </button>
-            <span className="text-sm">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-              className={`px-3 py-1 rounded-lg border ${
-                currentPage === totalPages
-                  ? "text-gray-300 border-gray-200 cursor-not-allowed"
-                  : "hover:bg-gray-100 hover:border-gray-300"
-              }`}
-            >
-              Next &gt;
-            </button>
-          </div>
-        )}
+          {/* PAGINATION FOOTER */}
+          {totalPages > 0 && (
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-5 text-sm text-gray-600">
+              <div>
+                Showing <span className="font-semibold text-gray-800">{startIndex + 1}</span> to <span className="font-semibold text-gray-800">{Math.min(startIndex + rowsPerPage, filteredUsers.length)}</span> of <span className="font-semibold text-gray-800">{filteredUsers.length}</span> records
+              </div>
+              <div className="flex items-center gap-4">
+                <button 
+                  disabled={currentPage === 1} 
+                  onClick={() => setCurrentPage(p => p - 1)} 
+                  className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+                >
+                  &lt;
+                </button>
+                <span>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button 
+                  disabled={currentPage === totalPages} 
+                  onClick={() => setCurrentPage(p => p + 1)} 
+                  className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+                >
+                  &gt;
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
       </main>
     </div>
   );
