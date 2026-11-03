@@ -44,6 +44,89 @@ const COUNTRIES = [
   "Vatican City", "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
 ];
 
+// ─── Reusable Searchable Dropdown ─────────────────────
+function SearchableDropdown({ items, value, onChange, placeholder = "Select", searchPlaceholder = "Search...", getLabel, getKey }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredItems = items.filter((item) => {
+    const label = getLabel(item).toLowerCase();
+    return label.includes(searchTerm.toLowerCase());
+  });
+
+  const selectedItem = items.find((item) => getKey(item) === value);
+
+  const handleSelect = (item) => {
+    onChange(getKey(item));
+    setIsOpen(false);
+    setSearchTerm("");
+  };
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <div
+        className="w-full border rounded px-3 py-2 bg-white cursor-pointer flex justify-between items-center"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <span className={selectedItem ? "text-gray-800 truncate" : "text-gray-400"}>
+          {selectedItem ? getLabel(selectedItem) : placeholder}
+        </span>
+        {isOpen ? <ChevronUp size={18} className="flex-shrink-0" /> : <ChevronDown size={18} className="flex-shrink-0" />}
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg p-3 max-h-80 overflow-y-auto">
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder={searchPlaceholder}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full border rounded pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+            />
+          </div>
+          {filteredItems.length === 0 ? (
+            <div className="text-center text-gray-500 text-sm py-2">No results found</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              {filteredItems.map((item) => {
+                const key = getKey(item);
+                const label = getLabel(item);
+                return (
+                  <div
+                    key={key}
+                    className={`px-2 py-1 text-sm rounded cursor-pointer hover:bg-blue-50 truncate ${
+                      key === value ? "bg-blue-100 text-blue-700 font-medium" : ""
+                    }`}
+                    onClick={() => handleSelect(item)}
+                    title={label}
+                  >
+                    {label}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Searchable Country Dropdown ──────────────────────
 function SearchableCountrySelect({ value, onChange, placeholder = "Select Country" }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -174,6 +257,18 @@ export default function TrainingLogPage() {
   const [expandedEmployeeData, setExpandedEmployeeData] = useState(null);
   const [loadingEmployee, setLoadingEmployee] = useState(false);
 
+  // ─── Lazy-loaded photo cache for employees ───
+  const [photoMap, setPhotoMap] = useState({});
+
+  // ─── Dropdown data loading state (lazy) ────────
+  const [dropdownsLoaded, setDropdownsLoaded] = useState(false);
+  const [dropdownsLoading, setDropdownsLoading] = useState(false);
+
+  // ─── Program dropdown search state ────────────
+  const [programSearchTerm, setProgramSearchTerm] = useState("");
+  const [isProgramDropdownOpen, setIsProgramDropdownOpen] = useState(false);
+  const programDropdownRef = useRef(null);
+
   // ─── Inline view state ─────────────────────────────
   const [viewedItemId, setViewedItemId] = useState(null);
 
@@ -220,8 +315,21 @@ export default function TrainingLogPage() {
     employees: [],
   });
 
-  // ─── FETCH DROPDOWN DATA ──────────────────────────
+  // ─── Close program dropdown on outside click ────────
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (programDropdownRef.current && !programDropdownRef.current.contains(event.target)) {
+        setIsProgramDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // ─── FETCH DROPDOWN DATA (lazy) ────────────────────
   const fetchDropdownData = async () => {
+    if (dropdownsLoaded || dropdownsLoading) return;
+    setDropdownsLoading(true);
     try {
       const [titlesRes, agenciesRes, modalitiesRes, instRes, empRes] = await Promise.all([
         fetch("/api/hr/program-title"),
@@ -240,13 +348,23 @@ export default function TrainingLogPage() {
       setFundingModalities(Array.isArray(modalities) ? modalities : []);
       setInstitutions(Array.isArray(insts) ? insts : []);
       setEmployeesList(Array.isArray(emps) ? emps : []);
+      setDropdownsLoaded(true);
     } catch (err) {
       console.error("Failed to fetch dropdown data:", err);
       showNotification("Failed to load reference data", "error");
+    } finally {
+      setDropdownsLoading(false);
     }
   };
 
-  // ─── FETCH TRAINING LOGS ───────────────────────────
+  // ─── Fetch dropdowns if not loaded ──────────────────
+  const loadDropdownsIfNeeded = () => {
+    if (!dropdownsLoaded && !dropdownsLoading) {
+      fetchDropdownData();
+    }
+  };
+
+  // ─── FETCH TRAINING LOGS (critical path) ───────────
   const fetchItems = async () => {
     setLoading(true);
     try {
@@ -266,9 +384,9 @@ export default function TrainingLogPage() {
     }
   };
 
+  // ─── OPTIMIZED: Only fetch logs on mount ────────────
   useEffect(() => {
     fetchItems();
-    fetchDropdownData();
   }, []);
 
   // ─── HANDLERS ──────────────────────────────────────
@@ -278,6 +396,45 @@ export default function TrainingLogPage() {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
+  };
+
+  // ─── Date formatting handler ──────────────────
+  const handleDateChange = (e) => {
+    const { name, value } = e.target;
+    const digits = value.replace(/\D/g, "");
+    let formatted = "";
+    if (digits.length > 0) {
+      formatted += digits.slice(0, 2);
+      if (digits.length > 2) {
+        formatted += "/" + digits.slice(2, 4);
+        if (digits.length > 4) {
+          formatted += "/" + digits.slice(4, 8);
+        }
+      }
+    }
+    setFormData((prev) => ({ ...prev, [name]: formatted }));
+  };
+
+  const formatDateForAPI = (dateStr) => {
+    if (!dateStr) return "";
+    const parts = dateStr.split("/");
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      if (day && month && year && year.length === 4) {
+        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      }
+    }
+    return dateStr;
+  };
+
+  const formatDateForDisplay = (dateStr) => {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
   };
 
   const toggleEmployee = (empId) => {
@@ -342,9 +499,10 @@ export default function TrainingLogPage() {
     }
   };
 
-  const handleProgramSelect = async (e) => {
-    const programId = e.target.value;
+  const handleProgramSelect = async (programId) => {
     setFormData((prev) => ({ ...prev, programTitle: programId }));
+    setIsProgramDropdownOpen(false);
+    setProgramSearchTerm("");
 
     if (!programId) {
       setSelectedProgram(null);
@@ -371,6 +529,14 @@ export default function TrainingLogPage() {
     }
   };
 
+  const filteredPrograms = programTitles.filter((p) => {
+    const term = programSearchTerm.toLowerCase();
+    return (
+      (p.title?.toLowerCase() || "").includes(term) ||
+      (p.trainingId?.toLowerCase() || "").includes(term)
+    );
+  });
+
   const resetForm = () => {
     setFormData({
       programTitle: "",
@@ -395,10 +561,12 @@ export default function TrainingLogPage() {
     setEmployeeSearchTerm("");
     setExpandedEmployeeId(null);
     setExpandedEmployeeData(null);
+    setProgramSearchTerm("");
+    setIsProgramDropdownOpen(false);
   };
 
   const handleView = async (item) => {
-    // Close add form if open
+    loadDropdownsIfNeeded();
     setShowAddForm(false);
     setViewedItemId(item._id);
     setEditData(item);
@@ -407,8 +575,8 @@ export default function TrainingLogPage() {
 
     setFormData({
       programTitle: item.programTitle?._id || item.programTitle || "",
-      startDate: item.startDate ? new Date(item.startDate).toISOString().split("T")[0] : "",
-      endDate: item.endDate ? new Date(item.endDate).toISOString().split("T")[0] : "",
+      startDate: formatDateForDisplay(item.startDate),
+      endDate: formatDateForDisplay(item.endDate),
       fundingAgency: item.fundingAgency?._id || "",
       fundingModality: item.fundingModality?._id || "",
       institution: item.institution?._id || "",
@@ -441,6 +609,17 @@ export default function TrainingLogPage() {
     setSelectedProgram(programData || null);
   };
 
+  // ─── Open Add Form with lazy load ──────────────────
+  const openAddForm = () => {
+    if (viewedItemId) closeInlineView();
+    setShowAddForm(true);
+    setEditData(null);
+    setIsViewMode(false);
+    setActiveTab("program");
+    resetForm();
+    loadDropdownsIfNeeded();
+  };
+
   const closeInlineView = () => {
     setViewedItemId(null);
     setEditData(null);
@@ -452,7 +631,6 @@ export default function TrainingLogPage() {
     setIsViewMode(false);
   };
 
-  // ─── Client-side validation ──────────────────────────
   const validateForm = () => {
     const required = [
       { field: "programTitle", label: "Program Title" },
@@ -481,7 +659,13 @@ export default function TrainingLogPage() {
     if (!validateForm()) return;
     setIsSaving(true);
     try {
-      const payload = { ...formData, employees: formData.employees || [] };
+      const payload = {
+        ...formData,
+        startDate: formatDateForAPI(formData.startDate),
+        endDate: formatDateForAPI(formData.endDate),
+        employees: formData.employees || [],
+      };
+      
       const res = await fetch("/api/hr/training-log", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -504,7 +688,14 @@ export default function TrainingLogPage() {
     if (!validateForm()) return;
     setIsSaving(true);
     try {
-      const payload = { _id: editData._id, ...formData, employees: formData.employees || [] };
+      const payload = {
+        _id: editData._id,
+        ...formData,
+        startDate: formatDateForAPI(formData.startDate),
+        endDate: formatDateForAPI(formData.endDate),
+        employees: formData.employees || [],
+      };
+
       const res = await fetch("/api/hr/training-log", {
         method: "PUT",
         body: JSON.stringify(payload),
@@ -518,8 +709,8 @@ export default function TrainingLogPage() {
       setEditData(data);
       setFormData({
         programTitle: data.programTitle?._id || data.programTitle || "",
-        startDate: data.startDate ? new Date(data.startDate).toISOString().split("T")[0] : "",
-        endDate: data.endDate ? new Date(data.endDate).toISOString().split("T")[0] : "",
+        startDate: formatDateForDisplay(data.startDate),
+        endDate: formatDateForDisplay(data.endDate),
         fundingAgency: data.fundingAgency?._id || "",
         fundingModality: data.fundingModality?._id || "",
         institution: data.institution?._id || "",
@@ -721,6 +912,7 @@ export default function TrainingLogPage() {
     return true;
   });
 
+  // ─── SORTING: Recent on top ──────────────────────────
   const sorted = [...filtered];
   if (sortConfig.key) {
     sorted.sort((a, b) => {
@@ -763,6 +955,26 @@ export default function TrainingLogPage() {
       if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
       if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
+    });
+  } else {
+    sorted.sort((a, b) => {
+      const getTimestamp = (item) => {
+        if (item.createdAt) return new Date(item.createdAt).getTime();
+        if (item.updatedAt) return new Date(item.updatedAt).getTime();
+        if (typeof item._id === 'string' && item._id.length === 24) {
+          return parseInt(item._id.substring(0, 8), 16) * 1000;
+        }
+        if (item.startDate) return new Date(item.startDate).getTime();
+        return 0;
+      };
+
+      const dateA = getTimestamp(a);
+      const dateB = getTimestamp(b);
+
+      if (dateA !== 0 && dateB !== 0) {
+        return dateB - dateA;
+      }
+      return String(b._id).localeCompare(String(a._id));
     });
   }
 
@@ -832,6 +1044,47 @@ export default function TrainingLogPage() {
   const startEmpIndex = (currentPage - 1) * rowsPerPage;
   const paginatedEmployees = sortedEmployees.slice(startEmpIndex, startEmpIndex + rowsPerPage);
 
+  // ─── Lazy-load photos for visible employees ───
+  const loadPhotosForEmployees = async (employeeList) => {
+    const missing = employeeList.filter(
+      (emp) => emp.cidNumber && !photoMap[emp.cidNumber]
+    );
+    if (missing.length === 0) return;
+
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < missing.length; i += BATCH_SIZE) {
+      const batch = missing.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (emp) => {
+          try {
+            const res = await fetch(`/api/hr/employee/${emp.cidNumber}/photo`);
+            if (!res.ok) return null;
+            const data = await res.json();
+            return { cid: emp.cidNumber, photo: data.passportPhoto };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      setPhotoMap((prev) => {
+        const next = { ...prev };
+        results.forEach((r) => {
+          if (r && r.photo) next[r.cid] = r.photo;
+        });
+        return next;
+      });
+    }
+  };
+
+  // ─── Trigger photo lazy-load when employee tab is active ───
+  useEffect(() => {
+    if (viewTab === "employee" && paginatedEmployees.length > 0) {
+      loadPhotosForEmployees(paginatedEmployees);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewTab, currentPage, rowsPerPage, search, employeesList.length]);
+
   // ─── Helpers ──────────────────────────────────────
   const getFundingAgencyName = (id) => {
     const found = fundingAgencies.find((a) => a._id === id);
@@ -894,12 +1147,10 @@ export default function TrainingLogPage() {
     return group;
   };
 
-  // ─── Expand toggle for employee row ────────────────
   const toggleEmpRow = (empId) => {
     setExpandedEmpRow(expandedEmpRow === empId ? null : empId);
   };
 
-  // ─── Reset filters ──────────────────────────────────
   const clearTrainingFilters = () => {
     setTrainingFilters({
       trainingGroup: "",
@@ -937,7 +1188,6 @@ export default function TrainingLogPage() {
         </div>
 
         {editData ? (
-          // ─── EDIT / VIEW MODE – tabs ────────────
           <>
             <div className="flex border-b border-gray-200 mb-6">
               <button
@@ -1008,24 +1258,57 @@ export default function TrainingLogPage() {
                     <p className="text-gray-500">No program selected</p>
                   )
                 ) : (
-                  // EDIT MODE – Program Selection
                   <>
                     <div className="mb-4">
                       <label className="text-sm font-medium">Program Title *</label>
-                      <select
-                        name="programTitle"
-                        value={formData.programTitle}
-                        onChange={handleProgramSelect}
-                        className="w-full border rounded px-3 py-2 mt-1"
-                        required
-                      >
-                        <option value="">Select Program</option>
-                        {programTitles.map((p) => (
-                          <option key={p._id} value={p._id}>
-                            {p.trainingId} - {p.title}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative w-full mt-1" ref={programDropdownRef}>
+                        <div
+                          className="w-full border rounded px-3 py-2 bg-white cursor-pointer flex justify-between items-center"
+                          onClick={() => setIsProgramDropdownOpen(!isProgramDropdownOpen)}
+                        >
+                          <span className={formData.programTitle ? "text-gray-800 truncate" : "text-gray-400"}>
+                            {formData.programTitle
+                              ? programTitles.find(p => p._id === formData.programTitle)?.title || "Select Program"
+                              : "Select Program"}
+                          </span>
+                          {isProgramDropdownOpen ? <ChevronUp size={18} className="flex-shrink-0" /> : <ChevronDown size={18} className="flex-shrink-0" />}
+                        </div>
+
+                        {isProgramDropdownOpen && (
+                          <div className="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg p-3 max-h-80 overflow-y-auto">
+                            <div className="relative mb-3">
+                              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search program by title or ID..."
+                                value={programSearchTerm}
+                                onChange={(e) => setProgramSearchTerm(e.target.value)}
+                                className="w-full border rounded pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                                onClick={(e) => e.stopPropagation()}
+                                autoFocus
+                              />
+                            </div>
+                            {filteredPrograms.length === 0 ? (
+                              <div className="text-center text-gray-500 text-sm py-2">No programs found</div>
+                            ) : (
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                {filteredPrograms.map((p) => (
+                                  <div
+                                    key={p._id}
+                                    className={`px-2 py-1 text-sm rounded cursor-pointer hover:bg-blue-50 truncate ${
+                                      p._id === formData.programTitle ? "bg-blue-100 text-blue-700 font-medium" : ""
+                                    }`}
+                                    onClick={() => handleProgramSelect(p._id)}
+                                    title={`${p.trainingId} - ${p.title}`}
+                                  >
+                                    {p.trainingId} - {p.title}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     {selectedProgram && (
                       <div className="bg-gray-50 p-3 rounded border">
@@ -1053,11 +1336,11 @@ export default function TrainingLogPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                     <div className="flex">
                       <span className="text-sm font-medium text-gray-600 w-36">Start Date</span>
-                      <span className="text-sm">{formData.startDate ? new Date(formData.startDate).toLocaleDateString() : "—"}</span>
+                      <span className="text-sm">{formData.startDate || "—"}</span>
                     </div>
                     <div className="flex">
                       <span className="text-sm font-medium text-gray-600 w-36">End Date</span>
-                      <span className="text-sm">{formData.endDate ? new Date(formData.endDate).toLocaleDateString() : "—"}</span>
+                      <span className="text-sm">{formData.endDate || "—"}</span>
                     </div>
                     <div className="flex">
                       <span className="text-sm font-medium text-gray-600 w-36">Funding Agency</span>
@@ -1117,15 +1400,15 @@ export default function TrainingLogPage() {
                     </div>
                   </div>
                 ) : (
-                  // EDIT MODE – inputs
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium">Start Date *</label>
                       <input
-                        type="date"
+                        type="text"
                         name="startDate"
                         value={formData.startDate}
-                        onChange={handleFormChange}
+                        onChange={handleDateChange}
+                        placeholder="dd/mm/yyyy"
                         className="w-full border rounded px-3 py-2"
                         required
                       />
@@ -1133,30 +1416,26 @@ export default function TrainingLogPage() {
                     <div>
                       <label className="text-sm font-medium">End Date *</label>
                       <input
-                        type="date"
+                        type="text"
                         name="endDate"
                         value={formData.endDate}
-                        onChange={handleFormChange}
+                        onChange={handleDateChange}
+                        placeholder="dd/mm/yyyy"
                         className="w-full border rounded px-3 py-2"
                         required
                       />
                     </div>
                     <div>
                       <label className="text-sm font-medium">Funding Agency *</label>
-                      <select
-                        name="fundingAgency"
+                      <SearchableDropdown
+                        items={fundingAgencies}
                         value={formData.fundingAgency}
-                        onChange={handleFormChange}
-                        className="w-full border rounded px-3 py-2"
-                        required
-                      >
-                        <option value="">Select Funding Agency</option>
-                        {fundingAgencies.map((item) => (
-                          <option key={item._id} value={item._id}>
-                            {item.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => setFormData({ ...formData, fundingAgency: val })}
+                        placeholder="Select Funding Agency"
+                        searchPlaceholder="Search funding agency..."
+                        getLabel={(item) => item.name}
+                        getKey={(item) => item._id}
+                      />
                     </div>
                     <div>
                       <label className="text-sm font-medium">Funding Modality *</label>
@@ -1177,20 +1456,15 @@ export default function TrainingLogPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium">Institution *</label>
-                      <select
-                        name="institution"
+                      <SearchableDropdown
+                        items={institutions}
                         value={formData.institution}
-                        onChange={handleFormChange}
-                        className="w-full border rounded px-3 py-2"
-                        required
-                      >
-                        <option value="">Select Institution</option>
-                        {institutions.map((item) => (
-                          <option key={item._id} value={item._id}>
-                            {item.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => setFormData({ ...formData, institution: val })}
+                        placeholder="Select Institution"
+                        searchPlaceholder="Search institution..."
+                        getLabel={(item) => item.name}
+                        getKey={(item) => item._id}
+                      />
                     </div>
                     <div>
                       <label className="text-sm font-medium">Country *</label>
@@ -1370,7 +1644,6 @@ export default function TrainingLogPage() {
                     <p className="text-gray-500">No employees selected</p>
                   )
                 ) : (
-                  // EDIT MODE – employee multi-select
                   <div>
                     <div className="mb-3">
                       <label className="text-sm font-medium">Search Employees</label>
@@ -1446,27 +1719,60 @@ export default function TrainingLogPage() {
         ) : (
           // ─── ADD MODE ──────────────────────────────
           <div>
-            {/* ─── Program Details ─── */}
             <h3 className="text-md font-semibold text-blue-600 uppercase tracking-wider border-b border-blue-200 pb-2 mb-4">
               Program Details
             </h3>
 
             <div className="mb-4">
               <label className="text-sm font-medium">Program Title *</label>
-              <select
-                name="programTitle"
-                value={formData.programTitle}
-                onChange={handleProgramSelect}
-                className="w-full border rounded px-3 py-2 mt-1"
-                required
-              >
-                <option value="">Select Program</option>
-                {programTitles.map((p) => (
-                  <option key={p._id} value={p._id}>
-                    {p.trainingId} - {p.title}
-                  </option>
-                ))}
-              </select>
+              <div className="relative w-full mt-1" ref={programDropdownRef}>
+                <div
+                  className="w-full border rounded px-3 py-2 bg-white cursor-pointer flex justify-between items-center"
+                  onClick={() => setIsProgramDropdownOpen(!isProgramDropdownOpen)}
+                >
+                  <span className={formData.programTitle ? "text-gray-800 truncate" : "text-gray-400"}>
+                    {formData.programTitle
+                      ? programTitles.find(p => p._id === formData.programTitle)?.title || "Select Program"
+                      : "Select Program"}
+                  </span>
+                  {isProgramDropdownOpen ? <ChevronUp size={18} className="flex-shrink-0" /> : <ChevronDown size={18} className="flex-shrink-0" />}
+                </div>
+
+                {isProgramDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg p-3 max-h-80 overflow-y-auto">
+                    <div className="relative mb-3">
+                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search program by title or ID..."
+                        value={programSearchTerm}
+                        onChange={(e) => setProgramSearchTerm(e.target.value)}
+                        className="w-full border rounded pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                      />
+                    </div>
+                    {filteredPrograms.length === 0 ? (
+                      <div className="text-center text-gray-500 text-sm py-2">No programs found</div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                        {filteredPrograms.map((p) => (
+                          <div
+                            key={p._id}
+                            className={`px-2 py-1 text-sm rounded cursor-pointer hover:bg-blue-50 truncate ${
+                              p._id === formData.programTitle ? "bg-blue-100 text-blue-700 font-medium" : ""
+                            }`}
+                            onClick={() => handleProgramSelect(p._id)}
+                            title={`${p.trainingId} - ${p.title}`}
+                          >
+                            {p.trainingId} - {p.title}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {selectedProgram && (
@@ -1483,7 +1789,6 @@ export default function TrainingLogPage() {
               </div>
             )}
 
-            {/* ─── Training Details ─── */}
             <h3 className="text-md font-semibold text-blue-600 uppercase tracking-wider border-b border-blue-200 pb-2 mb-4 mt-6">
               Training Details
             </h3>
@@ -1492,10 +1797,11 @@ export default function TrainingLogPage() {
               <div>
                 <label className="text-sm font-medium">Start Date *</label>
                 <input
-                  type="date"
+                  type="text"
                   name="startDate"
                   value={formData.startDate}
-                  onChange={handleFormChange}
+                  onChange={handleDateChange}
+                  placeholder="dd/mm/yyyy"
                   className="w-full border rounded px-3 py-2"
                   required
                 />
@@ -1503,30 +1809,26 @@ export default function TrainingLogPage() {
               <div>
                 <label className="text-sm font-medium">End Date *</label>
                 <input
-                  type="date"
+                  type="text"
                   name="endDate"
                   value={formData.endDate}
-                  onChange={handleFormChange}
+                  onChange={handleDateChange}
+                  placeholder="dd/mm/yyyy"
                   className="w-full border rounded px-3 py-2"
                   required
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">Funding Agency *</label>
-                <select
-                  name="fundingAgency"
+                <SearchableDropdown
+                  items={fundingAgencies}
                   value={formData.fundingAgency}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                  required
-                >
-                  <option value="">Select Funding Agency</option>
-                  {fundingAgencies.map((item) => (
-                    <option key={item._id} value={item._id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setFormData({ ...formData, fundingAgency: val })}
+                  placeholder="Select Funding Agency"
+                  searchPlaceholder="Search funding agency..."
+                  getLabel={(item) => item.name}
+                  getKey={(item) => item._id}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium">Funding Modality *</label>
@@ -1547,20 +1849,15 @@ export default function TrainingLogPage() {
               </div>
               <div>
                 <label className="text-sm font-medium">Institution *</label>
-                <select
-                  name="institution"
+                <SearchableDropdown
+                  items={institutions}
                   value={formData.institution}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                  required
-                >
-                  <option value="">Select Institution</option>
-                  {institutions.map((item) => (
-                    <option key={item._id} value={item._id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setFormData({ ...formData, institution: val })}
+                  placeholder="Select Institution"
+                  searchPlaceholder="Search institution..."
+                  getLabel={(item) => item.name}
+                  getKey={(item) => item._id}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium">Country *</label>
@@ -1786,14 +2083,7 @@ export default function TrainingLogPage() {
           <h1 className="text-2xl font-bold">Training Log</h1>
           {!showAddForm && viewTab === "training" && !viewedItemId && (
             <button
-              onClick={() => {
-                if (viewedItemId) closeInlineView();
-                setShowAddForm(true);
-                setEditData(null);
-                setIsViewMode(false);
-                setActiveTab("program");
-                resetForm();
-              }}
+              onClick={openAddForm}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
               <Plus size={14} /> Add Training Log
@@ -1854,7 +2144,7 @@ export default function TrainingLogPage() {
                     ? "Search by ID, title, status, location, category, type, or cost..."
                     : "Search by employee name, CID, position, or training..."
                 }
-                className="w-full px-4 py-2 pr-10 border rounded focus:ring-2 focus:ring-blue-400 outline-none"
+                className="w-full px-4 py-2 pr-10 border border-gray-400 rounded focus:ring-2 focus:ring-blue-400 outline-none"
               />
               <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
             </div>
@@ -2056,7 +2346,6 @@ export default function TrainingLogPage() {
         {/* ─── TABLE ──────────────────────────────────────── */}
         <div className="bg-white shadow rounded-lg overflow-x-auto">
           {viewTab === "training" ? (
-            // ─── TRAINING TABLE ──────────────────────────
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -2099,7 +2388,6 @@ export default function TrainingLogPage() {
                     const isInlineOpen = viewedItemId === item._id;
                     return (
                       <React.Fragment key={item._id}>
-                        {/* Main row – highlighted when inline view is open */}
                         <tr
                           className={`transition-colors ${
                             isInlineOpen
@@ -2147,7 +2435,6 @@ export default function TrainingLogPage() {
                           <td className="px-6 py-3 text-sm flex gap-2">
                             <button
                               onClick={() => {
-                                // If already viewing this item, close it; otherwise open it
                                 if (viewedItemId === item._id) {
                                   closeInlineView();
                                 } else {
@@ -2180,7 +2467,6 @@ export default function TrainingLogPage() {
               </tbody>
             </table>
           ) : (
-            // ─── EMPLOYEE TABLE ──────────────────────────
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -2214,7 +2500,6 @@ export default function TrainingLogPage() {
                   <tr><td colSpan="9" className="text-center py-6 text-gray-500">Loading...</td></tr>
                 ) : paginatedEmployees.length > 0 ? (
                   paginatedEmployees.map((emp) => {
-                    const photoUrl = emp.passportPhoto;
                     const isExpanded = expandedEmpRow === emp._id;
 
                     let gapBadgeClass = "bg-gray-100 text-gray-700";
@@ -2233,9 +2518,9 @@ export default function TrainingLogPage() {
                         <tr className="hover:bg-gray-100 transition-colors">
                           <td className="px-6 py-3 text-sm">
                             <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-200 overflow-hidden relative">
-                              {photoUrl ? (
+                              {photoMap[emp.cidNumber] ? (
                                 <img
-                                  src={photoUrl}
+                                  src={photoMap[emp.cidNumber]}
                                   alt={emp.fullName}
                                   className="w-10 h-10 rounded-full object-cover"
                                   onError={(e) => {
@@ -2243,7 +2528,7 @@ export default function TrainingLogPage() {
                                   }}
                                 />
                               ) : null}
-                              <div className={`absolute inset-0 flex items-center justify-center text-sm font-semibold text-gray-600 bg-blue-100 ${photoUrl ? 'opacity-0 hover:opacity-75' : ''}`}>
+                              <div className={`absolute inset-0 flex items-center justify-center text-sm font-semibold text-gray-600 bg-blue-100 ${photoMap[emp.cidNumber] ? 'opacity-0 hover:opacity-75' : ''}`}>
                                 {emp.fullName?.charAt(0) || "?"}
                               </div>
                             </div>

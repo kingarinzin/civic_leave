@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
-export default function ProgramTitlePage() {
+export default function TrainingTypePage() {
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState(null);
   const [search, setSearch] = useState("");
@@ -16,28 +15,24 @@ export default function ProgramTitlePage() {
   const [notification, setNotification] = useState(null);
 
   const [formData, setFormData] = useState({
-    title: "",
-    code: "",
-    description: "",
+    trainingType: "",
+    remarks: "",
   });
 
   // ─── FETCH ──────────────────────────────────────────
   const fetchItems = async () => {
-    setLoading(true);
-    setError(null);
     try {
-      const res = await fetch("/api/hr/program-title");
+      const res = await fetch("/api/hr/training-type");
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Server responded with ${res.status}: ${text}`);
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to fetch");
       }
       const data = await res.json();
-      setItems(data);
-    } catch (err) {
-      console.error("Fetch error:", err);
-      setError(err.message || "Failed to load Program Titles");
-    } finally {
-      setLoading(false);
+      setItems(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error(error);
+      showNotification("Failed to load Training Types", "error");
+      setItems([]);
     }
   };
 
@@ -51,22 +46,30 @@ export default function ProgramTitlePage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const resetForm = () => {
+    setFormData({ trainingType: "", remarks: "" });
+    setEditData(null);
+    setShowForm(false);
+  };
+
   const handleAdd = async () => {
-    if (!formData.title) {
-      showNotification("Program Title is required", "error");
+    if (!formData.trainingType.trim()) {
+      showNotification("Training Type is required", "error");
       return;
     }
     try {
-      const res = await fetch("/api/hr/program-title", {
+      const res = await fetch("/api/hr/training-type", {
         method: "POST",
         body: JSON.stringify(formData),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error("Failed to add");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to add");
+      }
       await fetchItems();
-      setFormData({ title: "", code: "", description: "" });
-      setShowForm(false);
-      showNotification("Program Title added successfully", "success");
+      resetForm();
+      showNotification("Training Type added successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
     }
@@ -75,42 +78,50 @@ export default function ProgramTitlePage() {
   const handleEdit = (item) => {
     setEditData(item);
     setFormData({
-      title: item.title || "",
-      code: item.code || "",
-      description: item.description || "",
+      trainingType: item.trainingType || "",
+      remarks: item.remarks || "",
     });
     setShowForm(true);
   };
 
   const handleUpdate = async () => {
     try {
-      const res = await fetch("/api/hr/program-title", {
+      const res = await fetch("/api/hr/training-type", {
         method: "PUT",
-        body: JSON.stringify({ ...formData, _id: editData._id }),
+        body: JSON.stringify({
+          _id: editData._id,
+          trainingType: formData.trainingType,
+          remarks: formData.remarks,
+        }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update");
+      }
       await fetchItems();
-      setFormData({ title: "", code: "", description: "" });
-      setEditData(null);
-      setShowForm(false);
-      showNotification("Program Title updated successfully", "success");
+      resetForm();
+      showNotification("Training Type updated successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
     }
   };
 
   const handleDelete = async (item) => {
-    if (!confirm(`Are you sure you want to delete "${item.title}"?`)) return;
+    if (!confirm(`Are you sure you want to delete "${item.trainingType}"?`))
+      return;
     try {
-      const res = await fetch("/api/hr/program-title", {
+      const res = await fetch("/api/hr/training-type", {
         method: "DELETE",
         body: JSON.stringify({ _id: item._id }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error("Failed to delete");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete");
+      }
       await fetchItems();
-      showNotification("Program Title deleted successfully", "success");
+      showNotification("Training Type deleted successfully", "success");
     } catch (error) {
       showNotification(error.message, "error");
     }
@@ -129,16 +140,27 @@ export default function ProgramTitlePage() {
     setSortConfig({ key, direction });
   };
 
-  const filteredItems = items.filter(
+  const handleSearchChange = (e) => {
+    setSearch(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleRowsChange = (e) => {
+    setRowsPerPage(Number(e.target.value));
+    setCurrentPage(1);
+  };
+
+  const filtered = items.filter(
     (item) =>
-      (item.title?.toLowerCase() || "").includes(search.toLowerCase()) ||
-      (item.code?.toLowerCase() || "").includes(search.toLowerCase()) ||
-      (item.description?.toLowerCase() || "").includes(search.toLowerCase())
+      (item.trainingType?.toLowerCase() || "").includes(
+        search.toLowerCase()
+      ) ||
+      (item.remarks?.toLowerCase() || "").includes(search.toLowerCase())
   );
 
-  const sortedItems = [...filteredItems];
+  const sorted = [...filtered];
   if (sortConfig.key) {
-    sortedItems.sort((a, b) => {
+    sorted.sort((a, b) => {
       const aVal = a[sortConfig.key] ?? "";
       const bVal = b[sortConfig.key] ?? "";
       if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
@@ -147,44 +169,11 @@ export default function ProgramTitlePage() {
     });
   }
 
-  const totalPages = Math.ceil(sortedItems.length / rowsPerPage);
+  const totalPages = Math.ceil(sorted.length / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
-  const paginatedItems = sortedItems.slice(startIndex, startIndex + rowsPerPage);
+  const paginated = sorted.slice(startIndex, startIndex + rowsPerPage);
 
   // ─── RENDER ────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full border-blue-500 border-t-transparent"></div>
-            <p className="mt-2 text-gray-600">Loading Program Titles...</p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
-            <strong>Error:</strong> {error}
-            <button
-              onClick={fetchItems}
-              className="ml-4 bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
-            >
-              Retry
-            </button>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="flex">
       <Sidebar />
@@ -192,17 +181,17 @@ export default function ProgramTitlePage() {
       <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Program Titles</h1>
+          <h1 className="text-2xl font-bold">Training Type List</h1>
           {!showForm && (
             <button
               onClick={() => {
                 setShowForm(true);
                 setEditData(null);
-                setFormData({ title: "", code: "", description: "" });
+                setFormData({ trainingType: "", remarks: "" });
               }}
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
-              + Add Program Title
+              <Plus size={14} /> Training Type
             </button>
           )}
         </div>
@@ -225,60 +214,54 @@ export default function ProgramTitlePage() {
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             <div className="flex justify-between mb-4">
               <h2 className="text-lg font-semibold">
-                {editData ? "Edit Program Title" : "Add Program Title"}
+                {editData ? "Edit Training Type" : "Add Training Type"}
               </h2>
               <button
-                onClick={() => setShowForm(false)}
+                onClick={() => resetForm()}
                 className="text-xl text-gray-500"
               >
                 ✕
               </button>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium">Title *</label>
+                <label className="text-sm font-medium">Training Type *</label>
                 <input
-                  name="title"
+                  name="trainingType"
                   type="text"
-                  value={formData.title}
+                  value={formData.trainingType}
                   onChange={handleFormChange}
                   className="w-full border rounded px-3 py-2"
+                  required
+                  placeholder="e.g., Technical, Soft Skills"
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Code</label>
-                <input
-                  name="code"
-                  type="text"
-                  value={formData.code}
+                <label className="text-sm font-medium">Remarks</label>
+                <textarea
+                  name="remarks"
+                  value={formData.remarks}
                   onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Description</label>
-                <input
-                  name="description"
-                  type="text"
-                  value={formData.description}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
+                  rows={3}
+                  className="w-full border rounded px-3 py-2 resize-y"
+                  placeholder="Enter remarks (optional)"
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-5">
               <button
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 border rounded"
+                onClick={() => resetForm()}
+                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
               >
-                Cancel
+                <X size={14} /> Cancel
               </button>
               <button
                 onClick={editData ? handleUpdate : handleAdd}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
+                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
               >
+                {editData ? <Check size={14} /> : <Save size={14} />}
                 {editData ? "Update" : "Save"}
               </button>
             </div>
@@ -290,21 +273,15 @@ export default function ProgramTitlePage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder="Search by title, code or description..."
+            onChange={handleSearchChange}
+            placeholder="Search by training type or remarks..."
             className="w-64 px-4 py-2 border rounded focus:ring-2 focus:ring-blue-400 outline-none"
           />
           <div className="flex items-center gap-2 text-sm">
             <span>Show</span>
             <select
               value={rowsPerPage}
-              onChange={(e) => {
-                setRowsPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
+              onChange={handleRowsChange}
               className="border rounded px-2 py-1"
             >
               <option value={10}>10</option>
@@ -325,28 +302,20 @@ export default function ProgramTitlePage() {
                   S/N
                 </th>
                 <th
-                  onClick={() => handleSort("title")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none"
+                  onClick={() => handleSort("trainingType")}
+                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
+                    sortConfig.key === "trainingType" ? "bg-blue-100" : ""
+                  }`}
                 >
-                  Title{" "}
-                  {sortConfig.key === "title" &&
-                    (sortConfig.direction === "asc" ? "▲" : "▼")}
+                  Training Type
                 </th>
                 <th
-                  onClick={() => handleSort("code")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none"
+                  onClick={() => handleSort("remarks")}
+                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
+                    sortConfig.key === "remarks" ? "bg-blue-100" : ""
+                  }`}
                 >
-                  Code{" "}
-                  {sortConfig.key === "code" &&
-                    (sortConfig.direction === "asc" ? "▲" : "▼")}
-                </th>
-                <th
-                  onClick={() => handleSort("description")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none"
-                >
-                  Description{" "}
-                  {sortConfig.key === "description" &&
-                    (sortConfig.direction === "asc" ? "▲" : "▼")}
+                  Remarks
                 </th>
                 <th className="px-6 py-3 text-left text-sm font-medium uppercase">
                   Actions
@@ -354,32 +323,38 @@ export default function ProgramTitlePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {paginatedItems.length > 0 ? (
-                paginatedItems.map((item, index) => (
-                  <tr key={item._id} className="hover:bg-gray-100 transition-colors">
-                    <td className="px-6 py-3 text-sm">{startIndex + index + 1}</td>
-                    <td className="px-6 py-3 text-sm">{item.title || ""}</td>
-                    <td className="px-6 py-3 text-sm">{item.code || ""}</td>
-                    <td className="px-6 py-3 text-sm">{item.description || ""}</td>
+              {paginated.length > 0 ? (
+                paginated.map((item, index) => (
+                  <tr
+                    key={item._id}
+                    className="hover:bg-gray-100 transition-colors"
+                  >
+                    <td className="px-6 py-3 text-sm">
+                      {startIndex + index + 1}
+                    </td>
+                    <td className="px-6 py-3 text-sm">{item.trainingType}</td>
+                    <td className="px-6 py-3 text-sm">
+                      {item.remarks || "—"}
+                    </td>
                     <td className="px-6 py-3 text-sm flex gap-2">
                       <button
                         onClick={() => handleEdit(item)}
-                        className="px-2 py-1 bg-yellow-400 rounded text-white"
+                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
-                        Edit
+                        <Pencil size={14} /> Edit
                       </button>
                       <button
                         onClick={() => handleDelete(item)}
-                        className="px-2 py-1 bg-red-500 rounded text-white"
+                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
-                        Delete
+                        <Trash2 size={14} /> Delete
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="text-center py-6 text-gray-500">
+                  <td colSpan="4" className="text-center py-6 text-gray-500">
                     No records found
                   </td>
                 </tr>

@@ -1,12 +1,11 @@
 "use client";
 
-import React from "react";
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Trash2, Pencil, Save, Check, X, Plus, Eye, Edit, User, Users,
   Search, ChevronDown, ChevronRight, Calendar, Phone, Mail, Building,
   Award, Briefcase, GraduationCap, UserCheck, Hash, FileText, MapPin,
-  ChevronUp, Loader2, Filter, XCircle
+  ChevronUp, Loader2, Filter, XCircle, RefreshCw, Calculator
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
@@ -257,6 +256,16 @@ export default function TrainingLogPage() {
   const [expandedEmployeeData, setExpandedEmployeeData] = useState(null);
   const [loadingEmployee, setLoadingEmployee] = useState(false);
 
+  // ─── Expense Breakdown State ───
+  const [programExpenses, setProgramExpenses] = useState([]);
+  const [loadingExpenses, setLoadingExpenses] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  
+  // ─── Inline Table Breakdown State ───
+  const [expandedCostRowId, setExpandedCostRowId] = useState(null);
+  const [rowExpenses, setRowExpenses] = useState([]);
+  const [loadingRowExpenses, setLoadingRowExpenses] = useState(false);
+
   // ─── Lazy-loaded photo cache for employees ───
   const [photoMap, setPhotoMap] = useState({});
 
@@ -364,7 +373,7 @@ export default function TrainingLogPage() {
     }
   };
 
-  // ─── FETCH TRAINING LOGS (critical path) ───────────
+  // ─── FETCH TRAINING LOGS WITH BACKGROUND CALCULATION ──
   const fetchItems = async () => {
     setLoading(true);
     try {
@@ -374,12 +383,48 @@ export default function TrainingLogPage() {
         throw new Error(err.error || "Failed to fetch");
       }
       const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
+      const fetchedItems = Array.isArray(data) ? data : [];
+      
+      setItems(fetchedItems);
+      setLoading(false);
+
+      // Fetch live totals in batches of 10 to prevent browser crash
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < fetchedItems.length; i += BATCH_SIZE) {
+        const batch = fetchedItems.slice(i, i + BATCH_SIZE);
+        const updates = await Promise.all(
+          batch.map(async (item) => {
+            const programId = item.programTitle?._id || item.programTitle;
+            if (!programId) return null;
+            try {
+              const expRes = await fetch(`/api/hr/program-expense/program/${programId}`);
+              if (expRes.ok) {
+                const expenses = await expRes.json();
+                const dynamicTotal = expenses.reduce((sum, exp) => sum + (Number(exp.totalAmount) || 0), 0);
+                if (dynamicTotal !== item.totalCost) {
+                  return { id: item._id, newTotal: dynamicTotal };
+                }
+              }
+            } catch (err) { /* ignore */ }
+            return null;
+          })
+        );
+
+        const validUpdates = updates.filter(Boolean);
+        if (validUpdates.length > 0) {
+          setItems(prevItems => 
+            prevItems.map(item => {
+              const update = validUpdates.find(u => u.id === item._id);
+              return update ? { ...item, totalCost: update.newTotal } : item;
+            })
+          );
+        }
+      }
+
     } catch (error) {
       console.error(error);
       showNotification("Failed to load Training Logs", "error");
       setItems([]);
-    } finally {
       setLoading(false);
     }
   };
@@ -499,6 +544,7 @@ export default function TrainingLogPage() {
     }
   };
 
+  // ─── AUTO-FILL TOTAL COST LOGIC ──────────────────────
   const handleProgramSelect = async (programId) => {
     setFormData((prev) => ({ ...prev, programTitle: programId }));
     setIsProgramDropdownOpen(false);
@@ -506,26 +552,34 @@ export default function TrainingLogPage() {
 
     if (!programId) {
       setSelectedProgram(null);
+      setProgramExpenses([]);
+      setFormData(prev => ({ ...prev, totalCost: "" }));
       return;
     }
 
     const found = programTitles.find((p) => p._id === programId);
     if (found) {
       setSelectedProgram(found);
-      return;
     }
 
+    // Fetch the breakdown to auto-fill the total cost
     try {
-      const res = await fetch(`/api/hr/program-title/${programId}`);
+      setLoadingExpenses(true);
+      const res = await fetch(`/api/hr/program-expense/program/${programId}`);
       if (res.ok) {
-        const data = await res.json();
-        setSelectedProgram(data);
-      } else {
-        setSelectedProgram(null);
+        const expenses = await res.json();
+        setProgramExpenses(expenses);
+        
+        // Calculate total and auto-fill
+        const total = expenses.reduce((sum, exp) => sum + (Number(exp.totalAmount) || 0), 0);
+        if (total > 0) {
+          setFormData(prev => ({ ...prev, totalCost: total.toString() }));
+        }
       }
     } catch (error) {
-      console.error("Error fetching program:", error);
-      setSelectedProgram(null);
+      console.error("Error fetching expenses for autofill:", error);
+    } finally {
+      setLoadingExpenses(false);
     }
   };
 
@@ -555,6 +609,8 @@ export default function TrainingLogPage() {
       employees: [],
     });
     setSelectedProgram(null);
+    setProgramExpenses([]);
+    setShowBreakdown(false);
     setEditData(null);
     setActiveTab("program");
     setIsViewMode(false);
@@ -572,6 +628,7 @@ export default function TrainingLogPage() {
     setEditData(item);
     setIsViewMode(true);
     setActiveTab("program");
+    setShowBreakdown(false);
 
     setFormData({
       programTitle: item.programTitle?._id || item.programTitle || "",
@@ -607,6 +664,57 @@ export default function TrainingLogPage() {
       }
     }
     setSelectedProgram(programData || null);
+
+    // Fetch the expenses for the breakdown accordion
+    if (programData?._id) {
+      try {
+        setLoadingExpenses(true);
+        const res = await fetch(`/api/hr/program-expense/program/${programData._id}`);
+        if (res.ok) {
+          setProgramExpenses(await res.json());
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoadingExpenses(false);
+      }
+    }
+  };
+
+  // ─── INLINE TABLE BREAKDOWN HANDLER ────────────────
+  const toggleTableCostBreakdown = async (item) => {
+    if (expandedCostRowId === item._id) {
+      setExpandedCostRowId(null);
+      return;
+    }
+    
+    setExpandedCostRowId(item._id);
+    setLoadingRowExpenses(true);
+    setRowExpenses([]);
+    
+    try {
+      // Fetch expenses for this program
+      const programId = item.programTitle?._id || item.programTitle;
+      if (programId) {
+        const res = await fetch(`/api/hr/program-expense/program/${programId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setRowExpenses(data);
+          
+          // Calculate the true dynamic total and update the table state permanently
+          const newTotal = data.reduce((sum, exp) => sum + (Number(exp.totalAmount) || 0), 0);
+          setItems(prevItems => 
+            prevItems.map(i => 
+              i._id === item._id ? { ...i, totalCost: newTotal } : i
+            )
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load expenses", error);
+    } finally {
+      setLoadingRowExpenses(false);
+    }
   };
 
   // ─── Open Add Form with lazy load ──────────────────
@@ -1176,7 +1284,7 @@ export default function TrainingLogPage() {
     const title = isAddMode ? "Add Training Log" : (isViewMode ? "View Training Log" : "Edit Training Log");
 
     return (
-      <div className="bg-white shadow rounded-xl p-6 mb-4 border border-gray-200">
+      <div className={inline ? "" : "bg-white shadow rounded-xl p-6 mb-4 border border-gray-200"}>
         <div className="flex justify-between mb-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
@@ -1212,13 +1320,13 @@ export default function TrainingLogPage() {
               </button>
               <button
                 onClick={() => setActiveTab("employees")}
-                className={`px-4 py-2 text-sm font-medium transition ${
+                className={`px-4 py-2 text-sm font-medium transition flex items-center gap-1 ${
                   activeTab === "employees"
                     ? "border-b-2 border-blue-500 text-blue-600"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <Users size={16} className="inline mr-1" /> Employees
+                <Users size={16} /> Employees
               </button>
             </div>
 
@@ -1333,72 +1441,113 @@ export default function TrainingLogPage() {
               <div className="bg-white">
                 <h3 className="text-md font-semibold mb-4">TRAINING DETAILS</h3>
                 {isViewMode ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Start Date</span>
-                      <span className="text-sm">{formData.startDate || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">End Date</span>
-                      <span className="text-sm">{formData.endDate || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Funding Agency</span>
-                      <span className="text-sm">{getFundingAgencyName(formData.fundingAgency) || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Funding Modality</span>
-                      <span className="text-sm">{getFundingModalityName(formData.fundingModality) || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Institution</span>
-                      <span className="text-sm">{getInstitutionName(formData.institution) || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Country</span>
-                      <span className="text-sm">{formData.country || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Place/City</span>
-                      <span className="text-sm">{formData.place || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">No. of Participants</span>
-                      <span className="text-sm">{formData.numberOfParticipants || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Total Cost (Nu.)</span>
-                      <span className="text-sm">{formData.totalCost ? Number(formData.totalCost).toLocaleString() : "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">HRC Reference</span>
-                      <span className="text-sm">{formData.hrcReference || "—"}</span>
-                    </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Status</span>
-                      <span className="text-sm">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            formData.status === "Scheduled"
-                              ? "bg-blue-100 text-blue-700"
-                              : formData.status === "In progress"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : formData.status === "Completed"
-                              ? "bg-green-100 text-green-700"
-                              : formData.status === "Cancelled"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          {formData.status}
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Start Date</span>
+                        <span className="text-sm">{formData.startDate || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">End Date</span>
+                        <span className="text-sm">{formData.endDate || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Funding Agency</span>
+                        <span className="text-sm">{getFundingAgencyName(formData.fundingAgency) || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Funding Modality</span>
+                        <span className="text-sm">{getFundingModalityName(formData.fundingModality) || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Institution</span>
+                        <span className="text-sm">{getInstitutionName(formData.institution) || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Country</span>
+                        <span className="text-sm">{formData.country || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Place/City</span>
+                        <span className="text-sm">{formData.place || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">No. of Participants</span>
+                        <span className="text-sm">{formData.numberOfParticipants || "—"}</span>
+                      </div>
+                      
+                      {/* TOTAL COST WITH ACCORDION TOGGLE */}
+                      <div className="flex flex-col md:col-span-2 border-t border-gray-100 pt-3 mt-1">
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm font-medium text-gray-600 w-36">Total Cost (Nu.)</span>
+                          <span className="text-sm font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{formData.totalCost ? Number(formData.totalCost).toLocaleString() : "—"}</span>
+                          {programExpenses.length > 0 && (
+                            <button
+                              onClick={() => setShowBreakdown(!showBreakdown)}
+                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium ml-2"
+                            >
+                              {showBreakdown ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              {showBreakdown ? "Hide Breakdown" : "Show Breakdown"}
+                            </button>
+                          )}
+                        </div>
+                        
+                        {/* ACCORDION BREAKDOWN */}
+                        {showBreakdown && programExpenses.length > 0 && (
+                          <div className="mt-3 ml-36 bg-gray-50 rounded-lg border border-gray-200 p-4">
+                            <h4 className="text-xs font-bold text-gray-500 uppercase mb-2">Cost Breakdown</h4>
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                              <thead>
+                                <tr>
+                                  <th className="text-left font-medium text-gray-600 pb-2">Cost Type</th>
+                                  <th className="text-right font-medium text-gray-600 pb-2">Amount (Nu.)</th>
+                                  <th className="text-left font-medium text-gray-600 pb-2 pl-4">Remarks</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {programExpenses.map((exp) => (
+                                  <tr key={exp._id}>
+                                    <td className="py-2 text-gray-800">{exp.programCostType}</td>
+                                    <td className="py-2 text-right text-gray-800 font-medium">{Number(exp.totalAmount).toLocaleString()}</td>
+                                    <td className="py-2 pl-4 text-gray-500">{exp.remarks || "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">HRC Reference</span>
+                        <span className="text-sm">{formData.hrcReference || "—"}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Status</span>
+                        <span className="text-sm">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              formData.status === "Scheduled"
+                                ? "bg-blue-100 text-blue-700"
+                                : formData.status === "In progress"
+                                ? "bg-yellow-100 text-yellow-700"
+                                : formData.status === "Completed"
+                                ? "bg-green-100 text-green-700"
+                                : formData.status === "Cancelled"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {formData.status}
+                          </span>
                         </span>
-                      </span>
+                      </div>
+                      <div className="flex">
+                        <span className="text-sm font-medium text-gray-600 w-36">Certification</span>
+                        <span className="text-sm">{formData.certification ? "✅ Yes" : "❌ No"}</span>
+                      </div>
                     </div>
-                    <div className="flex">
-                      <span className="text-sm font-medium text-gray-600 w-36">Certification</span>
-                      <span className="text-sm">{formData.certification ? "✅ Yes" : "❌ No"}</span>
-                    </div>
-                  </div>
+                  </>
                 ) : (
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
@@ -1498,18 +1647,19 @@ export default function TrainingLogPage() {
                         min="1"
                       />
                     </div>
-                    <div>
+                    <div className="md:col-span-2">
                       <label className="text-sm font-medium">Total Cost (Nu.) *</label>
                       <input
                         type="number"
                         name="totalCost"
                         value={formData.totalCost}
                         onChange={handleFormChange}
-                        className="w-full border rounded px-3 py-2"
+                        className="w-full border rounded px-3 py-2 bg-blue-50/30 border-blue-200"
                         required
                         min="0"
                         step="0.01"
                       />
+                      <p className="text-xs text-blue-600 mt-1">Auto-calculated from Program Catalogue. You can override it.</p>
                     </div>
                     <div>
                       <label className="text-sm font-medium">HRC Reference</label>
@@ -1898,11 +2048,12 @@ export default function TrainingLogPage() {
                   name="totalCost"
                   value={formData.totalCost}
                   onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 bg-blue-50/30 border-blue-200"
                   required
                   min="0"
                   step="0.01"
                 />
+                <p className="text-xs text-blue-600 mt-1">Auto-calculated from Program Catalogue. You can override it.</p>
               </div>
               <div>
                 <label className="text-sm font-medium">HRC Reference</label>
@@ -2075,624 +2226,1042 @@ export default function TrainingLogPage() {
 
   // ─── RENDER ────────────────────────────────────────
   return (
-    <div className="flex">
-      <Sidebar />
-      <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Training Log</h1>
-          {!showAddForm && viewTab === "training" && !viewedItemId && (
-            <button
-              onClick={openAddForm}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
-            >
-              <Plus size={14} /> Add Training Log
-            </button>
-          )}
+    <>
+      <div className="flex w-full min-h-screen bg-gray-100">
+        {/* Fixed Sidebar */}
+        <div className="fixed inset-y-0 left-0 z-20 bg-white shadow-xl">
+          <Sidebar />
         </div>
 
-        {/* Notification */}
-        {notification && (
-          <div
-            className={`mb-4 px-4 py-2 rounded ${
-              notification.type === "success"
-                ? "bg-green-100 text-green-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
-            {notification.message}
-          </div>
-        )}
+        {/* Main Content Area */}
+        <main className="flex-1 w-full transition-all duration-300 lg:ml-64 p-4 lg:p-6">
+          <div className="max-w-[1600px] mx-auto w-full">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6">
+              <h1 className="text-2xl font-bold">Training Log</h1>
+            </div>
 
-        {/* ─── ADD FORM (top) ────────────────────────── */}
-        {showAddForm && renderTrainingForm({ inline: false, onClose: () => { setShowAddForm(false); resetForm(); } })}
+            {/* Notification */}
+            {notification && (
+              <div
+                className={`mb-4 px-4 py-2 rounded ${
+                  notification.type === "success"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-red-100 text-red-700"
+                }`}
+              >
+                {notification.message}
+              </div>
+            )}
 
-        {/* ─── VIEW TABS ────────────────────────────────── */}
-        <div className="flex border-b border-gray-200 mb-4">
-          <button
-            onClick={() => { setViewTab("training"); setCurrentPage(1); if (viewedItemId) closeInlineView(); }}
-            className={`px-4 py-2 text-sm font-medium transition ${
-              viewTab === "training"
-                ? "border-b-2 border-blue-500 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            By Training
-          </button>
-          <button
-            onClick={() => { setViewTab("employee"); setCurrentPage(1); if (viewedItemId) closeInlineView(); }}
-            className={`px-4 py-2 text-sm font-medium transition ${
-              viewTab === "employee"
-                ? "border-b-2 border-blue-500 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            By Employee
-          </button>
-        </div>
+            {/* ─── ADD FORM (top) ────────────────────────── */}
+            {showAddForm &&
+              renderTrainingForm({
+                inline: false,
+                onClose: () => {
+                  setShowAddForm(false);
+                  resetForm();
+                },
+              })}
 
-        {/* ─── TOOLBAR ───────────────────────────────────── */}
-        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <div className="flex items-center gap-2 flex-1">
-            <div className="relative w-96">
-              <input
-                type="text"
-                value={search}
-                onChange={handleSearchChange}
-                placeholder={
+            {/* ─── VIEW TABS ────────────────────────────────── */}
+            <div className="flex border-b border-gray-200 mb-4">
+              <button
+                onClick={() => {
+                  setViewTab("training");
+                  setCurrentPage(1);
+                  if (viewedItemId) closeInlineView();
+                }}
+                className={`px-4 py-2 text-sm font-medium transition ${
                   viewTab === "training"
-                    ? "Search by ID, title, status, location, category, type, or cost..."
-                    : "Search by employee name, CID, position, or training..."
-                }
-                className="w-full px-4 py-2 pr-10 border border-gray-400 rounded focus:ring-2 focus:ring-blue-400 outline-none"
-              />
-              <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
-            </div>
-            {viewTab === "training" && (
-              <button
-                onClick={() => setShowTrainingFilters(!showTrainingFilters)}
-                className={`flex items-center gap-2 px-3 py-2 border rounded-md text-sm font-medium transition ${
-                  showTrainingFilters ? "bg-blue-50 border-blue-400 text-blue-600" : "hover:border-gray-400"
+                    ? "border-b-2 border-blue-500 text-blue-600"
+                    : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <Filter size={16} />
-                Filters
-                {Object.values(trainingFilters).some(v => v) && (
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
-                )}
+                By Training
               </button>
-            )}
-            {viewTab === "employee" && (
               <button
-                onClick={() => setShowEmployeeFilters(!showEmployeeFilters)}
-                className={`flex items-center gap-2 px-3 py-2 border rounded-md text-sm font-medium transition ${
-                  showEmployeeFilters ? "bg-blue-50 border-blue-400 text-blue-600" : "hover:border-gray-400"
+                onClick={() => {
+                  setViewTab("employee");
+                  setCurrentPage(1);
+                  if (viewedItemId) closeInlineView();
+                }}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  viewTab === "employee"
+                    ? "border-b-2 border-blue-500 text-blue-600"
+                    : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <Filter size={16} />
-                Filters
-                {Object.values(employeeFilters).some(v => v) && (
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                By Employee
+              </button>
+            </div>
+
+            {/* ─── TOOLBAR ───────────────────────────────────── */}
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                {!showAddForm && viewTab === "training" && !viewedItemId && (
+                  <button
+                    onClick={openAddForm}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white border rounded-md text-xs font-medium hover:bg-blue-700 transition"
+                  >
+                    <Plus size={14} /> Add Training Log
+                  </button>
                 )}
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <span>Show</span>
-            <select
-              value={rowsPerPage}
-              onChange={handleRowsChange}
-              className="border rounded px-2 py-1"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={30}>30</option>
-              <option value={40}>40</option>
-            </select>
-            <span>entries</span>
-          </div>
-        </div>
 
-        {/* ─── FILTER PANELS ────────────────────────────── */}
-        {viewTab === "training" && showTrainingFilters && (
-          <div className="bg-white p-4 rounded-lg shadow mb-4 border border-gray-200">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-semibold text-gray-700">Training Filters</h3>
-              <button
-                onClick={clearTrainingFilters}
-                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-              >
-                <XCircle size={14} /> Clear all
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Training Group</label>
-                <select
-                  value={trainingFilters.trainingGroup}
-                  onChange={(e) => setTrainingFilters({ ...trainingFilters, trainingGroup: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Groups</option>
-                  {trainingFilterOptions.trainingGroups.map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Training Type</label>
-                <select
-                  value={trainingFilters.trainingType}
-                  onChange={(e) => setTrainingFilters({ ...trainingFilters, trainingType: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Types</option>
-                  {trainingFilterOptions.trainingTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Location Category</label>
-                <select
-                  value={trainingFilters.locationCategory}
-                  onChange={(e) => setTrainingFilters({ ...trainingFilters, locationCategory: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Locations</option>
-                  {trainingFilterOptions.locationCategories.map((l) => (
-                    <option key={l} value={l}>{l}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Status</label>
-                <select
-                  value={trainingFilters.status}
-                  onChange={(e) => setTrainingFilters({ ...trainingFilters, status: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Statuses</option>
-                  {trainingFilterOptions.statuses.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Country</label>
-                <select
-                  value={trainingFilters.country}
-                  onChange={(e) => setTrainingFilters({ ...trainingFilters, country: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Countries</option>
-                  {trainingFilterOptions.countries.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
+                <input
+                  type="text"
+                  value={search}
+                  onChange={handleSearchChange}
+                  placeholder={
+                    viewTab === "training"
+                      ? "Search (ID, title, status, location)..."
+                      : "Search (name, CID, position, training)..."
+                  }
+                  className="w-full sm:w-64 px-3 py-1.5 text-sm border rounded focus:ring-2 focus:ring-blue-400 outline-none"
+                />
 
-        {viewTab === "employee" && showEmployeeFilters && (
-          <div className="bg-white p-4 rounded-lg shadow mb-4 border border-gray-200">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-semibold text-gray-700">Employee Filters</h3>
-              <button
-                onClick={clearEmployeeFilters}
-                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-              >
-                <XCircle size={14} /> Clear all
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Department</label>
-                <select
-                  value={employeeFilters.department}
-                  onChange={(e) => setEmployeeFilters({ ...employeeFilters, department: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Departments</option>
-                  {employeeFilterOptions.departments.map((dept) => (
-                    <option key={dept} value={dept}>{dept}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Division</label>
-                <select
-                  value={employeeFilters.division}
-                  onChange={(e) => setEmployeeFilters({ ...employeeFilters, division: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Divisions</option>
-                  {employeeFilterOptions.divisions.map((div) => (
-                    <option key={div} value={div}>{div}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Position Level</label>
-                <select
-                  value={employeeFilters.positionLevel}
-                  onChange={(e) => setEmployeeFilters({ ...employeeFilters, positionLevel: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Levels</option>
-                  {employeeFilterOptions.positionLevels.map((level) => (
-                    <option key={level} value={level}>{level}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Training Status</label>
-                <select
-                  value={employeeFilters.trainingStatus}
-                  onChange={(e) => setEmployeeFilters({ ...employeeFilters, trainingStatus: e.target.value })}
-                  className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
-                >
-                  <option value="">All Statuses</option>
-                  {employeeFilterOptions.trainingStatuses.map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
+                <div className="flex items-center gap-2 text-sm text-gray-600 font-medium ml-2">
+                  <Filter size={16} className="text-gray-400" /> Filters:
+                </div>
 
-        {/* ─── TABLE ──────────────────────────────────────── */}
-        <div className="bg-white shadow rounded-lg overflow-x-auto">
-          {viewTab === "training" ? (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("programTitle")}>
-                    TRAINING
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("dateRange")}>
-                    DATE RANGE
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("status")}>
-                    STATUS
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("totalCost")}>
-                    TOTAL COST (Nu.)
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("locationCategory")}>
-                    LOCATION CATEGORY
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("trainingCategoryType")}>
-                    CATEGORY / TYPE
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("employees")}>
-                    TOTAL PARTICIPANTS
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("certification")}>
-                    CERTIFICATION
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase">ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {loading ? (
-                  <tr><td colSpan="9" className="text-center py-6 text-gray-500">Loading...</td></tr>
-                ) : paginated.length > 0 ? (
-                  paginated.map((item) => {
-                    const trainingGroup = item.programTitle?.trainingGroup || "";
-                    const trainingType = renderTrainingType(item.programTitle?.trainingType);
-                    const fullTitle = item.programTitle?.title || "—";
-                    const truncatedTitle = truncateWords(fullTitle, 3);
-                    const isInlineOpen = viewedItemId === item._id;
-                    return (
-                      <React.Fragment key={item._id}>
-                        <tr
-                          className={`transition-colors ${
-                            isInlineOpen
-                              ? "bg-blue-50 border-l-4 border-blue-400"
-                              : "hover:bg-gray-100"
-                          }`}
-                        >
-                          <td className="px-6 py-3 text-sm">
-                            <div className="font-medium text-gray-800" title={fullTitle}>
-                              {truncatedTitle}
-                            </div>
-                            <div className="text-xs text-gray-500">{item.programTitle?.trainingId || ""}</div>
-                          </td>
-                          <td className="px-6 py-3 text-sm">
-                            {item.startDate && item.endDate ? (
-                              `${formatDate(item.startDate)} – ${formatDate(item.endDate)}`
-                            ) : "—"}
-                          </td>
-                          <td className="px-6 py-3 text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              item.status === "Scheduled" ? "bg-blue-100 text-blue-700" :
-                              item.status === "In progress" ? "bg-yellow-100 text-yellow-700" :
-                              item.status === "Completed" ? "bg-green-100 text-green-700" :
-                              item.status === "Cancelled" ? "bg-red-100 text-red-700" :
-                              "bg-gray-100 text-gray-700"
-                            }`}>
-                              {item.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3 text-sm">
-                            {item.totalCost ? Number(item.totalCost).toLocaleString() : "—"}
-                          </td>
-                          <td className="px-6 py-3 text-sm">
-                            <div className="font-medium text-gray-800">{item.programTitle?.locationCategory || "—"}</div>
-                            <div className="text-xs text-gray-500">{item.country || ""}</div>
-                          </td>
-                          <td className="px-6 py-3 text-sm">
-                            <div className="font-medium text-gray-800">{groupDisplay(trainingGroup) || "—"}</div>
-                            <div className="text-xs text-gray-500">{trainingType || ""}</div>
-                          </td>
-                          <td className="px-6 py-3 text-sm text-center">
-                            {item.employees?.length || 0}
-                          </td>
-                          <td className="px-6 py-3 text-sm">{item.certification ? "✅ Yes" : "❌ No"}</td>
-                          <td className="px-6 py-3 text-sm flex gap-2">
-                            <button
-                              onClick={() => {
-                                if (viewedItemId === item._id) {
-                                  closeInlineView();
-                                } else {
-                                  handleView(item);
-                                }
-                              }}
-                              className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                            >
-                              <Eye size={14} />
-                              {viewedItemId === item._id ? "Close" : "View"}
-                            </button>
-                            <button onClick={() => handleDelete(item)} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition">
-                              <Trash2 size={14} /> Delete
-                            </button>
-                          </td>
-                        </tr>
-                        {isInlineOpen && (
-                          <tr>
-                            <td colSpan="9" className="px-6 py-3 bg-gray-50/80">
-                              {renderTrainingForm({ inline: true, onClose: closeInlineView })}
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                ) : (
-                  <tr><td colSpan="9" className="text-center py-6 text-gray-500">No records found</td></tr>
+                {viewTab === "training" && (
+                  <button
+                    onClick={() => setShowTrainingFilters(!showTrainingFilters)}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 border rounded text-sm transition ${
+                      showTrainingFilters
+                        ? "bg-blue-50 border-blue-400 text-blue-600"
+                        : "bg-gray-50 hover:bg-white"
+                    }`}
+                  >
+                    <Filter size={14} />
+                    {Object.values(trainingFilters).filter(Boolean).length > 0 && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    )}
+                  </button>
                 )}
-              </tbody>
-            </table>
-          ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase">PHOTO</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("fullName")}>
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("employeeNumber")}>
-                    Emp / CID
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("positionTitle")}>
-                    Position
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("totalAttended")} title="Total number of trainings attended">
-                    Attended (No)
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("lastDate")} title="Most recent training end date">
-                    Last Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("gap")} title="Time since last training (years/months)">
-                    Gap
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none" onClick={() => handleSort("email")}>
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {loading ? (
-                  <tr><td colSpan="9" className="text-center py-6 text-gray-500">Loading...</td></tr>
-                ) : paginatedEmployees.length > 0 ? (
-                  paginatedEmployees.map((emp) => {
-                    const isExpanded = expandedEmpRow === emp._id;
 
-                    let gapBadgeClass = "bg-gray-100 text-gray-700";
-                    let gapLabel = emp.gap || "—";
-                    if (emp.gap) {
-                      const num = parseInt(emp.gap);
-                      if (!isNaN(num)) {
-                        if (num <= 0.5) gapBadgeClass = "bg-green-100 text-green-700";
-                        else if (num <= 1) gapBadgeClass = "bg-yellow-100 text-yellow-700";
-                        else gapBadgeClass = "bg-red-100 text-red-700";
-                      }
+                {viewTab === "employee" && (
+                  <button
+                    onClick={() => setShowEmployeeFilters(!showEmployeeFilters)}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 border rounded text-sm transition ${
+                      showEmployeeFilters
+                        ? "bg-blue-50 border-blue-400 text-blue-600"
+                        : "bg-gray-50 hover:bg-white"
+                    }`}
+                  >
+                    <Filter size={14} />
+                    {Object.values(employeeFilters).filter(Boolean).length > 0 && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    )}
+                  </button>
+                )}
+
+                {(search ||
+                  Object.values(
+                    viewTab === "training" ? trainingFilters : employeeFilters
+                  ).some(Boolean)) && (
+                  <button
+                    onClick={
+                      viewTab === "training"
+                        ? clearTrainingFilters
+                        : clearEmployeeFilters
                     }
-
-                    return (
-                      <React.Fragment key={emp._id}>
-                        <tr className="hover:bg-gray-100 transition-colors">
-                          <td className="px-6 py-3 text-sm">
-                            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-200 overflow-hidden relative">
-                              {photoMap[emp.cidNumber] ? (
-                                <img
-                                  src={photoMap[emp.cidNumber]}
-                                  alt={emp.fullName}
-                                  className="w-10 h-10 rounded-full object-cover"
-                                  onError={(e) => {
-                                    e.target.style.display = 'none';
-                                  }}
-                                />
-                              ) : null}
-                              <div className={`absolute inset-0 flex items-center justify-center text-sm font-semibold text-gray-600 bg-blue-100 ${photoMap[emp.cidNumber] ? 'opacity-0 hover:opacity-75' : ''}`}>
-                                {emp.fullName?.charAt(0) || "?"}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-3 text-sm font-medium">{emp.fullName}</td>
-                          <td className="px-6 py-3 text-sm">
-                            <div className="font-medium text-gray-800">{emp.employeeNumber || "—"}</div>
-                            <div className="text-xs text-gray-500">{emp.cidNumber || ""}</div>
-                          </td>
-                          <td className="px-6 py-3 text-sm">{formatPosition(emp)}</td>
-                          <td className="px-6 py-3 text-sm text-center font-bold">{emp.totalAttended}</td>
-                          <td className="px-6 py-3 text-sm">{emp.lastDate ? formatDate(emp.lastDate) : "—"}</td>
-                          <td className="px-6 py-3 text-sm whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${gapBadgeClass}`}>
-                              {gapLabel}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3 text-sm">
-                            {emp.email ? (
-                              <a href={`mailto:${emp.email}`} className="text-blue-600 hover:underline">
-                                {emp.email}
-                              </a>
-                            ) : "—"}
-                          </td>
-                          <td className="px-6 py-3 text-sm flex gap-2">
-                            {emp.trainings && emp.trainings.length > 0 && (
-                              <button
-                                onClick={() => toggleEmpRow(emp._id)}
-                                className="flex items-center gap-1 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-blue-500 hover:text-blue-500 transition"
-                              >
-                                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                {isExpanded ? 'Hide' : 'View'} Trainings ({emp.trainings.length})
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr className="border-l-4 border-blue-400 bg-blue-50/30">
-                            <td colSpan="9" className="px-6 py-3">
-                              <div>
-                                <h4 className="text-sm font-semibold text-gray-700 mb-2">Trainings Attended</h4>
-                                {emp.trainings && emp.trainings.length > 0 ? (
-                                  <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                                      <thead className="bg-gray-100">
-                                        <tr>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Training ID</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Title</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Location Category</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Training Type</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Country</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Place</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Start Date</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">End Date</th>
-                                          <th className="px-3 py-2 text-left font-medium text-gray-600">Status</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-gray-200">
-                                        {emp.trainings.map((t, idx) => (
-                                          <tr key={idx} className="hover:bg-gray-50">
-                                            <td className="px-3 py-2 font-mono">{t.trainingId || "—"}</td>
-                                            <td className="px-3 py-2" title={t.title || "—"}>
-                                              {truncateWords(t.title, 3)}
-                                            </td>
-                                            <td className="px-3 py-2">{t.locationCategory || "—"}</td>
-                                            <td className="px-3 py-2">{renderTrainingType(t.trainingType)}</td>
-                                            <td className="px-3 py-2">{t.country || "—"}</td>
-                                            <td className="px-3 py-2">{t.place || "—"}</td>
-                                            <td className="px-3 py-2">{t.startDate ? formatDate(t.startDate) : "—"}</td>
-                                            <td className="px-3 py-2">{t.endDate ? formatDate(t.endDate) : "—"}</td>
-                                            <td className="px-3 py-2">
-                                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                                t.status === "Scheduled" ? "bg-blue-100 text-blue-700" :
-                                                t.status === "In progress" ? "bg-yellow-100 text-yellow-700" :
-                                                t.status === "Completed" ? "bg-green-100 text-green-700" :
-                                                t.status === "Cancelled" ? "bg-red-100 text-red-700" :
-                                                "bg-gray-100 text-gray-700"
-                                              }`}>
-                                                {t.status || "—"}
-                                              </span>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                ) : (
-                                  <p className="text-gray-500 text-center py-2">No trainings attended</p>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                ) : (
-                  <tr><td colSpan="9" className="text-center py-6 text-gray-500">No employees found</td></tr>
+                    className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1.5"
+                  >
+                    <RefreshCw size={14} /> Clear
+                  </button>
                 )}
-              </tbody>
-            </table>
-          )}
-        </div>
+              </div>
 
-        {/* ─── PAGINATION ────────────────────────────────── */}
-        {viewTab === "training" && totalPages > 1 && (
-          <div className="flex justify-end items-center gap-4 mt-5 text-sm">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-              className={`font-semibold text-lg ${
-                currentPage === 1
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
-            >
-              &lt;
-            </button>
-            <span>
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-              className={`font-semibold text-lg ${
-                currentPage === totalPages
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
-            >
-              &gt;
-            </button>
+              <div className="flex items-center gap-2 text-sm whitespace-nowrap text-gray-600">
+                <span>Show</span>
+                <select
+                  value={rowsPerPage}
+                  onChange={handleRowsChange}
+                  className="border rounded px-2 py-1 outline-none"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={30}>30</option>
+                  <option value={40}>40</option>
+                </select>
+                <span className="font-medium text-gray-800">
+                  {viewTab === "training"
+                    ? filtered.length
+                    : filteredEmployeesView.length}{" "}
+                  records
+                </span>
+              </div>
+            </div>
+
+            {/* ─── FILTER PANELS ────────────────────────────── */}
+            {viewTab === "training" && showTrainingFilters && (
+              <div className="bg-white p-4 rounded-lg shadow mb-4 border border-gray-200">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">
+                    Training Filters
+                  </h3>
+                  <button
+                    onClick={clearTrainingFilters}
+                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    <XCircle size={14} /> Clear all
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Training Group
+                    </label>
+                    <select
+                      value={trainingFilters.trainingGroup}
+                      onChange={(e) =>
+                        setTrainingFilters({
+                          ...trainingFilters,
+                          trainingGroup: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Groups</option>
+                      {trainingFilterOptions.trainingGroups.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Training Type
+                    </label>
+                    <select
+                      value={trainingFilters.trainingType}
+                      onChange={(e) =>
+                        setTrainingFilters({
+                          ...trainingFilters,
+                          trainingType: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Types</option>
+                      {trainingFilterOptions.trainingTypes.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Location Category
+                    </label>
+                    <select
+                      value={trainingFilters.locationCategory}
+                      onChange={(e) =>
+                        setTrainingFilters({
+                          ...trainingFilters,
+                          locationCategory: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Locations</option>
+                      {trainingFilterOptions.locationCategories.map((l) => (
+                        <option key={l} value={l}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Status
+                    </label>
+                    <select
+                      value={trainingFilters.status}
+                      onChange={(e) =>
+                        setTrainingFilters({
+                          ...trainingFilters,
+                          status: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Statuses</option>
+                      {trainingFilterOptions.statuses.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Country
+                    </label>
+                    <select
+                      value={trainingFilters.country}
+                      onChange={(e) =>
+                        setTrainingFilters({
+                          ...trainingFilters,
+                          country: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Countries</option>
+                      {trainingFilterOptions.countries.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {viewTab === "employee" && showEmployeeFilters && (
+              <div className="bg-white p-4 rounded-lg shadow mb-4 border border-gray-200">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">
+                    Employee Filters
+                  </h3>
+                  <button
+                    onClick={clearEmployeeFilters}
+                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    <XCircle size={14} /> Clear all
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Department
+                    </label>
+                    <select
+                      value={employeeFilters.department}
+                      onChange={(e) =>
+                        setEmployeeFilters({
+                          ...employeeFilters,
+                          department: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Departments</option>
+                      {employeeFilterOptions.departments.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Division
+                    </label>
+                    <select
+                      value={employeeFilters.division}
+                      onChange={(e) =>
+                        setEmployeeFilters({
+                          ...employeeFilters,
+                          division: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Divisions</option>
+                      {employeeFilterOptions.divisions.map((div) => (
+                        <option key={div} value={div}>
+                          {div}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Position Level
+                    </label>
+                    <select
+                      value={employeeFilters.positionLevel}
+                      onChange={(e) =>
+                        setEmployeeFilters({
+                          ...employeeFilters,
+                          positionLevel: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Levels</option>
+                      {employeeFilterOptions.positionLevels.map((level) => (
+                        <option key={level} value={level}>
+                          {level}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">
+                      Training Status
+                    </label>
+                    <select
+                      value={employeeFilters.trainingStatus}
+                      onChange={(e) =>
+                        setEmployeeFilters({
+                          ...employeeFilters,
+                          trainingStatus: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 hover:bg-white transition"
+                    >
+                      <option value="">All Statuses</option>
+                      {employeeFilterOptions.trainingStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ─── TABLE ──────────────────────────────────────── */}
+            <div className="bg-white shadow rounded-lg overflow-x-auto">
+              {viewTab === "training" ? (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("programTitle")}
+                      >
+                        TRAINING
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("dateRange")}
+                      >
+                        DATE RANGE
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("status")}
+                      >
+                        STATUS
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("totalCost")}
+                      >
+                        TOTAL COST (Nu.)
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("locationCategory")}
+                      >
+                        LOCATION CATEGORY
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("trainingCategoryType")}
+                      >
+                        CATEGORY / TYPE
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("employees")}
+                      >
+                        TOTAL PARTICIPANTS
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("certification")}
+                      >
+                        CERTIFICATION
+                      </th>
+                      <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">
+                        ACTIONS
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {loading ? (
+                      <tr>
+                        <td colSpan="9" className="text-center py-6 text-gray-500">
+                          Loading...
+                        </td>
+                      </tr>
+                    ) : paginated.length > 0 ? (
+                      paginated.map((item) => {
+                        const trainingGroup = item.programTitle?.trainingGroup || "";
+                        const trainingType = renderTrainingType(
+                          item.programTitle?.trainingType
+                        );
+                        const fullTitle = item.programTitle?.title || "—";
+                        const truncatedTitle = truncateWords(fullTitle, 3);
+                        const isInlineOpen = viewedItemId === item._id;
+                        const isCostExpanded = expandedCostRowId === item._id;
+                        
+                        const displayTotal = item.totalCost ? Number(item.totalCost) : 0;
+
+                        return (
+                          <React.Fragment key={item._id}>
+                            <tr
+                              className={`transition-colors ${
+                                isInlineOpen || isCostExpanded
+                                  ? "bg-blue-50 border-l-4 border-blue-400"
+                                  : "hover:bg-gray-50"
+                              }`}
+                            >
+                              <td className="px-2 py-3 text-sm">
+                                <div
+                                  className="font-medium text-gray-800"
+                                  title={fullTitle}
+                                >
+                                  {truncatedTitle}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {item.programTitle?.trainingId || ""}
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-sm whitespace-nowrap">
+                                {item.startDate && item.endDate
+                                  ? `${formatDate(item.startDate)} – ${formatDate(
+                                      item.endDate
+                                    )}`
+                                  : "—"}
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                <span
+                                  className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                                    item.status === "Scheduled"
+                                      ? "bg-blue-100 text-blue-700"
+                                      : item.status === "In progress"
+                                      ? "bg-yellow-100 text-yellow-700"
+                                      : item.status === "Completed"
+                                      ? "bg-green-100 text-green-700"
+                                      : item.status === "Cancelled"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-gray-100 text-gray-700"
+                                  }`}
+                                >
+                                  {item.status}
+                                </span>
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                <button
+                                  onClick={() => toggleTableCostBreakdown(item)}
+                                  className={`flex items-center gap-1 font-medium hover:text-blue-600 hover:underline transition ${
+                                    isCostExpanded ? "text-blue-600" : "text-gray-800"
+                                  }`}
+                                >
+                                  {displayTotal > 0 ? displayTotal.toLocaleString() : "—"}
+                                  {isCostExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                </button>
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                <div className="font-medium text-gray-800">
+                                  {item.programTitle?.locationCategory || "—"}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {item.country || ""}
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                <div className="font-medium text-gray-800">
+                                  {groupDisplay(trainingGroup) || "—"}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {trainingType || ""}
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-sm text-center">
+                                {item.employees?.length || 0}
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                {item.certification ? "✅ Yes" : "❌ No"}
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                <div className="flex flex-wrap gap-1">
+                                  <button
+                                    onClick={() => {
+                                      if (viewedItemId === item._id) {
+                                        closeInlineView();
+                                      } else {
+                                        handleView(item);
+                                      }
+                                    }}
+                                    className={`flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black transition ${
+                                      viewedItemId === item._id
+                                        ? "bg-blue-50 text-blue-600 border-blue-300"
+                                        : ""
+                                    }`}
+                                  >
+                                    <Eye size={12} />
+                                    {viewedItemId === item._id ? "Close" : "View"}
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(item)}
+                                    className="flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black transition text-red-500"
+                                  >
+                                    <Trash2 size={12} /> Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                            
+                            {/* Inline Cost Breakdown from Table */}
+                            {isCostExpanded && (
+                              <tr className="bg-blue-50/30">
+                                <td colSpan="9" className="px-4 py-4 border-b border-gray-200">
+                                  <div className="bg-white rounded-lg border border-blue-200 p-4 max-w-4xl mx-auto">
+                                    <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                      <FileText size={16} className="text-blue-600" />
+                                      Cost Breakdown for {fullTitle}
+                                    </h4>
+                                    {loadingRowExpenses ? (
+                                      <div className="flex justify-center py-2"><Loader2 className="animate-spin text-blue-500" size={18} /></div>
+                                    ) : rowExpenses.length > 0 ? (
+                                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead className="bg-gray-50">
+                                          <tr>
+                                            <th className="px-4 py-2 text-left font-medium text-gray-600">Cost Type</th>
+                                            <th className="px-4 py-2 text-left font-medium text-gray-600">Amount</th>
+                                            <th className="px-4 py-2 text-left font-medium text-gray-600">Remarks</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200">
+                                          {rowExpenses.map(exp => (
+                                            <tr key={exp._id}>
+                                              <td className="px-4 py-2 font-medium">{exp.programCostType}</td>
+                                              <td className="px-4 py-2">Nu. {Number(exp.totalAmount).toLocaleString()}</td>
+                                              <td className="px-4 py-2 text-gray-500">{exp.remarks || "—"}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    ) : (
+                                      <p className="text-sm text-gray-500 italic">No specific costs defined for this program.</p>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+
+                            {/* Full Form View */}
+                            {isInlineOpen && (
+                              <tr>
+                                <td
+                                  colSpan="9"
+                                  className="p-4 bg-gray-50 border-b border-gray-200"
+                                >
+                                  <div className="bg-white rounded-lg shadow-sm p-6 pl-8 relative overflow-hidden">
+                                    {/* ROUNDED ORANGE DIVIDER */}
+                                    <div className="absolute left-0 top-4 bottom-4 w-1.5 bg-orange-400 rounded-full"></div>
+                                    {renderTrainingForm({
+                                      inline: true,
+                                      onClose: closeInlineView,
+                                    })}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="9" className="text-center py-6 text-gray-500">
+                          No records found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">
+                        PHOTO
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("fullName")}
+                      >
+                        Name
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("employeeNumber")}
+                      >
+                        Emp / CID
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("positionTitle")}
+                      >
+                        Position
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("totalAttended")}
+                        title="Total number of trainings attended"
+                      >
+                        Attended (No)
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("lastDate")}
+                        title="Most recent training end date"
+                      >
+                        Last Date
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("gap")}
+                        title="Time since last training (years/months)"
+                      >
+                        Gap
+                      </th>
+                      <th
+                        className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
+                        onClick={() => handleSort("email")}
+                      >
+                        Email
+                      </th>
+                      <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {loading ? (
+                      <tr>
+                        <td colSpan="9" className="text-center py-6 text-gray-500">
+                          Loading...
+                        </td>
+                      </tr>
+                    ) : paginatedEmployees.length > 0 ? (
+                      paginatedEmployees.map((emp) => {
+                        const isExpanded = expandedEmpRow === emp._id;
+
+                        let gapBadgeClass = "bg-gray-100 text-gray-700";
+                        let gapLabel = emp.gap || "—";
+                        if (emp.gap) {
+                          const num = parseInt(emp.gap);
+                          if (!isNaN(num)) {
+                            if (num <= 0.5)
+                              gapBadgeClass = "bg-green-100 text-green-700";
+                            else if (num <= 1)
+                              gapBadgeClass = "bg-yellow-100 text-yellow-700";
+                            else gapBadgeClass = "bg-red-100 text-red-700";
+                          }
+                        }
+
+                        return (
+                          <React.Fragment key={emp._id}>
+                            <tr className="hover:bg-gray-50 transition-colors">
+                              <td className="px-2 py-3 text-sm">
+                                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-200 overflow-hidden relative">
+                                  {photoMap[emp.cidNumber] ? (
+                                    <img
+                                      src={photoMap[emp.cidNumber]}
+                                      alt={emp.fullName}
+                                      className="w-10 h-10 rounded-full object-cover"
+                                      onError={(e) => {
+                                        e.target.style.display = "none";
+                                      }}
+                                    />
+                                  ) : null}
+                                  <div
+                                    className={`absolute inset-0 flex items-center justify-center text-sm font-semibold text-gray-600 bg-blue-100 ${
+                                      photoMap[emp.cidNumber]
+                                        ? "opacity-0 hover:opacity-75"
+                                        : ""
+                                    }`}
+                                  >
+                                    {emp.fullName?.charAt(0) || "?"}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-sm font-medium">
+                                {emp.fullName}
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                <div className="font-medium text-gray-800">
+                                  {emp.employeeNumber || "—"}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {emp.cidNumber || ""}
+                                </div>
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                {formatPosition(emp)}
+                              </td>
+                              <td className="px-2 py-3 text-sm text-center font-bold">
+                                {emp.totalAttended}
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                {emp.lastDate ? formatDate(emp.lastDate) : "—"}
+                              </td>
+                              <td className="px-2 py-3 text-sm whitespace-nowrap">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${gapBadgeClass}`}
+                                >
+                                  {gapLabel}
+                                </span>
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                {emp.email ? (
+                                  <a
+                                    href={`mailto:${emp.email}`}
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    {emp.email}
+                                  </a>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="px-2 py-3 text-sm">
+                                <div className="flex flex-wrap gap-1">
+                                  {emp.trainings && emp.trainings.length > 0 && (
+                                    <button
+                                      onClick={() => toggleEmpRow(emp._id)}
+                                      className={`flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black transition ${
+                                        isExpanded
+                                          ? "bg-blue-50 text-blue-600 border-blue-300"
+                                          : ""
+                                      }`}
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronUp size={12} />
+                                      ) : (
+                                        <ChevronDown size={12} />
+                                      )}
+                                      {isExpanded ? "Hide" : "View"} (
+                                      {emp.trainings.length})
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="border-l-4 border-blue-400 bg-blue-50/30">
+                                <td colSpan="9" className="px-2 py-3">
+                                  <div>
+                                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                                      Trainings Attended
+                                    </h4>
+                                    {emp.trainings && emp.trainings.length > 0 ? (
+                                      <div className="overflow-x-auto">
+                                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                          <thead className="bg-gray-100">
+                                            <tr>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Training ID
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Title
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Location Category
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Training Type
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Country
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Place
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Start Date
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                End Date
+                                              </th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Status
+                                              </th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-gray-200 bg-white">
+                                            {emp.trainings.map((t, idx) => (
+                                              <tr
+                                                key={idx}
+                                                className="hover:bg-gray-50"
+                                              >
+                                                <td className="px-3 py-2 font-mono text-sm">
+                                                  {t.trainingId || "—"}
+                                                </td>
+                                                <td
+                                                  className="px-3 py-2 text-sm"
+                                                  title={t.title || "—"}
+                                                >
+                                                  {truncateWords(t.title, 3)}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm">
+                                                  {t.locationCategory || "—"}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm">
+                                                  {renderTrainingType(
+                                                    t.trainingType
+                                                  )}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm">
+                                                  {t.country || "—"}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm">
+                                                  {t.place || "—"}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm whitespace-nowrap">
+                                                  {t.startDate
+                                                    ? formatDate(t.startDate)
+                                                    : "—"}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm whitespace-nowrap">
+                                                  {t.endDate
+                                                    ? formatDate(t.endDate)
+                                                    : "—"}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm">
+                                                  <span
+                                                    className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                                                      t.status === "Scheduled"
+                                                        ? "bg-blue-100 text-blue-700"
+                                                        : t.status ===
+                                                          "In progress"
+                                                        ? "bg-yellow-100 text-yellow-700"
+                                                        : t.status === "Completed"
+                                                        ? "bg-green-100 text-green-700"
+                                                        : t.status === "Cancelled"
+                                                        ? "bg-red-100 text-red-700"
+                                                        : "bg-gray-100 text-gray-700"
+                                                    }`}
+                                                  >
+                                                    {t.status || "—"}
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ) : (
+                                      <p className="text-gray-500 text-center py-2">
+                                        No trainings attended
+                                      </p>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="9" className="text-center py-6 text-gray-500">
+                          No employees found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* ─── PAGINATION ────────────────────────────────── */}
+            {viewTab === "training" && totalPages > 0 && (
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-5 text-sm text-gray-600">
+                <div>
+                  Showing{" "}
+                  <span className="font-semibold text-gray-800">
+                    {startIndex + 1}
+                  </span>{" "}
+                  to{" "}
+                  <span className="font-semibold text-gray-800">
+                    {Math.min(startIndex + rowsPerPage, sorted.length)}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold text-gray-800">
+                    {sorted.length}
+                  </span>{" "}
+                  records
+                </div>
+                <div className="flex items-center gap-4">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => p - 1)}
+                    className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+                  >
+                    &lt;
+                  </button>
+                  <span>
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                    className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+                  >
+                    &gt;
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {viewTab === "employee" && totalEmpPages > 0 && (
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-5 text-sm text-gray-600">
+                <div>
+                  Showing{" "}
+                  <span className="font-semibold text-gray-800">
+                    {startEmpIndex + 1}
+                  </span>{" "}
+                  to{" "}
+                  <span className="font-semibold text-gray-800">
+                    {Math.min(
+                      startEmpIndex + rowsPerPage,
+                      sortedEmployees.length
+                    )}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold text-gray-800">
+                    {sortedEmployees.length}
+                  </span>{" "}
+                  records
+                </div>
+                <div className="flex items-center gap-4">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => p - 1)}
+                    className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+                  >
+                    &lt;
+                  </button>
+                  <span>
+                    Page {currentPage} of {totalEmpPages}
+                  </span>
+                  <button
+                    disabled={currentPage === totalEmpPages}
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                    className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors"
+                  >
+                    &gt;
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        {viewTab === "employee" && totalEmpPages > 1 && (
-          <div className="flex justify-end items-center gap-4 mt-5 text-sm">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-              className={`font-semibold text-lg ${
-                currentPage === 1
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
-            >
-              &lt;
-            </button>
-            <span>
-              Page {currentPage} of {totalEmpPages}
-            </span>
-            <button
-              disabled={currentPage === totalEmpPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-              className={`font-semibold text-lg ${
-                currentPage === totalEmpPages
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:text-blue-600"
-              }`}
-            >
-              &gt;
-            </button>
-          </div>
-        )}
-      </main>
-    </div>
+        </main>
+      </div>
+    </>
   );
 }

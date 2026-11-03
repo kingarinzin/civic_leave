@@ -1,22 +1,36 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Trash2, Pencil, Save, Check, X, Plus, Loader2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { 
+  Trash2, Pencil, Save, Check, X, Plus, Loader2, Filter, RefreshCw, 
+  ChevronDown, ChevronUp, FileText, Calculator
+} from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 export default function ProgramTitlePage() {
   const [items, setItems] = useState([]);
   const [trainingTypes, setTrainingTypes] = useState([]);
+  const [masterCostTypes, setMasterCostTypes] = useState([]); 
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState(null);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
   const [notification, setNotification] = useState(null);
-  
-  // State to track saving/updating progress
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Expandable Row States
+  const [expandedRowId, setExpandedRowId] = useState(null);
+  const [expandedCosts, setExpandedCosts] = useState([]);
+  const [loadingCosts, setLoadingCosts] = useState(false);
+  const [isAddingCost, setIsAddingCost] = useState(false);
+  
+  // Mini-form state for adding costs
+  const [costFormData, setCostFormData] = useState({
+    programCostType: "",
+    totalAmount: "",
+    remarks: "",
+  });
 
   const [formData, setFormData] = useState({
     title: "",
@@ -26,84 +40,133 @@ export default function ProgramTitlePage() {
     trainingType: "",
   });
 
-  // Helper to get short display for Training Group
   const getShortTrainingGroup = (fullLabel) => {
     if (fullLabel?.startsWith("STT")) return "STT";
     if (fullLabel?.startsWith("LTT")) return "LTT";
     return fullLabel;
   };
 
-  // ─── FETCH PROGRAM TITLES ──────────────────────────
+  // ─── FETCHES ───────────────────────────────────────
   const fetchItems = async () => {
     try {
       const res = await fetch("/api/hr/program-title");
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to fetch");
-      }
+      if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setItems(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error(error);
       showNotification("Failed to load Program Catalogue", "error");
-      setItems([]);
     }
   };
 
-  // ─── FETCH TRAINING TYPES ──────────────────────────
   const fetchTrainingTypes = async () => {
     try {
       const res = await fetch("/api/hr/training-type");
-      if (!res.ok) throw new Error("Failed to fetch training types");
+      if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setTrainingTypes(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error(error);
-      showNotification("Failed to load Training Types", "error");
-    }
+    } catch (error) { console.error(error); }
+  };
+
+  const fetchMasterCostTypes = async () => {
+    try {
+      const res = await fetch("/api/hr/program-cost"); 
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setMasterCostTypes(Array.isArray(data) ? data : []);
+    } catch (error) { console.error(error); }
   };
 
   useEffect(() => {
     fetchItems();
     fetchTrainingTypes();
+    fetchMasterCostTypes();
   }, []);
 
-  // ─── HANDLERS ──────────────────────────────────────
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  // ─── EXPAND ROW & FETCH COSTS ──────────────────────
+  const toggleRowExpand = async (id) => {
+    if (expandedRowId === id) {
+      setExpandedRowId(null);
+      return;
+    }
+    setExpandedRowId(id);
+    setLoadingCosts(true);
+    setExpandedCosts([]);
+    
+    try {
+      const res = await fetch(`/api/hr/program-expense/program/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExpandedCosts(data);
+      }
+    } catch (error) { 
+      console.error("Failed to load expenses", error); 
+    } finally { 
+      setLoadingCosts(false); 
+    }
   };
 
+  // ─── ADD EXPENSE TO PROGRAM ───────────────────────────
+  const handleAddCost = async () => {
+    if (!costFormData.programCostType || !costFormData.totalAmount) {
+      showNotification("Cost Type and Amount are required", "error");
+      return;
+    }
+    setIsAddingCost(true);
+    try {
+      const res = await fetch(`/api/hr/program-expense/program/${expandedRowId}`, {
+        method: "POST",
+        body: JSON.stringify(costFormData),
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add");
+      
+      setExpandedCosts((prev) => [...prev, data]);
+      setCostFormData({ programCostType: "", totalAmount: "", remarks: "" });
+      showNotification("Expense added successfully", "success");
+    } catch (error) {
+      showNotification(error.message, "error");
+    } finally { 
+      setIsAddingCost(false); 
+    }
+  };
+
+  // ─── DELETE EXPENSE ────────────────────────────────
+  const handleDeleteCost = async (costId) => {
+    if (!confirm("Delete this expense?")) return;
+    try {
+      // UPDATED URL: Now points to the /delete route
+      const res = await fetch(`/api/hr/program-expense/delete`, {
+        method: "DELETE",
+        body: JSON.stringify({ _id: costId }),
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      setExpandedCosts((prev) => prev.filter((c) => c._id !== costId));
+      showNotification("Expense deleted", "success");
+    } catch (error) { 
+      showNotification(error.message, "error"); 
+    }
+  };
+
+  // ─── MAIN CRUD HANDLERS ────────────────────────────
   const resetForm = () => {
-    setFormData({
-      title: "",
-      description: "",
-      locationCategory: "Ex-Country",
-      trainingGroup: "STT - Short Term Training",
-      trainingType: "",
+    setFormData({ 
+      title: "", 
+      description: "", 
+      locationCategory: "Ex-Country", 
+      trainingGroup: "STT - Short Term Training", 
+      trainingType: "" 
     });
     setEditData(null);
     setShowForm(false);
   };
 
   const handleAdd = async () => {
-    if (!formData.title.trim()) {
-      showNotification("Course Title is required", "error");
+    if (!formData.title.trim() || !formData.trainingType) {
+      showNotification("Title and Training Type are required", "error");
       return;
     }
-    if (!formData.locationCategory) {
-      showNotification("Location Category is required", "error");
-      return;
-    }
-    if (!formData.trainingGroup) {
-      showNotification("Training Group is required", "error");
-      return;
-    }
-    if (!formData.trainingType) {
-      showNotification("Training Type is required", "error");
-      return;
-    }
-
     setIsSubmitting(true); 
     try {
       const res = await fetch("/api/hr/program-title", {
@@ -111,16 +174,13 @@ export default function ProgramTitlePage() {
         body: JSON.stringify(formData),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to add");
-      }
+      if (!res.ok) throw new Error("Failed to add");
       await fetchItems(); 
       resetForm();
       showNotification("Course added successfully", "success");
-    } catch (error) {
-      showNotification(error.message, "error");
-    } finally {
+    } catch (error) { 
+      showNotification(error.message, "error"); 
+    } finally { 
       setIsSubmitting(false); 
     }
   };
@@ -134,7 +194,7 @@ export default function ProgramTitlePage() {
       trainingGroup: item.trainingGroup || "STT - Short Term Training",
       trainingType: item.trainingType?._id || item.trainingType || "",
     });
-    setShowForm(true);
+    setShowForm(false);
   };
 
   const handleUpdate = async () => {
@@ -142,46 +202,33 @@ export default function ProgramTitlePage() {
     try {
       const res = await fetch("/api/hr/program-title", {
         method: "PUT",
-        body: JSON.stringify({
-          _id: editData._id,
-          title: formData.title,
-          description: formData.description,
-          locationCategory: formData.locationCategory,
-          trainingGroup: formData.trainingGroup,
-          trainingType: formData.trainingType,
-        }),
+        body: JSON.stringify({ _id: editData._id, ...formData }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to update");
-      }
+      if (!res.ok) throw new Error("Failed to update");
       await fetchItems(); 
       resetForm();
       showNotification("Course updated successfully", "success");
-    } catch (error) {
-      showNotification(error.message, "error");
-    } finally {
+    } catch (error) { 
+      showNotification(error.message, "error"); 
+    } finally { 
       setIsSubmitting(false); 
     }
   };
 
   const handleDelete = async (item) => {
-    if (!confirm(`Are you sure you want to delete "${item.title}"?`)) return;
+    if (!confirm(`Delete "${item.title}"?`)) return;
     try {
       const res = await fetch("/api/hr/program-title", {
         method: "DELETE",
         body: JSON.stringify({ _id: item._id }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to delete");
-      }
+      if (!res.ok) throw new Error("Failed to delete");
       await fetchItems();
       showNotification("Course deleted successfully", "success");
-    } catch (error) {
-      showNotification(error.message, "error");
+    } catch (error) { 
+      showNotification(error.message, "error"); 
     }
   };
 
@@ -190,458 +237,347 @@ export default function ProgramTitlePage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // ─── SORT & FILTER ─────────────────────────────────
-  const handleSort = (key) => {
-    let direction = "asc";
-    if (sortConfig.key === key && sortConfig.direction === "asc")
-      direction = "desc";
-    setSortConfig({ key, direction });
-  };
-
-  const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-    setCurrentPage(1);
-  };
-
-  const handleRowsChange = (e) => {
-    setRowsPerPage(Number(e.target.value));
-    setCurrentPage(1);
-  };
-
-  // Search across all fields
+  // ─── FILTERING & SORTING ───────────────────────────
   const filtered = items.filter((item) => {
     const searchLower = search.toLowerCase();
     return (
       (item.title?.toLowerCase() || "").includes(searchLower) ||
-      (item.description?.toLowerCase() || "").includes(searchLower) ||
       (item.locationCategory?.toLowerCase() || "").includes(searchLower) ||
       (item.trainingGroup?.toLowerCase() || "").includes(searchLower) ||
-      (item.trainingType?.trainingType?.toLowerCase() || "").includes(
-        searchLower
-      ) ||
+      (item.trainingType?.trainingType?.toLowerCase() || "").includes(searchLower) ||
       (item.trainingId?.toLowerCase() || "").includes(searchLower)
     );
   });
 
-  // Create a copy for sorting
   const sorted = [...filtered];
-  
-  if (sortConfig.key) {
-    // 1. If user clicks a column header, sort by that column
-    sorted.sort((a, b) => {
-      let aVal, bVal;
-      if (sortConfig.key === "trainingType") {
-        aVal = a.trainingType?.trainingType || "";
-        bVal = b.trainingType?.trainingType || "";
-      } else if (sortConfig.key === "trainingGroup") {
-        aVal = a.trainingGroup || "";
-        bVal = b.trainingGroup || "";
-      } else {
-        aVal = a[sortConfig.key] ?? "";
-        bVal = b[sortConfig.key] ?? "";
-      }
-      if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-  } else {
-    // 2. Default sort: Newest first. 
-    sorted.sort((a, b) => {
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      
-      if (dateA !== dateB) return dateB - dateA; 
-      
-      return String(b._id).localeCompare(String(a._id));
-    });
-  }
+  sorted.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
   const totalPages = Math.ceil(sorted.length / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
   const paginated = sorted.slice(startIndex, startIndex + rowsPerPage);
 
-  // Helper to truncate description
-  const truncateText = (text, maxLength = 50) => {
-    if (!text) return "—";
-    if (text.length <= maxLength) return text;
-    return text.slice(0, maxLength) + "...";
-  };
-
-  // ─── PAGINATION LOGIC ──────────────────────────────
-  // Generate dynamic page numbers with ellipsis
-  const getPaginationGroup = () => {
-    const total = totalPages;
-    const current = currentPage;
-    const delta = 2; // Number of pages to show around current page
-    const range = [];
-    const rangeWithDots = [];
-    let l;
-
-    for (let i = 1; i <= total; i++) {
-      if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
-        range.push(i);
-      }
-    }
-
-    for (let i of range) {
-      if (l) {
-        if (i - l === 2) {
-          rangeWithDots.push(l + 1);
-        } else if (i - l !== 1) {
-          rangeWithDots.push("...");
-        }
-      }
-      rangeWithDots.push(i);
-      l = i;
-    }
-
-    return rangeWithDots;
-  };
-
   // ─── RENDER ────────────────────────────────────────
   return (
-    <div className="flex">
-      <Sidebar />
+    <div className="flex w-full min-h-screen bg-gray-100">
+      <div className="fixed inset-y-0 left-0 z-20 bg-white shadow-xl">
+        <Sidebar />
+      </div>
 
-      <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Program Catalogue</h1>
-          {!showForm && (
-            <button
-              onClick={() => {
-                setShowForm(true);
-                setEditData(null);
-                setFormData({
-                  title: "",
-                  description: "",
-                  locationCategory: "Ex-Country",
-                  trainingGroup: "STT - Short Term Training",
-                  trainingType: "",
-                });
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
-            >
-              <Plus size={14} /> Add Course
-            </button>
+      <main className="flex-1 w-full transition-all duration-300 lg:ml-64 p-4 lg:p-6">
+        <div className="max-w-[1600px] mx-auto w-full">
+          
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Program Catalogue</h1>
+          </div>
+
+          {notification && (
+            <div className={`mb-4 px-4 py-2 rounded ${notification.type === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+              {notification.message}
+            </div>
           )}
-        </div>
 
-        {/* Notification */}
-        {notification && (
-          <div
-            className={`mb-4 px-4 py-2 rounded ${
-              notification.type === "success"
-                ? "bg-green-100 text-green-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
-            {notification.message}
-          </div>
-        )}
-
-        {/* Add/Edit Form */}
-        {showForm && (
-          <div className="bg-white shadow rounded-xl p-6 mb-6">
-            <div className="flex justify-between mb-4">
-              <h2 className="text-lg font-semibold">
-                {editData ? "Edit Course" : "Add New Course"}
-              </h2>
-              <button
-                onClick={() => resetForm()}
-                className="text-xl text-gray-500"
-              >
-                ✕
-              </button>
+          {/* Toolbar */}
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+            <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+              {!showForm && !editData && (
+                <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white border rounded-md text-xs font-medium hover:bg-blue-700 transition">
+                  <Plus size={14} /> Add Course
+                </button>
+              )}
+              <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} placeholder="Search by any field..." className="w-full sm:w-64 px-3 py-1.5 text-sm border rounded focus:ring-2 focus:ring-blue-400 outline-none" />
+              <div className="flex items-center gap-2 text-sm text-gray-600 font-medium ml-2">
+                <Filter size={16} className="text-gray-400" /> Filters:
+              </div>
+              {search && (
+                <button onClick={() => { setSearch(""); setCurrentPage(1); }} className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1.5">
+                  <RefreshCw size={14} /> Clear
+                </button>
+              )}
             </div>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium">Location Category *</label>
-                <select
-                  name="locationCategory"
-                  value={formData.locationCategory}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                >
-                  <option value="Ex-Country">Ex-Country</option>
-                  <option value="In-Country">In-Country</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Training Group *</label>
-                <select
-                  name="trainingGroup"
-                  value={formData.trainingGroup}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                >
-                  <option value="STT - Short Term Training">
-                    STT - Short Term Training
-                  </option>
-                  <option value="LTT - Long Term Training">
-                    LTT - Long Term Training
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Training Type *</label>
-                <select
-                  name="trainingType"
-                  value={formData.trainingType}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                >
-                  <option value="">Select Training Type</option>
-                  {trainingTypes.map((type) => (
-                    <option key={type._id} value={type._id}>
-                      {type.trainingType}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Course Title *</label>
-                <input
-                  name="title"
-                  type="text"
-                  value={formData.title}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                  required
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium">Description</label>
-                <textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleFormChange}
-                  rows={3}
-                  className="w-full border rounded px-3 py-2 resize-y"
-                  placeholder="Enter description (optional)"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-5">
-              <button
-                onClick={() => resetForm()}
-                disabled={isSubmitting}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition disabled:opacity-50"
-              >
-                <X size={14} /> Cancel
-              </button>
-              <button
-                onClick={editData ? handleUpdate : handleAdd}
-                disabled={isSubmitting}
-                className={`flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium transition ${
-                  isSubmitting 
-                    ? "bg-gray-100 text-gray-500 cursor-not-allowed" 
-                    : "hover:border-black"
-                }`}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    {editData ? "Updating..." : "Saving..."}
-                  </>
-                ) : (
-                  <>
-                    {editData ? <Check size={14} /> : <Save size={14} />}
-                    {editData ? "Update" : "Save"}
-                  </>
-                )}
-              </button>
+            <div className="flex items-center gap-2 text-sm whitespace-nowrap text-gray-600">
+              <span>Show</span>
+              <select value={rowsPerPage} onChange={(e) => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }} className="border rounded px-2 py-1 outline-none">
+                <option value={10}>10</option><option value={15}>15</option><option value={20}>20</option><option value={25}>25</option><option value={30}>30</option><option value={35}>35</option><option value={40}>40</option>
+              </select>
+              <span className="font-medium text-gray-800">{filtered.length} records</span>
             </div>
           </div>
-        )}
 
-        {/* Toolbar */}
-        <div className="flex justify-between items-center mb-4">
-          <input
-            type="text"
-            value={search}
-            onChange={handleSearchChange}
-            placeholder="Search by any field..."
-            className="w-64 px-4 py-2 border rounded focus:ring-2 focus:ring-blue-400 outline-none"
-          />
-          <div className="flex items-center gap-2 text-sm">
-            <span>Show</span>
-            <select
-              value={rowsPerPage}
-              onChange={handleRowsChange}
-              className="border rounded px-2 py-1"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={30}>30</option>
-              <option value={40}>40</option>
-            </select>
-            <span>entries</span>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-white shadow rounded-lg overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Training ID
-                </th>
-                <th
-                  onClick={() => handleSort("locationCategory")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "locationCategory" ? "bg-blue-100" : ""
-                  }`}
-                >
-                  Location Category
-                </th>
-                <th
-                  onClick={() => handleSort("trainingGroup")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "trainingGroup" ? "bg-blue-100" : ""
-                  }`}
-                >
-                  Training Group
-                </th>
-                <th
-                  onClick={() => handleSort("trainingType")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "trainingType" ? "bg-blue-100" : ""
-                  }`}
-                >
-                  Training Type
-                </th>
-                <th
-                  onClick={() => handleSort("title")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "title" ? "bg-blue-100" : ""
-                  }`}
-                >
-                  Course Title
-                </th>
-                <th
-                  onClick={() => handleSort("description")}
-                  className={`px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none ${
-                    sortConfig.key === "description" ? "bg-blue-100" : ""
-                  }`}
-                >
-                  Description
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {paginated.length > 0 ? (
-                paginated.map((item, index) => (
-                  <tr
-                    key={item._id}
-                    className="hover:bg-gray-100 transition-colors"
-                  >
-                    <td className="px-6 py-3 text-sm whitespace-nowrap">
-                      {item.trainingId || "—"}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {item.locationCategory}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {getShortTrainingGroup(item.trainingGroup)}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {item.trainingType?.trainingType || "—"}
-                    </td>
-                    <td className="px-6 py-3 text-sm">{item.title}</td>
-                    <td
-                      className="px-6 py-3 text-sm"
-                      title={item.description || ""}
-                    >
-                      {truncateText(item.description, 50)}
-                    </td>
-                    <td className="px-6 py-3 text-sm flex gap-2">
-                      <button
-                        onClick={() => handleEdit(item)}
-                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                      >
-                        <Pencil size={14} /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item)}
-                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                      >
-                        <Trash2 size={14} /> Delete
-                      </button>
+          {/* Table */}
+          <div className="bg-white shadow rounded-lg overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Training ID</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Location</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Group</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Type</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Course Title</th>
+                  <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                
+                {/* ADD FORM */}
+                {showForm && !editData && (
+                  <tr className="bg-gray-50">
+                    <td colSpan={6} className="p-4 border-b">
+                      <div className="bg-white rounded-lg shadow-sm p-6 pl-8 relative overflow-hidden">
+                        <div className="absolute left-0 top-4 bottom-4 w-1.5 bg-orange-400 rounded-full"></div>
+                        <div className="flex justify-between mb-4 items-center">
+                          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Plus size={18} className="text-blue-600"/> Create New Course</h2>
+                          <button onClick={resetForm} className="text-gray-500 hover:text-gray-700 p-1"><X size={20} /></button>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm font-medium">Location *</label>
+                            <select name="locationCategory" value={formData.locationCategory} onChange={(e) => setFormData({...formData, locationCategory: e.target.value})} className="w-full border rounded px-3 py-2">
+                              <option value="Ex-Country">Ex-Country</option><option value="In-Country">In-Country</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Group *</label>
+                            <select name="trainingGroup" value={formData.trainingGroup} onChange={(e) => setFormData({...formData, trainingGroup: e.target.value})} className="w-full border rounded px-3 py-2">
+                              <option value="STT - Short Term Training">STT - Short Term Training</option><option value="LTT - Long Term Training">LTT - Long Term Training</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Type *</label>
+                            <select name="trainingType" value={formData.trainingType} onChange={(e) => setFormData({...formData, trainingType: e.target.value})} className="w-full border rounded px-3 py-2">
+                              <option value="">Select Type</option>
+                              {trainingTypes.map(t => <option key={t._id} value={t._id}>{t.trainingType}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Title *</label>
+                            <input name="title" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} className="w-full border rounded px-3 py-2" />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="text-sm font-medium">Description</label>
+                            <textarea name="description" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} rows={2} className="w-full border rounded px-3 py-2" />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-3 mt-5">
+                          <button onClick={resetForm} className="px-4 py-2 border rounded-md text-sm hover:bg-gray-50">Cancel</button>
+                          <button onClick={handleAdd} disabled={isSubmitting} className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">{isSubmitting ? "Saving..." : "Save Course"}</button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="7" className="text-center py-6 text-gray-500">
-                    No records found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Updated Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-end items-center gap-2 mt-5 text-sm">
-            {/* Previous Button */}
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-              className={`px-2 py-1 rounded ${
-                currentPage === 1
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:bg-gray-200 text-gray-700"
-              }`}
-            >
-              &lt;
-            </button>
-
-            {/* Page Numbers with Ellipsis */}
-            {getPaginationGroup().map((page, index) => (
-              <div key={index}>
-                {page === "..." ? (
-                  <span className="px-2 py-1 text-gray-500">...</span>
-                ) : (
-                  <button
-                    onClick={() => setCurrentPage(page)}
-                    className={`px-3 py-1 rounded transition-colors ${
-                      currentPage === page
-                        ? "bg-blue-600 text-white font-semibold"
-                        : "hover:bg-gray-200 text-gray-700"
-                    }`}
-                  >
-                    {page}
-                  </button>
                 )}
-              </div>
-            ))}
 
-            {/* Next Button */}
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-              className={`px-2 py-1 rounded ${
-                currentPage === totalPages
-                  ? "text-gray-400 cursor-not-allowed"
-                  : "hover:bg-gray-200 text-gray-700"
-              }`}
-            >
-              &gt;
-            </button>
+                {/* DATA ROWS */}
+                {paginated.map((item) => {
+                  const isEditing = editData?._id === item._id;
+                  const isExpanded = expandedRowId === item._id;
+
+                  return (
+                    <React.Fragment key={item._id}>
+                      <tr className={`transition-colors align-top ${isEditing || isExpanded ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                        <td className="px-2 py-3 text-sm whitespace-nowrap">
+                          <button onClick={() => toggleRowExpand(item._id)} className="text-blue-600 hover:underline font-mono font-medium flex items-center gap-1">
+                            {item.trainingId || "—"}
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                        </td>
+                        <td className="px-2 py-3 text-sm">{item.locationCategory}</td>
+                        <td className="px-2 py-3 text-sm">{getShortTrainingGroup(item.trainingGroup)}</td>
+                        <td className="px-2 py-3 text-sm">{item.trainingType?.trainingType || "—"}</td>
+                        <td className="px-2 py-3 text-sm font-medium text-gray-800">{item.title}</td>
+                        <td className="px-2 py-3 text-sm">
+                          <div className="flex flex-wrap gap-1">
+                            {!isEditing && (
+                              <button onClick={() => handleEdit(item)} className="flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black transition">
+                                <Pencil size={12} /> Edit
+                              </button>
+                            )}
+                            <button onClick={() => handleDelete(item)} className="flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black transition text-red-500">
+                              <Trash2 size={12} /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {isEditing && (
+                        <tr>
+                          <td colSpan={6} className="p-4 bg-gray-50 border-b border-gray-200">
+                            <div className="bg-white rounded-lg shadow-sm p-6 pl-8 relative overflow-hidden">
+                              <div className="absolute left-0 top-4 bottom-4 w-1.5 bg-orange-400 rounded-full"></div>
+                              <div className="flex justify-between mb-4 items-center">
+                                <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2">
+                                  <Pencil size={18} /> Edit Course: <span className="font-mono bg-blue-100 px-2 py-0.5 rounded">{item.trainingId}</span>
+                                </h2>
+                                <button onClick={resetForm} className="text-gray-500 hover:text-gray-700 p-1"><X size={20} /></button>
+                              </div>
+                              <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="text-sm font-medium">Location</label>
+                                  <select name="locationCategory" value={formData.locationCategory} onChange={(e) => setFormData({...formData, locationCategory: e.target.value})} className="w-full border rounded px-3 py-2">
+                                    <option value="Ex-Country">Ex-Country</option><option value="In-Country">In-Country</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium">Group</label>
+                                  <select name="trainingGroup" value={formData.trainingGroup} onChange={(e) => setFormData({...formData, trainingGroup: e.target.value})} className="w-full border rounded px-3 py-2">
+                                    <option value="STT - Short Term Training">STT - Short Term Training</option><option value="LTT - Long Term Training">LTT - Long Term Training</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium">Type</label>
+                                  <select name="trainingType" value={formData.trainingType} onChange={(e) => setFormData({...formData, trainingType: e.target.value})} className="w-full border rounded px-3 py-2">
+                                    <option value="">Select Type</option>
+                                    {trainingTypes.map(t => <option key={t._id} value={t._id}>{t.trainingType}</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium">Title</label>
+                                  <input name="title" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} className="w-full border rounded px-3 py-2" />
+                                </div>
+                                <div className="md:col-span-2">
+                                  <label className="text-sm font-medium">Description</label>
+                                  <textarea name="description" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} rows={2} className="w-full border rounded px-3 py-2" />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-3 mt-5">
+                                <button onClick={resetForm} className="px-4 py-2 border rounded-md text-sm hover:bg-gray-50">Cancel</button>
+                                <button onClick={handleUpdate} disabled={isSubmitting} className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">{isSubmitting ? "Updating..." : "Save Changes"}</button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* EXPANDED COST ROW */}
+                      {isExpanded && !isEditing && (
+                        <tr>
+                          <td colSpan={6} className="p-4 bg-blue-50/50 border-b border-gray-200">
+                            <div className="bg-white rounded-lg shadow-sm border border-blue-200 p-5">
+                              
+                              <div className="flex justify-between items-center mb-3">
+                                <h3 className="text-md font-bold text-gray-800 flex items-center gap-2">
+                                  <FileText size={18} className="text-blue-600" /> 
+                                  Expenses for: <span className="text-blue-600">{item.title}</span>
+                                </h3>
+                                {/* TOTAL COST BADGE */}
+                                {!loadingCosts && expandedCosts.length > 0 && (
+                                  <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-100">
+                                    <Calculator size={16} />
+                                    <span className="text-sm font-semibold">Total Cost:</span>
+                                    <span className="text-base font-bold">
+                                      Nu. {expandedCosts.reduce((sum, cost) => sum + (Number(cost.totalAmount) || 0), 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {loadingCosts ? (
+                                <div className="flex justify-center py-4 text-gray-500"><Loader2 className="animate-spin" /></div>
+                              ) : expandedCosts.length === 0 ? (
+                                <p className="text-sm text-gray-500 py-3 italic">No costs added to this program yet.</p>
+                              ) : (
+                                <div className="overflow-x-auto mb-4 border rounded-lg">
+                                  <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                      <tr>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cost Type</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Remarks</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 bg-white">
+                                      {expandedCosts.map((cost) => (
+                                        <tr key={cost._id}>
+                                          <td className="px-4 py-2 text-sm font-medium">{cost.programCostType}</td>
+                                          <td className="px-4 py-2 text-sm text-gray-800">Nu. {Number(cost.totalAmount).toLocaleString()}</td>
+                                          <td className="px-4 py-2 text-sm text-gray-500">{cost.remarks || "—"}</td>
+                                          <td className="px-4 py-2 text-sm">
+                                            <button onClick={() => handleDeleteCost(cost._id)} className="text-red-500 hover:text-red-700">
+                                              <Trash2 size={14} />
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+
+                              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mt-2">
+                                <h4 className="text-sm font-semibold text-gray-700 mb-3">Add New Cost</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                                  <div>
+                                    <label className="text-xs font-medium text-gray-600 mb-1 block">Cost Type *</label>
+                                    <select
+                                      value={costFormData.programCostType}
+                                      onChange={(e) => setCostFormData({ ...costFormData, programCostType: e.target.value })}
+                                      className="w-full border rounded px-2 py-1.5 text-sm"
+                                    >
+                                      <option value="">Select Cost Type</option>
+                                      {masterCostTypes.map((c) => (
+                                        <option key={c._id} value={c.programCostType}>{c.programCostType}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-medium text-gray-600 mb-1 block">Amount (Nu.) *</label>
+                                    <input
+                                      type="number"
+                                      value={costFormData.totalAmount}
+                                      onChange={(e) => setCostFormData({ ...costFormData, totalAmount: e.target.value })}
+                                      placeholder="e.g., 15000"
+                                      className="w-full border rounded px-2 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-medium text-gray-600 mb-1 block">Remarks</label>
+                                    <input
+                                      type="text"
+                                      value={costFormData.remarks}
+                                      onChange={(e) => setCostFormData({ ...costFormData, remarks: e.target.value })}
+                                      placeholder="Optional"
+                                      className="w-full border rounded px-2 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <button
+                                      onClick={handleAddCost}
+                                      disabled={isAddingCost}
+                                      className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition"
+                                    >
+                                      {isAddingCost ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                                      Add Cost
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        )}
+
+          {totalPages > 0 && (
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-5 text-sm text-gray-600">
+              <div>
+                Showing <span className="font-semibold text-gray-800">{startIndex + 1}</span> to{" "}
+                <span className="font-semibold text-gray-800">{Math.min(startIndex + rowsPerPage, sorted.length)}</span> of{" "}
+                <span className="font-semibold text-gray-800">{sorted.length}</span> records
+              </div>
+              <div className="flex items-center gap-4">
+                <button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => p - 1)} className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors">&lt;</button>
+                <span>Page {currentPage} of {totalPages}</span>
+                <button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => p + 1)} className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors">&gt;</button>
+              </div>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );

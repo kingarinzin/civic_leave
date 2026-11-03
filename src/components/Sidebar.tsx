@@ -20,7 +20,7 @@ import {
   ScrollText,
   BookOpen,
   ShieldCheck,
-  Flag, // <-- ADDED: Icon for Feedback
+  Flag,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -118,7 +118,7 @@ export default function Sidebar() {
     //"yangzom@acc.org.bt",
    // "skhando@acc.org.bt",
     //"bdorj@acc.org.bt",
-    //"tshewangrinzin@acc.org.bt",
+    "tshewangrinzin@acc.org.bt",
     //"chekiw@acc.org.bt",
     //"gyeltshencipo@acc.org.bt",
   ];
@@ -126,19 +126,19 @@ export default function Sidebar() {
 
   // 🔥 UAT RESTRICTION: Add the Phuentsholing Staff emails here
   const phuentsholingUATEmails = [
-    "namgaydorji@acc.org.bt",    // <-- Replace with actual emails
-    "plhaden@acc.org.bt",     // <-- Replace with actual emails
-    "tandinw@acc.org.bt",     // <-- Replace with actual emails
-    "rkkatwal@acc.org.bt",     // <-- Replace with actual emails
-    "slham@acc.org.bt",    // <-- Replace with actual emails
-    "ndahal@acc.org.bt",    // <-- Replace with actual emails
-    "dmchettri@acc.org.bt",    // <-- Replace with actual emails
-    "kcdema@acc.org.bt",    // <-- Replace with actual emails
-    "skghalley@acc.org.bt",    // <-- Replace with actual emails
-    "sangayw@acc.org.bt",    // <-- Replace with actual emails
-    "nlhamo@acc.org.bt",    // <-- Replace with actual emails
-    "slham@acc.org.bt",    // <-- Replace with actual emails
-    "kingarinzin@acc.org.bt" // <-- Replace with actual emails
+    "namgaydorji@acc.org.bt",
+    "plhaden@acc.org.bt",
+    "tandinw@acc.org.bt",
+    "rkkatwal@acc.org.bt",
+    "slham@acc.org.bt",
+    "ndahal@acc.org.bt",
+    "dmchettri@acc.org.bt",
+    "kcdema@acc.org.bt",
+    "skghalley@acc.org.bt",
+    "sangayw@acc.org.bt",
+    "nlhamo@acc.org.bt",
+    "slham@acc.org.bt",
+    "kingarinzin@acc.org.bt"
   ];
 
   const isPhuentsholingUAT = phuentsholingUATEmails.includes(normalizedEmail);
@@ -163,6 +163,7 @@ export default function Sidebar() {
     pathname === "/admin/individual-leave-balance" ||
     pathname === "/admin/my-leave";
 
+  // ─── UPDATED: ADDED PROGRAM COST TO isHRSActive ───
   const isHRSActive =
     pathname.startsWith("/admin/hr/training-type") ||
     pathname.startsWith("/admin/hr/program-title") ||
@@ -170,6 +171,7 @@ export default function Sidebar() {
     pathname.startsWith("/admin/hr/institution") ||
     pathname.startsWith("/admin/hr/funding-agency") ||
     pathname.startsWith("/admin/hr/funding-modality") ||
+    pathname.startsWith("/admin/hr/program-cost") || // <--- ADDED THIS
     pathname.startsWith("/dashboard/hr/employee");
 
   const isMeetingsActive =
@@ -348,7 +350,7 @@ export default function Sidebar() {
               Weekly Plan
             </button>
 
-            {/* --- ADDED: FLAG FEEDBACK (ADMIN) --- */}
+            {/* Flag Feedback (Admin) */}
             <button
               onClick={() => router.push("/feedback")}
               className={navButtonClass(pathname === "/feedback")}
@@ -410,7 +412,7 @@ export default function Sidebar() {
               </div>
             )}
 
-            {/* --- ADDED: FLAG FEEDBACK (NON-ADMIN) --- */}
+            {/* Flag Feedback (Non-Admin) */}
             <button
               onClick={() => router.push("/feedback")}
               className={navButtonClass(pathname === "/feedback")}
@@ -552,6 +554,15 @@ export default function Sidebar() {
                   )}
                 >
                   Funding Modality
+                </button>
+                {/* ─── ADDED: PROGRAM COST MENU ─── */}
+                <button
+                  onClick={() => router.push("/admin/hr/program-cost")}
+                  className={navSubButtonClass(
+                    pathname === "/admin/hr/program-cost",
+                  )}
+                >
+                  Program Cost
                 </button>
               </div>
             )}
