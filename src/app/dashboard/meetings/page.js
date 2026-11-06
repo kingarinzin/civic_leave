@@ -1,14 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, Fragment } from "react";
 import {
   Search,
   Filter,
   XCircle,
   Eye,
   Trash2,
-  ChevronUp,
   Plus,
   Download,
   Pencil,
@@ -18,9 +16,12 @@ import {
   Users,
   File,
   Eye as ViewIcon,
-  Mail,
   Hash,
-  User as UserIcon,
+  RefreshCw,
+  ChevronDown,
+  Save,
+  Check,
+  Send,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import SendNotificationModal from "@/components/SendNotificationModal";
@@ -32,142 +33,90 @@ const formatDate = (dateStr) => {
   return d.toLocaleDateString("en-GB");
 };
 
-const truncateWords = (text, numWords = 4) => {
-  if (!text) return "—";
-  const words = text.split(/\s+/);
-  if (words.length <= numWords) return text;
-  return words.slice(0, numWords).join(" ") + "...";
-};
-
 const YEAR_OPTIONS = [
-  "2028", "2027", "2026", "2025", "2024", "2023", "2022",
-  "2021", "2020", "2019", "2018", "2017", "2016",
+  "2028","2027","2026","2025","2024","2023","2022",
+  "2021","2020","2019","2018","2017","2016",
 ];
 
 export default function LogMeetingPage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  // Default sort: display_order descending
   const [sortConfig, setSortConfig] = useState({ key: "display_order", direction: "desc" });
-  const [viewedItemId, setViewedItemId] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [editingId, setEditingId] = useState(null);
-  const [editMode, setEditMode] = useState(false);
-  const [highlightedRowId, setHighlightedRowId] = useState(null);
-  const [sendingEmail, setSendingEmail] = useState(null);
-  const [showTestEmailModal, setShowTestEmailModal] = useState(false);
-  const [testEmailInput, setTestEmailInput] = useState("");
-  const [testDocId, setTestDocId] = useState(null);
-
-  // ─── unified send modal ──────────────────────────
+  const [expandedRows, setExpandedRows] = useState(new Set());
   const [sendDocId, setSendDocId] = useState(null);
 
-  // ─── role / whitelist ────────────────────────────
+  // role
   const [userEmail, setUserEmail] = useState("");
   const [isAdminUser, setIsAdminUser] = useState(false);
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    const isAdmin = localStorage.getItem("isAdmin") === "true";
-    setIsAdminUser(isAdmin);
-
-    if (token) {
-      try {
-        const [, payload] = token.split(".");
-        const decoded = JSON.parse(atob(payload));
-        setUserEmail(decoded?.email || "");
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
-  const meetingsAllowedEmails = [
-    "kwangmo@acc.org.bt",
-    "karmawangmo@acc.org.bt",
-    "bdorj@acc.org.bt",
-    "bdorj@acc.org.bt",
-    "chekiw@acc.org.bt",
-    "tshewangrinzin@acc.org.bt",
-
-  ];
-  const canManage = isAdminUser || meetingsAllowedEmails.includes(userEmail);
-
-  // ─── Send-to modal state ───────────────────────────
-  const [showSendToModal, setShowSendToModal] = useState(false);
-  const [sendToDocId, setSendToDocId] = useState(null);
-  const [sendToTab, setSendToTab] = useState("all");
-  const [selectedDepartments, setSelectedDepartments] = useState([]);
-  const [selectedDivisions, setSelectedDivisions] = useState([]);
-  const [selectedUsers, setSelectedUsers] = useState([]);
-  const [userSearchTerm, setUserSearchTerm] = useState("");
-  const [allUsers, setAllUsers] = useState([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-
-  const [showViewerModal, setShowViewerModal] = useState(false);
-  const [viewerFileUrl, setViewerFileUrl] = useState("");
-  const [viewerFileName, setViewerFileName] = useState("");
-
-  const [filters, setFilters] = useState({
-    documentType: "",
-    commission: "",
-    year: "",
-  });
-
+  // filters
+  const [filters, setFilters] = useState({ documentType: "", commission: "", year: "" });
   const [dropdowns, setDropdowns] = useState({
-    documentTypes: [],
-    commissions: [],
-    departments: [],
-    divisions: [],
+    documentTypes: [], commissions: [], departments: [], divisions: [],
   });
 
+  // forms
   const [formData, setFormData] = useState({
-    display_order: "",
-    document_type: "",
-    commission: "",
+    display_order: "", document_type: "", commission: "",
     year: new Date().getFullYear().toString(),
     date: new Date().toISOString().split("T")[0],
-    subject: "",
-    file: null,
+    subject: "", file: null,
   });
-
+  const [editData, setEditData] = useState(null);
   const [editFormData, setEditFormData] = useState({
-    display_order: "",
-    document_type: "",
-    commission: "",
-    year: "",
-    date: "",
-    subject: "",
-    file: null,
+    display_order: "", document_type: "", commission: "",
+    year: "", date: "", subject: "", file: null,
   });
   const [editExistingFile, setEditExistingFile] = useState(null);
   const [editRemoveExisting, setEditRemoveExisting] = useState(false);
   const [editFormLoading, setEditFormLoading] = useState(false);
   const [editFormError, setEditFormError] = useState("");
 
+  // viewer
+  const [showViewerModal, setShowViewerModal] = useState(false);
+  const [viewerFileUrl, setViewerFileUrl] = useState("");
+  const [viewerFileName, setViewerFileName] = useState("");
+
   const showNotification = (message, type = "success") => {
     if (type === "success") {
       setSuccessMessage(message);
       setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        setSuccessMessage("");
-      }, 5000);
+      setTimeout(() => { setSuccess(false); setSuccessMessage(""); }, 5000);
     } else {
       setError(message);
       setTimeout(() => setError(""), 5000);
     }
   };
 
-  // ─── Fetch dropdowns ──────────────────────────────
+  // auth
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const isAdmin = localStorage.getItem("isAdmin") === "true";
+    setIsAdminUser(isAdmin);
+    if (token) {
+      try {
+        const [, payload] = token.split(".");
+        const decoded = JSON.parse(atob(payload));
+        setUserEmail(decoded?.email || "");
+      } catch {}
+    }
+  }, []);
+
+  const meetingsAllowedEmails = [
+    "kwangmo@acc.org.bt","karmawangmo@acc.org.bt","bdorj@acc.org.bt",
+    "chekiw@acc.org.bt","tshewangrinzin@acc.org.bt",
+  ];
+  const canManage = isAdminUser || meetingsAllowedEmails.includes(userEmail);
+
+  // dropdowns
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
@@ -177,17 +126,11 @@ export default function LogMeetingPage() {
         const types = data.documentTypes || [];
         const comms = data.commissions || [];
         setDropdowns({
-          documentTypes: types,
-          commissions: comms,
-          departments: data.departments || [],
-          divisions: data.divisions || [],
+          documentTypes: types, commissions: comms,
+          departments: data.departments || [], divisions: data.divisions || [],
         });
-        if (types.length > 0) {
-          setFormData((prev) => ({ ...prev, document_type: types[0].name }));
-        }
-        if (comms.length > 0) {
-          setFormData((prev) => ({ ...prev, commission: comms[0].name }));
-        }
+        if (types.length > 0) setFormData((prev) => ({ ...prev, document_type: types[0].name }));
+        if (comms.length > 0) setFormData((prev) => ({ ...prev, commission: comms[0].name }));
       } catch (err) {
         console.error(err);
         showNotification("Failed to load dropdowns", "error");
@@ -196,7 +139,6 @@ export default function LogMeetingPage() {
     fetchDropdowns();
   }, []);
 
-  // ─── Fetch documents ──────────────────────────────
   const fetchDocuments = async () => {
     setLoading(true);
     try {
@@ -215,8 +157,8 @@ export default function LogMeetingPage() {
         ? data.map((item) => ({ ...item, id: item._id || item.id }))
         : [];
       setDocuments(items);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       showNotification("Failed to load documents", "error");
       setDocuments([]);
     } finally {
@@ -224,317 +166,86 @@ export default function LogMeetingPage() {
     }
   };
 
-  useEffect(() => {
-    fetchDocuments();
-  }, [filters]);
+  useEffect(() => { fetchDocuments(); }, [filters]);
 
-  // ─── Fetch all users (for Individuals tab) ────────
-  const fetchAllUsers = async () => {
-    setLoadingUsers(true);
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/admin/all-users", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const items = (data.users || []).filter((u) => u.isActive !== false);
-        setAllUsers(items);
-      } else {
-        console.error("Failed to fetch users");
-      }
-    } catch (err) {
-      console.error("Error fetching users:", err);
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
-  // ─── Handlers ─────────────────────────────────────
+  // handlers
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters((prev) => ({ ...prev, [name]: value }));
     setCurrentPage(1);
   };
-
   const clearFilters = () => {
     setFilters({ documentType: "", commission: "", year: "" });
-    setCurrentPage(1);
+    setSearch(""); setCurrentPage(1);
   };
-
-  const handleSearchChange = (e) => {
-    setSearch(e.target.value);
-    setCurrentPage(1);
-  };
-
   const handleRowsChange = (e) => {
-    setRowsPerPage(Number(e.target.value));
-    setCurrentPage(1);
+    setRowsPerPage(Number(e.target.value)); setCurrentPage(1);
   };
-
   const handleSort = (key) => {
     let direction = "asc";
-    if (sortConfig.key === key && sortConfig.direction === "asc")
-      direction = "desc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") direction = "desc";
     setSortConfig({ key, direction });
   };
+  const getSortIcon = (key) => (sortConfig.key !== key ? null : sortConfig.direction === "asc" ? "↑" : "↓");
 
-  const handleView = (doc) => {
-    if (editingId) closeEditForm();
-    setViewedItemId(viewedItemId === doc.id ? null : doc.id);
+  const toggleRowExpand = (id) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    if (editingId === id) closeEditForm();
   };
 
-  const handleDownload = async (doc) => {
-    window.open(doc.file_url, "_blank");
-  };
+  const handleDownload = (doc) => window.open(doc.file_url, "_blank");
 
-  // ─── Send Email ───────────────────────────────────
-  const handleSendEmail = async (docId, testEmail = null) => {
-    try {
-      setSendingEmail(docId);
-      const token = localStorage.getItem("token");
-      const body = testEmail ? { testEmail } : {};
-
-      const res = await fetch(`/api/meetings/documents/${docId}/send`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        const message = testEmail
-          ? `✅ Test email sent to ${testEmail}`
-          : `✅ Email sent to ${data.sent || 0} users${data.failed > 0 ? ` (${data.failed} failed)` : ""}`;
-        showNotification(message, "success");
-        setShowTestEmailModal(false);
-        setTestEmailInput("");
-        setTestDocId(null);
-      } else {
-        showNotification(data.error || "Failed to send emails", "error");
-      }
-    } catch (err) {
-      console.error("Send email error:", err);
-      showNotification("Error sending emails", "error");
-    } finally {
-      setSendingEmail(null);
-    }
-  };
-
-  const openTestEmailModal = (docId) => {
-    setTestDocId(docId);
-    setShowTestEmailModal(true);
-    setTestEmailInput("");
-  };
-
-  const handleTestEmailSubmit = () => {
-    if (!testEmailInput || !testEmailInput.includes("@")) {
-      showNotification("Please enter a valid email address", "error");
-      return;
-    }
-    handleSendEmail(testDocId, testEmailInput);
-  };
-
-  // ─── Send-to Modal Handlers ──────────────────────
-  const openSendToModal = async (docId) => {
-    setSendToDocId(docId);
-    setSendToTab("all");
-    setSelectedDepartments([]);
-    setSelectedDivisions([]);
-    setSelectedUsers([]);
-    setUserSearchTerm("");
-    setShowSendToModal(true);
-    if (allUsers.length === 0) {
-      await fetchAllUsers();
-    }
-  };
-
-  const closeSendToModal = () => {
-    setShowSendToModal(false);
-    setSendToDocId(null);
-    setSelectedDepartments([]);
-    setSelectedDivisions([]);
-    setSelectedUsers([]);
-    setUserSearchTerm("");
-    setSendToTab("all");
-  };
-
-  const toggleDepartment = (deptId) => {
-    setSelectedDepartments((prev) =>
-      prev.includes(deptId) ? prev.filter((id) => id !== deptId) : [...prev, deptId]
-    );
-  };
-
-  const toggleDivision = (divId) => {
-    setSelectedDivisions((prev) =>
-      prev.includes(divId) ? prev.filter((id) => id !== divId) : [...prev, divId]
-    );
-  };
-
-  const toggleUser = (userId) => {
-    setSelectedUsers((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
-  };
-
-  const selectAllDepartments = () => {
-    if (selectedDepartments.length === dropdowns.departments.length) {
-      setSelectedDepartments([]);
-    } else {
-      setSelectedDepartments(dropdowns.departments.map((d) => d.id));
-    }
-  };
-
-  const selectAllDivisions = () => {
-    if (selectedDivisions.length === dropdowns.divisions.length) {
-      setSelectedDivisions([]);
-    } else {
-      setSelectedDivisions(dropdowns.divisions.map((d) => d.id));
-    }
-  };
-
-  const selectAllFilteredUsers = () => {
-    const ids = filteredUsers.map((u) => u._id);
-    const allSelected = ids.every((id) => selectedUsers.includes(id));
-    if (allSelected) {
-      setSelectedUsers((prev) => prev.filter((id) => !ids.includes(id)));
-    } else {
-      const merged = new Set([...selectedUsers, ...ids]);
-      setSelectedUsers(Array.from(merged));
-    }
-  };
-
-  const handleSendToSubmit = async () => {
-    if (!sendToDocId) return;
-
-    if (sendToTab === "departments" && selectedDepartments.length === 0) {
-      showNotification("Please select at least one department", "error");
-      return;
-    }
-    if (sendToTab === "divisions" && selectedDivisions.length === 0) {
-      showNotification("Please select at least one division", "error");
-      return;
-    }
-    if (sendToTab === "individuals" && selectedUsers.length === 0) {
-      showNotification("Please select at least one individual", "error");
-      return;
-    }
-
-    if (!confirm("Are you sure you want to send this email?")) return;
-
-    try {
-      setSendingEmail(sendToDocId);
-      const token = localStorage.getItem("token");
-
-      let body = {};
-      if (sendToTab === "departments") {
-        body.departmentIds = selectedDepartments;
-      } else if (sendToTab === "divisions") {
-        body.divisionIds = selectedDivisions;
-      } else if (sendToTab === "individuals") {
-        body.userIds = selectedUsers;
-      }
-
-      const res = await fetch(`/api/meetings/documents/${sendToDocId}/send`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        showNotification(
-          `✅ Email sent to ${data.sent || 0} users${data.failed > 0 ? ` (${data.failed} failed)` : ""}`,
-          "success"
-        );
-        closeSendToModal();
-      } else {
-        showNotification(data.error || "Failed to send emails", "error");
-      }
-    } catch (err) {
-      console.error("Send error:", err);
-      showNotification("Error sending emails", "error");
-    } finally {
-      setSendingEmail(null);
-    }
-  };
-
-  const filteredUsers = allUsers.filter((u) => {
-    const term = userSearchTerm.toLowerCase();
-    if (!term) return true;
-    return (
-      (u.name || "").toLowerCase().includes(term) ||
-      (u.email || "").toLowerCase().includes(term) ||
-      (u.cid || "").toLowerCase().includes(term) ||
-      (u.departmentName || "").toLowerCase().includes(term) ||
-      (u.divisionName || "").toLowerCase().includes(term)
-    );
-  });
-
-  // ─── Viewer Modal ─────────────────────────────────
   const openViewer = (doc) => {
     setViewerFileUrl(doc.file_url);
     setViewerFileName(doc.file_url.split("/").pop() || "document.pdf");
     setShowViewerModal(true);
   };
-
   const closeViewer = () => {
-    setShowViewerModal(false);
-    setViewerFileUrl("");
-    setViewerFileName("");
+    setShowViewerModal(false); setViewerFileUrl(""); setViewerFileName("");
   };
 
-  // ─── Add Form ────────────────────────────────────
+  // add form
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
-
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       if (file.size > 50 * 1024 * 1024) {
         showNotification("File size must be less than 50MB", "error");
-        e.target.value = "";
-        return;
+        e.target.value = ""; return;
       }
       setFormData((prev) => ({ ...prev, file }));
       setError("");
     }
   };
+  const resetForm = () => {
+    setFormData({
+      display_order: "", document_type: dropdowns.documentTypes[0]?.name || "",
+      commission: dropdowns.commissions[0]?.name || "",
+      year: new Date().getFullYear().toString(),
+      date: new Date().toISOString().split("T")[0],
+      subject: "", file: null,
+    });
+    const input = document.getElementById("fileInput");
+    if (input) input.value = "";
+    setShowAddForm(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess(false);
-
-    if (!formData.document_type) {
-      showNotification("Please select a document type", "error");
-      return;
-    }
-    if (!formData.commission) {
-      showNotification("Please select a commission", "error");
-      return;
-    }
-    if (!formData.subject.trim()) {
-      showNotification("Subject is required", "error");
-      return;
-    }
-    if (!formData.file) {
-      showNotification("Please select a file to upload", "error");
-      return;
-    }
+    setError(""); setSuccess(false);
+    if (!formData.document_type) return showNotification("Please select a document type", "error");
+    if (!formData.commission) return showNotification("Please select a commission", "error");
+    if (!formData.subject.trim()) return showNotification("Subject is required", "error");
+    if (!formData.file) return showNotification("Please select a file to upload", "error");
 
     setLoading(true);
-
     const data = new FormData();
     data.append("display_order", formData.display_order || "999");
     data.append("document_type", formData.document_type);
@@ -545,48 +256,25 @@ export default function LogMeetingPage() {
     data.append("file", formData.file);
 
     try {
-      const res = await fetch("/api/meetings/documents", {
-        method: "POST",
-        body: data,
-      });
-
+      const res = await fetch("/api/meetings/documents", { method: "POST", body: data });
       let errorMsg = "Upload failed";
-      let responseData = {};
-      try {
-        responseData = await res.json();
-        if (responseData.error) errorMsg = responseData.error;
-      } catch (parseErr) {
-        if (!res.ok) errorMsg = `Server error (${res.status})`;
-      }
-
+      try { const r = await res.json(); if (r.error) errorMsg = r.error; }
+      catch { if (!res.ok) errorMsg = `Server error (${res.status})`; }
       if (!res.ok) throw new Error(errorMsg);
-
       showNotification("Document uploaded successfully!", "success");
-      setFormData((prev) => ({
-        ...prev,
-        display_order: "",
-        subject: "",
-        file: null,
-      }));
-      document.getElementById("fileInput").value = "";
+      resetForm();
       await fetchDocuments();
-      setShowAddForm(false);
     } catch (err) {
-      console.error(err);
       showNotification(err.message || "Upload failed", "error");
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Edit Form ───────────────────────────────────
+  // edit
   const openEditForm = (doc) => {
-    if (viewedItemId) setViewedItemId(null);
-    closeEditForm();
-
-    setEditMode(true);
+    setShowAddForm(false);
     setEditingId(doc.id);
-    setHighlightedRowId(doc.id);
     setEditFormError("");
     setEditFormData({
       display_order: doc.display_order || "",
@@ -604,78 +292,41 @@ export default function LogMeetingPage() {
     setEditRemoveExisting(false);
     const input = document.getElementById("editFileInput");
     if (input) input.value = "";
+    setExpandedRows((prev) => new Set([...prev, doc.id]));
   };
-
   const closeEditForm = () => {
-    setEditMode(false);
     setEditingId(null);
-    setHighlightedRowId(null);
-    setEditFormError("");
-    setEditFormLoading(false);
-    setEditExistingFile(null);
-    setEditRemoveExisting(false);
+    setEditFormError(""); setEditFormLoading(false);
+    setEditExistingFile(null); setEditRemoveExisting(false);
   };
-
   const handleEditChange = (e) => {
     const { name, value } = e.target;
     setEditFormData((prev) => ({ ...prev, [name]: value }));
   };
-
   const handleEditFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       if (file.size > 50 * 1024 * 1024) {
-        setEditFormError("File size must be less than 50MB");
-        e.target.value = "";
-        return;
+        setEditFormError("File size must be less than 50MB"); e.target.value = ""; return;
       }
-      setEditFormData((prev) => ({ ...prev, file }));
-      setEditFormError("");
+      setEditFormData((prev) => ({ ...prev, file })); setEditFormError("");
     }
   };
-
   const removeEditSelectedFile = () => {
     setEditFormData((prev) => ({ ...prev, file: null }));
     const input = document.getElementById("editFileInput");
     if (input) input.value = "";
   };
-
-  const removeEditExistingFile = () => {
-    setEditRemoveExisting(true);
-    setEditExistingFile(null);
-  };
+  const removeEditExistingFile = () => { setEditRemoveExisting(true); setEditExistingFile(null); };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setEditFormError("");
-    setEditFormLoading(true);
-
-    if (!editFormData.document_type) {
-      setEditFormError("Please select a document type");
-      setEditFormLoading(false);
-      return;
-    }
-    if (!editFormData.commission) {
-      setEditFormError("Please select a commission");
-      setEditFormLoading(false);
-      return;
-    }
-    if (!editFormData.subject.trim()) {
-      setEditFormError("Subject is required");
-      setEditFormLoading(false);
-      return;
-    }
-    if (!editFormData.date) {
-      setEditFormError("Date is required");
-      setEditFormLoading(false);
-      return;
-    }
-
-    if (editRemoveExisting && !editFormData.file) {
-      setEditFormError("You removed the file. Please upload a new one.");
-      setEditFormLoading(false);
-      return;
-    }
+    setEditFormError(""); setEditFormLoading(true);
+    if (!editFormData.document_type) { setEditFormError("Please select a document type"); setEditFormLoading(false); return; }
+    if (!editFormData.commission) { setEditFormError("Please select a commission"); setEditFormLoading(false); return; }
+    if (!editFormData.subject.trim()) { setEditFormError("Subject is required"); setEditFormLoading(false); return; }
+    if (!editFormData.date) { setEditFormError("Date is required"); setEditFormLoading(false); return; }
+    if (editRemoveExisting && !editFormData.file) { setEditFormError("You removed the file. Please upload a new one."); setEditFormLoading(false); return; }
 
     const jsonPayload = {
       display_order: editFormData.display_order || 999,
@@ -686,47 +337,31 @@ export default function LogMeetingPage() {
       subject: editFormData.subject,
       removeExisting: editRemoveExisting,
     };
-
     if (editFormData.file) {
       const reader = new FileReader();
       const fileBase64 = await new Promise((resolve) => {
-        reader.onload = () => resolve(reader.result);
-        reader.readAsDataURL(editFormData.file);
+        reader.onload = () => resolve(reader.result); reader.readAsDataURL(editFormData.file);
       });
       jsonPayload.fileBase64 = fileBase64;
       jsonPayload.fileName = editFormData.file.name;
     }
-
     try {
       const res = await fetch(`/api/meetings/documents?id=${editingId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(jsonPayload),
       });
-
       let errorMsg = "Update failed";
-      let responseData = {};
-      try {
-        responseData = await res.json();
-        if (responseData.error) errorMsg = responseData.error;
-      } catch (parseErr) {
-        if (!res.ok) errorMsg = `Server error (${res.status})`;
-      }
-
+      try { const r = await res.json(); if (r.error) errorMsg = r.error; }
+      catch { if (!res.ok) errorMsg = `Server error (${res.status})`; }
       if (!res.ok) {
-        if (res.status === 404) {
-          errorMsg = "Document no longer exists.";
-          closeEditForm();
-          await fetchDocuments();
-        }
+        if (res.status === 404) { errorMsg = "Document no longer exists."; closeEditForm(); await fetchDocuments(); }
         throw new Error(errorMsg);
       }
-
       await fetchDocuments();
       closeEditForm();
       showNotification("Document updated successfully!", "success");
     } catch (err) {
-      console.error(err);
       setEditFormError(err.message || "Update failed");
     } finally {
       setEditFormLoading(false);
@@ -736,453 +371,349 @@ export default function LogMeetingPage() {
   const handleDelete = async (id) => {
     if (!confirm("Are you sure you want to delete this document?")) return;
     try {
-      const res = await fetch(`/api/meetings/documents?id=${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Delete failed");
-      }
+      const res = await fetch(`/api/meetings/documents?id=${id}`, { method: "DELETE" });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || "Delete failed"); }
       await fetchDocuments();
       showNotification("Document deleted successfully!", "success");
       if (editingId === id) closeEditForm();
-      if (viewedItemId === id) setViewedItemId(null);
-    } catch (error) {
-      showNotification(error.message || "Delete failed", "error");
+    } catch (err) {
+      showNotification(err.message || "Delete failed", "error");
     }
   };
 
-  // ─── Filtering & Sorting ─────────────────────────
+  // filter & sort
   const filtered = documents.filter((doc) => {
-    const searchLower = search.toLowerCase();
-    const searchable = [
-      doc.document_type,
-      doc.commission,
-      doc.year,
-      doc.subject,
-      doc.file_url,
-    ]
-      .join(" ")
-      .toLowerCase();
-    return searchable.includes(searchLower);
+    const s = search.toLowerCase();
+    return [doc.document_type, doc.commission, doc.year, doc.subject, doc.file_url]
+      .join(" ").toLowerCase().includes(s);
   });
-
-  // Default: display_order descending
   const sorted = [...filtered];
   if (sortConfig.key) {
     sorted.sort((a, b) => {
       let aVal = a[sortConfig.key] ?? "";
       let bVal = b[sortConfig.key] ?? "";
       if (sortConfig.key === "display_order" || sortConfig.key === "id") {
-        aVal = Number(aVal);
-        bVal = Number(bVal);
+        aVal = Number(aVal); bVal = Number(bVal);
       } else if (sortConfig.key === "date") {
-        aVal = new Date(aVal).getTime() || 0;
-        bVal = new Date(bVal).getTime() || 0;
+        aVal = new Date(aVal).getTime() || 0; bVal = new Date(bVal).getTime() || 0;
       } else {
-        aVal = String(aVal).toLowerCase();
-        bVal = String(bVal).toLowerCase();
+        aVal = String(aVal).toLowerCase(); bVal = String(bVal).toLowerCase();
       }
       if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
       if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
   }
-
   const totalPages = Math.ceil(sorted.length / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
   const paginated = sorted.slice(startIndex, startIndex + rowsPerPage);
 
-  // ─── Render ──────────────────────────────────────
+  // dashboard stats
+  const totalDocs = documents.length;
+  const uniqueTypes = new Set(documents.map((d) => d.document_type)).size;
+  const uniqueCommissions = new Set(documents.map((d) => d.commission)).size;
+  const currentYearCount = documents.filter((d) => String(d.year) === String(new Date().getFullYear())).length;
+
   return (
-    <div className="flex">
-      <Sidebar />
-      <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Minutes</h1>
-          {canManage && (
-            <button
-              onClick={() => {
-                if (showAddForm) setShowAddForm(false);
-                else {
-                  if (editingId) closeEditForm();
-                  setShowAddForm(true);
-                }
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
-            >
-              <Plus size={14} />
-              {showAddForm ? "Cancel" : "Add Document"}
-            </button>
-          )}
+    <>
+      <div className="flex w-full min-h-screen bg-gray-100">
+        <div className="fixed inset-y-0 left-0 z-20 bg-white shadow-xl">
+          <Sidebar />
         </div>
-
-        {success && (
-          <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
-            ✅ {successMessage}
-          </div>
-        )}
-        {error && (
-          <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-            ❌ {error}
-          </div>
-        )}
-
-        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <div className="flex items-center gap-2 flex-1">
-            <div className="relative w-96">
-              <input
-                type="text"
-                value={search}
-                onChange={handleSearchChange}
-                placeholder="Search your documents..."
-                className="w-full px-4 py-2 pr-10 border rounded focus:ring-2 focus:ring-blue-400 outline-none"
-              />
-              <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+        <main className="flex-1 w-full transition-all duration-300 lg:ml-64 p-4 lg:p-6">
+          <div className="max-w-[1600px] mx-auto w-full">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6">
+              <h1 className="text-2xl font-bold">Minutes</h1>
             </div>
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 px-3 py-2 border rounded-md text-sm font-medium transition ${
-                showFilters ? "bg-blue-50 border-blue-400 text-blue-600" : "hover:border-gray-400"
-              }`}
-            >
-              <Filter size={16} /> Filters
-            </button>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <span>Show</span>
-            <select value={rowsPerPage} onChange={handleRowsChange} className="border rounded px-2 py-1">
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={30}>30</option>
-              <option value={40}>40</option>
-            </select>
-            <span>entries</span>
-          </div>
-        </div>
 
-        {showFilters && (
-          <div className="bg-white p-4 rounded-lg shadow mb-4 border border-gray-200">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-semibold text-gray-700">Document Filters</h3>
-              <button onClick={clearFilters} className="text-xs text-blue-600 flex items-center gap-1">
-                <XCircle size={14} /> Clear all
-              </button>
+            {/* Dashboard stat bar */}
+            <div className="mb-6">
+              <div className="bg-white rounded-xl shadow-sm px-4 py-3 mb-4 flex flex-wrap items-center justify-around gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  <span className="text-gray-600">Total:</span>
+                  <span className="font-bold text-gray-800">{totalDocs}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                  <span className="text-gray-600">Types:</span>
+                  <span className="font-bold text-gray-800">{uniqueTypes}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                  <span className="text-gray-600">Commissions:</span>
+                  <span className="font-bold text-gray-800">{uniqueCommissions}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                  <span className="text-gray-600">This Year:</span>
+                  <span className="font-bold text-gray-800">{currentYearCount}</span>
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Document Type</label>
-                <select name="documentType" value={filters.documentType} onChange={handleFilterChange} className="w-full border rounded px-2 py-1.5 text-sm">
+
+            {/* Notifications */}
+            {success && (
+              <div className="mb-4 px-4 py-2 rounded bg-green-100 text-green-700">✅ {successMessage}</div>
+            )}
+            {error && (
+              <div className="mb-4 px-4 py-2 rounded bg-red-100 text-red-700">❌ {error}</div>
+            )}
+
+            {/* Toolbar with Filters */}
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                {!showAddForm && canManage && (
+                  <button
+                    onClick={() => { resetForm(); setShowAddForm(true); closeEditForm(); }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white border rounded-md text-xs font-medium hover:bg-blue-700 transition"
+                  >
+                    <Plus size={14} /> Add Document
+                  </button>
+                )}
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+                  placeholder="Search (type, commission, subject)..."
+                  className="w-full sm:w-64 px-3 py-1.5 text-sm border rounded focus:ring-2 focus:ring-blue-400 outline-none"
+                />
+                <div className="flex items-center gap-2 text-sm text-gray-600 font-medium ml-2">
+                  <Filter size={16} className="text-gray-400" /> Filters:
+                </div>
+                <select name="documentType" value={filters.documentType} onChange={handleFilterChange}
+                  className="border rounded px-2 py-1.5 text-sm outline-none bg-gray-50 hover:bg-white transition">
                   <option value="">All Types</option>
-                  {dropdowns.documentTypes.map((type) => (
-                    <option key={type.id} value={type.name}>{type.name}</option>
-                  ))}
+                  {dropdowns.documentTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
                 </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Commission</label>
-                <select name="commission" value={filters.commission} onChange={handleFilterChange} className="w-full border rounded px-2 py-1.5 text-sm">
+                <select name="commission" value={filters.commission} onChange={handleFilterChange}
+                  className="border rounded px-2 py-1.5 text-sm outline-none bg-gray-50 hover:bg-white transition">
                   <option value="">All Commissions</option>
-                  {dropdowns.commissions.map((comm) => (
-                    <option key={comm.id} value={comm.name}>{comm.name}</option>
-                  ))}
+                  {dropdowns.commissions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                 </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Year</label>
-                <select name="year" value={filters.year} onChange={handleFilterChange} className="w-full border rounded px-2 py-1.5 text-sm">
+                <select name="year" value={filters.year} onChange={handleFilterChange}
+                  className="border rounded px-2 py-1.5 text-sm outline-none bg-gray-50 hover:bg-white transition">
                   <option value="">All Years</option>
-                  {YEAR_OPTIONS.map((year) => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
+                  {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
                 </select>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showAddForm && (
-          <div className="bg-white shadow rounded-xl p-6 mb-6 border border-gray-200">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">Upload New Minutes</h2>
-              <button onClick={() => setShowAddForm(false)} className="text-gray-500">
-                <X size={24} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Display Order</label>
-                  <input type="number" name="display_order" value={formData.display_order} onChange={handleChange} placeholder="e.g., 1, 2, 3..." className="w-full border rounded px-3 py-2" min="1" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Document Type *</label>
-                  <select name="document_type" value={formData.document_type} onChange={handleChange} className="w-full border rounded px-3 py-2" required>
-                    {dropdowns.documentTypes.map((type) => (
-                      <option key={type.id} value={type.name}>{type.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Commission *</label>
-                  <select name="commission" value={formData.commission} onChange={handleChange} className="w-full border rounded px-3 py-2" required>
-                    {dropdowns.commissions.map((comm) => (
-                      <option key={comm.id} value={comm.name}>{comm.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
-                  <select name="year" value={formData.year} onChange={handleChange} className="w-full border rounded px-3 py-2" required>
-                    {YEAR_OPTIONS.map((year) => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-                  <input type="date" name="date" value={formData.date} onChange={handleChange} className="w-full border rounded px-3 py-2" required />
-                </div>
-              </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
-                <input type="text" name="subject" value={formData.subject} onChange={handleChange} placeholder="Brief description" className="w-full border rounded px-3 py-2" required />
-              </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Upload File (PDF, DOC, DOCX) * — Max 50MB</label>
-                <input id="fileInput" type="file" accept=".pdf,.doc,.docx" onChange={handleFileChange} className="w-full border rounded px-3 py-2" required />
-                {formData.file && (
-                  <p className="text-sm text-gray-500 mt-1">Selected: {formData.file.name} ({(formData.file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                {(search || filters.documentType || filters.commission || filters.year) && (
+                  <button onClick={clearFilters}
+                    className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1.5" title="Clear all filters">
+                    <RefreshCw size={14} /> Clear
+                  </button>
                 )}
               </div>
-              <div className="mt-6 flex gap-3">
-                <button type="submit" disabled={loading} className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
-                  {loading ? "Uploading..." : "Upload Minutes"}
-                </button>
+              <div className="flex items-center gap-2 text-sm whitespace-nowrap text-gray-600">
+                <span>Show</span>
+                <select value={rowsPerPage} onChange={handleRowsChange} className="border rounded px-2 py-1 outline-none">
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={30}>30</option>
+                  <option value={40}>40</option>
+                </select>
+                <span className="font-medium text-gray-800">{filtered.length} records</span>
               </div>
-            </form>
-          </div>
-        )}
+            </div>
 
-        <div className="bg-white shadow rounded-lg overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {/* S/N column commented out */}
-                {/* <th className="px-4 py-3 text-left text-xs font-medium uppercase">S/N</th> */}
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer select-none hover:text-blue-600" onClick={() => handleSort("display_order")}>Order</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer select-none hover:text-blue-600" onClick={() => handleSort("date")}>Date of Meeting</th>
-                {/* Document Type column commented out */}
-                {/* <th className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer select-none hover:text-blue-600" onClick={() => handleSort("document_type")}>Document Type</th> */}
-                {/* ✅ Commission / Year column restored */}
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase">Commission / Year</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase cursor-pointer select-none hover:text-blue-600" onClick={() => handleSort("subject")}>Subject</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase">Document</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {loading ? (
-                <tr><td colSpan="8" className="text-center py-6 text-gray-500">Loading...</td></tr>
-              ) : paginated.length === 0 ? (
-                <tr><td colSpan="8" className="text-center py-6 text-gray-500">No documents found</td></tr>
-              ) : (
-                paginated.map((doc, index) => {
-                  const isExpanded = viewedItemId === doc.id;
-                  const isEditing = highlightedRowId === doc.id && editMode;
-
-                  return (
-                    <React.Fragment key={doc.id}>
-                      <tr className={`hover:bg-gray-50 transition-colors ${isExpanded || isEditing ? "bg-blue-50 border-l-4 border-blue-400" : ""}`}>
-                        {/* S/N cell commented out */}
-                        {/* <td className="px-4 py-3 text-sm">{startIndex + index + 1}</td> */}
-                        <td className="px-4 py-3 text-sm">{doc.display_order || "—"}</td>
-                        <td className="px-4 py-3 text-sm">{formatDate(doc.date)}</td>
-                        {/* Document Type cell commented out */}
-                        {/* <td className="px-4 py-3 text-sm">{doc.document_type}</td> */}
-                        {/* ✅ Commission / Year cell restored */}
-                        <td className="px-4 py-3 text-sm">
-                          <span className="font-medium">{doc.commission}</span>
-                          <span className="text-gray-400"> / </span>
-                          <span>{doc.year}</span>
-                        </td>
-                        <td className="px-4 py-3 text-sm">{doc.subject}</td>
-                        <td className="px-4 py-3 text-sm">
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => openViewer(doc)} className="text-blue-600 hover:text-blue-800 transition" title="View document"><ViewIcon size={18} /></button>
-                            <button onClick={() => handleDownload(doc)} className="text-blue-600 hover:text-blue-800 transition" title="Download file"><Download size={18} /></button>
+            {/* Table */}
+            <div className="bg-white shadow rounded-lg overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">S/N</th>
+                    <th onClick={() => handleSort("display_order")} className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap">Order {getSortIcon("display_order")}</th>
+                    <th onClick={() => handleSort("date")} className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap">Date of Meeting {getSortIcon("date")}</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Commission / Year</th>
+                    <th onClick={() => handleSort("subject")} className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap">Subject {getSortIcon("subject")}</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Document</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 whitespace-nowrap">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {/* GLOBAL ADD FORM ROW */}
+                  {showAddForm && (
+                    <tr className="bg-gray-50">
+                      <td colSpan={7} className="p-4 border-b">
+                        <div className="bg-white rounded-lg shadow-sm p-6 pl-8 relative overflow-hidden">
+                          <div className="absolute left-0 top-4 bottom-4 w-1.5 bg-orange-400 rounded-full"></div>
+                          <div className="flex justify-between mb-4 items-center">
+                            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                              <Plus size={18} className="text-blue-600" /> Upload New Minutes
+                            </h2>
+                            <button onClick={resetForm} className="text-gray-500 hover:text-gray-700 p-1"><X size={20} /></button>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm flex gap-2 flex-wrap">
-                          <button onClick={() => handleView(doc)} className="flex items-center gap-1 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-blue-500 hover:text-blue-500 transition">
-                            {isExpanded ? <><ChevronUp size={14} /> Close</> : <><Eye size={14} /> Details</>}
-                          </button>
-                        </td>
-                      </tr>
-
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan="8" className="px-4 py-4 bg-gray-50/80">
-                            <div className="mx-4 my-2 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                              <div className="bg-gradient-to-r from-blue-50 to-blue-100/30 px-6 py-4 border-b border-gray-200">
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <h4 className="text-lg font-semibold text-gray-800">Document Details</h4>
-                                    <p className="text-sm text-gray-500">
-                                      <span className="font-medium">Document Type:</span> {doc.document_type}
-                                    </p>
-                                  </div>
-                                  <div className="flex gap-2 flex-wrap">
-                                    <button onClick={() => openViewer(doc)} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-md text-xs font-medium hover:bg-blue-100 transition"><ViewIcon size={14} /> View</button>
-                                    <button onClick={() => handleDownload(doc)} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-md text-xs font-medium hover:bg-blue-100 transition"><Download size={14} /> Download</button>
-                                    {canManage && (
-                                      <>
-                                        <button onClick={() => openEditForm(doc)} className="flex items-center gap-1 px-3 py-1.5 bg-yellow-50 text-yellow-600 border border-yellow-200 rounded-md text-xs font-medium hover:bg-yellow-100 transition"><Pencil size={14} /> Edit</button>
-                                        <button onClick={() => handleDelete(doc.id)} className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-md text-xs font-medium hover:bg-red-100 transition"><Trash2 size={14} /> Delete</button>
-
-                                        {/* Hidden for now — Test / Send All / Send to... buttons
-                                        <button onClick={() => openTestEmailModal(doc.id)} className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 border border-green-200 rounded-md text-xs font-medium hover:bg-green-100 transition"><Mail size={14} /> Test</button>
-                                        <button onClick={() => handleSendEmail(doc.id)} disabled={sendingEmail === doc.id} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white border border-green-600 rounded-md text-xs font-medium hover:bg-green-700 transition disabled:opacity-50">
-                                          {sendingEmail === doc.id ? (<span className="inline-block animate-spin">⟳</span>) : (<Mail size={14} />)}
-                                          {sendingEmail === doc.id ? "Sending..." : "Send All"}
-                                        </button>
-                                        <button onClick={() => openSendToModal(doc.id)} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-md text-xs font-medium hover:bg-indigo-100 transition"><Users size={14} /> Send to...</button>
-                                        */}
-
-                                        <button onClick={() => setSendDocId(doc.id)} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white border border-indigo-600 rounded-md text-xs font-medium hover:bg-indigo-700 transition"><Users size={14} /> Send Notification (new)</button>
-                                      </>
-                                    )}
-                                    <button onClick={() => handleView(doc)} className="flex items-center gap-1 px-3 py-1.5 bg-gray-50 text-gray-600 border border-gray-200 rounded-md text-xs font-medium hover:bg-gray-100 transition"><X size={14} /> Close</button>
-                                  </div>
-                                </div>
+                          <form onSubmit={handleSubmit}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-sm font-medium">Display Order</label>
+                                <input type="number" name="display_order" value={formData.display_order} onChange={handleChange}
+                                  placeholder="e.g., 1, 2, 3..." className="w-full border rounded px-3 py-2" min="1" />
                               </div>
-
-                              <div className="p-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                                  <div className="flex items-start gap-3">
-                                    <Hash size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-gray-500">Display Order</p>
-                                      <p className="text-sm text-gray-800">{doc.display_order || "—"}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <Calendar size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-gray-500">Date</p>
-                                      <p className="text-sm text-gray-800">{formatDate(doc.date)}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <FileText size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-gray-500">Document Type</p>
-                                      <p className="text-sm text-gray-800">{doc.document_type}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <Users size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-gray-500">Commission</p>
-                                      <p className="text-sm text-gray-800">{doc.commission}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-start gap-3">
-                                    <Calendar size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-gray-500">Year</p>
-                                      <p className="text-sm text-gray-800">{doc.year}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-start gap-3 md:col-span-2">
-                                    <FileText size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-gray-500">Subject</p>
-                                      <p className="text-sm text-gray-800">{doc.subject}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-start gap-3 md:col-span-2">
-                                    <File size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                      <p className="text-xs font-medium text-gray-500">File</p>
-                                      <button onClick={() => openViewer(doc)} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                                        <ViewIcon size={14} />
-                                        {doc.file_url.split("/").pop()}
-                                      </button>
-                                      {doc.original_filename && (
-                                        <p className="text-xs text-gray-400 mt-1">Original: {doc.original_filename}</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
+                              <div>
+                                <label className="text-sm font-medium">Document Type *</label>
+                                <select name="document_type" value={formData.document_type} onChange={handleChange} className="w-full border rounded px-3 py-2" required>
+                                  {dropdowns.documentTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">Commission *</label>
+                                <select name="commission" value={formData.commission} onChange={handleChange} className="w-full border rounded px-3 py-2" required>
+                                  {dropdowns.commissions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">Year *</label>
+                                <select name="year" value={formData.year} onChange={handleChange} className="w-full border rounded px-3 py-2" required>
+                                  {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium">Date *</label>
+                                <input type="date" name="date" value={formData.date} onChange={handleChange} className="w-full border rounded px-3 py-2" required />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="text-sm font-medium">Subject *</label>
+                                <input type="text" name="subject" value={formData.subject} onChange={handleChange} placeholder="Brief description" className="w-full border rounded px-3 py-2" required />
                               </div>
                             </div>
-                          </td>
-                        </tr>
-                      )}
+                            <div className="mt-4">
+                              <label className="text-sm font-medium">Upload File (PDF, DOC, DOCX) * — Max 50MB</label>
+                              <input id="fileInput" type="file" accept=".pdf,.doc,.docx" onChange={handleFileChange} className="w-full border rounded px-3 py-2 mt-1" required />
+                              {formData.file && (
+                                <p className="text-sm text-gray-500 mt-1">Selected: {formData.file.name} ({(formData.file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                              )}
+                            </div>
+                            <div className="flex justify-end gap-3 mt-5">
+                              <button type="button" onClick={resetForm} className="flex items-center gap-2 px-4 py-2 border rounded-md text-sm font-medium hover:bg-gray-50 transition"><X size={16} /> Cancel</button>
+                              <button type="submit" disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition shadow-sm disabled:opacity-50">
+                                <Save size={16} /> {loading ? "Uploading..." : "Upload Minutes"}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
 
-                      {isEditing && (
-                        <tr>
-                          <td colSpan="8" className="px-4 py-4 bg-white border-t border-gray-200">
-                            <div className="mx-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
-                              <div className="bg-gradient-to-r from-yellow-50 to-yellow-100/30 px-6 py-4 border-b border-gray-200">
-                                <div className="flex justify-between items-center">
-                                  <h2 className="text-lg font-bold text-gray-800">Edit Document</h2>
-                                  <button onClick={closeEditForm} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
-                                </div>
+                  {loading ? (
+                    <tr><td colSpan={7} className="text-center py-6 text-gray-500">Loading...</td></tr>
+                  ) : paginated.length === 0 ? (
+                    <tr><td colSpan={7} className="text-center py-6 text-gray-500">No documents found</td></tr>
+                  ) : (
+                    paginated.map((doc, index) => {
+                      const isExpanded = expandedRows.has(doc.id);
+                      const isEditing = editingId === doc.id;
+                      const rowSNumber = startIndex + index + 1;
+
+                      return (
+                        <Fragment key={doc.id}>
+                          <tr
+                            className={`hover:bg-gray-50 transition-colors align-top cursor-pointer ${isEditing ? "bg-blue-50" : ""}`}
+                            onClick={(e) => {
+                              if (isEditing) return;
+                              if ((e.target).closest("button") || (e.target).closest("a")) return;
+                              toggleRowExpand(doc.id);
+                            }}
+                          >
+                            <td className="px-2 py-3 text-sm text-gray-500">{rowSNumber}</td>
+                            <td className="px-2 py-3 text-sm whitespace-nowrap">{doc.display_order || "—"}</td>
+                            <td className="px-2 py-3 text-sm whitespace-nowrap">{formatDate(doc.date)}</td>
+                            <td className="px-2 py-3 text-sm">
+                              <span className="font-medium">{doc.commission}</span>
+                              <span className="text-gray-400"> / </span>
+                              <span>{doc.year}</span>
+                            </td>
+                            <td className="px-2 py-3 text-sm">
+                              <div className="max-w-[200px] lg:max-w-[280px]">
+                                <span className="text-gray-600 line-clamp-2">{doc.subject}</span>
                               </div>
-
-                              <div className="p-6">
-                                {editFormError && (
-                                  <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">❌ {editFormError}</div>
+                            </td>
+                            <td className="px-2 py-3 text-sm">
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => openViewer(doc)} className="text-blue-600 hover:text-blue-800 transition" title="View document"><ViewIcon size={16} /></button>
+                                <button onClick={() => handleDownload(doc)} className="text-blue-600 hover:text-blue-800 transition" title="Download file"><Download size={16} /></button>
+                              </div>
+                            </td>
+                            <td className="px-2 py-3 text-sm">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  onClick={() => toggleRowExpand(doc.id)}
+                                  className={`flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black transition ${isExpanded ? "bg-blue-50 text-blue-600 border-blue-300" : ""}`}
+                                >
+                                  <ChevronDown size={12} className={isExpanded ? "rotate-180" : ""} />
+                                  {isExpanded ? "Hide" : "View"}
+                                </button>
+                                {canManage && (
+                                  <button onClick={() => openEditForm(doc)}
+                                    className={`flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black ${isEditing ? "bg-blue-100 border-blue-400 text-blue-800" : ""}`}>
+                                    <Pencil size={12} /> Edit
+                                  </button>
                                 )}
+                                {canManage && (
+                                  <button onClick={() => handleDelete(doc.id)} className="flex items-center gap-1 border rounded px-1.5 py-1 text-xs hover:border-black text-red-500">
+                                    <Trash2 size={12} /> Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
 
-                                <form onSubmit={handleEditSubmit}>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">Display Order</label>
-                                      <input type="number" name="display_order" value={editFormData.display_order} onChange={handleEditChange} className="w-full border rounded px-3 py-2" min="1" placeholder="e.g., 1, 2, 3..." />
-                                    </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">Document Type *</label>
-                                      <select name="document_type" value={editFormData.document_type} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required>
-                                        {dropdowns.documentTypes.map((type) => (
-                                          <option key={type.id} value={type.name}>{type.name}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">Commission *</label>
-                                      <select name="commission" value={editFormData.commission} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required>
-                                        {dropdowns.commissions.map((comm) => (
-                                          <option key={comm.id} value={comm.name}>{comm.name}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
-                                      <select name="year" value={editFormData.year} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required>
-                                        {YEAR_OPTIONS.map((year) => (
-                                          <option key={year} value={year}>{year}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-                                      <input type="date" name="date" value={editFormData.date} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required />
-                                    </div>
+                          {/* INLINE EDIT FORM */}
+                          {isEditing && (
+                            <tr>
+                              <td colSpan={7} className="p-4 bg-gray-50 border-b border-gray-200">
+                                <div className="bg-white rounded-lg shadow-sm p-6 pl-8 relative overflow-hidden">
+                                  <div className="absolute left-0 top-4 bottom-4 w-1.5 bg-orange-400 rounded-full"></div>
+                                  <div className="flex justify-between mb-4 items-center">
+                                    <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2">
+                                      <Pencil size={18} /> Edit Document
+                                    </h2>
+                                    <button onClick={closeEditForm} className="text-gray-500 hover:text-gray-700 p-1"><X size={20} /></button>
                                   </div>
 
-                                  <div className="mt-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
-                                    <input type="text" name="subject" value={editFormData.subject} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required />
-                                  </div>
+                                  {editFormError && (
+                                    <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">❌ {editFormError}</div>
+                                  )}
 
-                                  <div className="mt-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Replace File (optional) — Max 50MB</label>
-                                    <div className="flex flex-col space-y-2">
-                                      <input id="editFileInput" type="file" accept=".pdf,.doc,.docx" onChange={handleEditFileChange} className="w-full border rounded px-3 py-2" />
-                                      <div className="flex flex-wrap gap-2 mt-1">
+                                  <form onSubmit={handleEditSubmit}>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div>
+                                        <label className="text-sm font-medium">Display Order</label>
+                                        <input type="number" name="display_order" value={editFormData.display_order} onChange={handleEditChange} className="w-full border rounded px-3 py-2" min="1" placeholder="e.g., 1, 2, 3..." />
+                                      </div>
+                                      <div>
+                                        <label className="text-sm font-medium">Document Type *</label>
+                                        <select name="document_type" value={editFormData.document_type} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required>
+                                          {dropdowns.documentTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="text-sm font-medium">Commission *</label>
+                                        <select name="commission" value={editFormData.commission} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required>
+                                          {dropdowns.commissions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="text-sm font-medium">Year *</label>
+                                        <select name="year" value={editFormData.year} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required>
+                                          {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="text-sm font-medium">Date *</label>
+                                        <input type="date" name="date" value={editFormData.date} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required />
+                                      </div>
+                                      <div className="md:col-span-2">
+                                        <label className="text-sm font-medium">Subject *</label>
+                                        <input type="text" name="subject" value={editFormData.subject} onChange={handleEditChange} className="w-full border rounded px-3 py-2" required />
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-4">
+                                      <label className="text-sm font-medium">Replace File (optional) — Max 50MB</label>
+                                      <input id="editFileInput" type="file" accept=".pdf,.doc,.docx" onChange={handleEditFileChange} className="w-full border rounded px-3 py-2 mt-1" />
+                                      <div className="flex flex-wrap gap-2 mt-2">
                                         {editExistingFile && !editRemoveExisting && !editFormData.file && (
                                           <div className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm border border-blue-200">
                                             <FileText size={14} />
@@ -1205,239 +736,188 @@ export default function LogMeetingPage() {
                                         )}
                                       </div>
                                     </div>
+
+                                    <div className="flex justify-end gap-3 mt-5">
+                                      <button type="button" onClick={closeEditForm} className="flex items-center gap-2 px-4 py-2 border rounded-md text-sm font-medium hover:bg-gray-50 transition"><X size={16} /> Cancel</button>
+                                      <button type="submit" disabled={editFormLoading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition shadow-sm disabled:opacity-50">
+                                        <Check size={16} /> {editFormLoading ? "Updating..." : "Save Changes"}
+                                      </button>
+                                    </div>
+                                  </form>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* INLINE VIEW DETAILS (UPDATED TO MATCH SCREENSHOT) */}
+                          {isExpanded && !isEditing && (
+                            <tr>
+                              <td colSpan={7} className="p-4 bg-gray-50/80">
+                                <div className="mx-auto bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                                  
+                                  {/* Top Action Bar */}
+                                  <div className="bg-gradient-to-r from-blue-50 to-blue-100/30 px-6 py-4 border-b border-gray-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                                    <div>
+                                      <h4 className="text-lg font-bold text-gray-800">Document Details</h4>
+                                      <p className="text-sm text-gray-500">
+                                        <span className="font-medium text-gray-700">Document Type:</span> {doc.document_type}
+                                      </p>
+                                    </div>
+                                    
+                                    {/* Buttons grouped to the right */}
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                      <button onClick={() => openViewer(doc)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-600 border border-blue-200 rounded-md text-xs font-medium hover:bg-blue-50 transition shadow-sm">
+                                        <ViewIcon size={14} /> View
+                                      </button>
+                                      <button onClick={() => handleDownload(doc)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-600 border border-blue-200 rounded-md text-xs font-medium hover:bg-blue-50 transition shadow-sm">
+                                        <Download size={14} /> Download
+                                      </button>
+                                      {canManage && (
+                                        <>
+                                          <button onClick={() => openEditForm(doc)} className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-md text-xs font-medium hover:bg-yellow-100 transition shadow-sm">
+                                            <Pencil size={14} /> Edit
+                                          </button>
+                                          <button onClick={() => handleDelete(doc.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-md text-xs font-medium hover:bg-red-100 transition shadow-sm">
+                                            <Trash2 size={14} /> Delete
+                                          </button>
+                                          <button onClick={() => setSendDocId(doc.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white border border-indigo-600 rounded-md text-xs font-medium hover:bg-indigo-700 transition shadow-sm">
+                                            <Send size={14} /> Send Notification (new)
+                                          </button>
+                                        </>
+                                      )}
+                                      <button onClick={() => toggleRowExpand(doc.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-600 border border-gray-300 rounded-md text-xs font-medium hover:bg-gray-50 transition shadow-sm">
+                                        <X size={14} /> Close
+                                      </button>
+                                    </div>
                                   </div>
 
-                                  <div className="mt-6 flex gap-3">
-                                    <button type="button" onClick={closeEditForm} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition">Cancel</button>
-                                    <button type="submit" disabled={editFormLoading} className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-50">
-                                      {editFormLoading ? (<><span className="inline-block animate-spin mr-2">⟳</span> Updating...</>) : "Update"}
-                                    </button>
+                                  {/* Bottom Details Section */}
+                                  <div className="p-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                                      <div className="flex items-start gap-3">
+                                        <Hash size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Display Order</p>
+                                          <p className="text-sm text-gray-800">{doc.display_order || "—"}</p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-start gap-3">
+                                        <Calendar size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Date</p>
+                                          <p className="text-sm text-gray-800">{formatDate(doc.date)}</p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-start gap-3">
+                                        <FileText size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Document Type</p>
+                                          <p className="text-sm text-gray-800">{doc.document_type}</p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-start gap-3">
+                                        <Users size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Commission</p>
+                                          <p className="text-sm text-gray-800">{doc.commission}</p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-start gap-3">
+                                        <Calendar size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Year</p>
+                                          <p className="text-sm text-gray-800">{doc.year}</p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-start gap-3 md:col-span-2">
+                                        <FileText size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Subject</p>
+                                          <p className="text-sm text-gray-800">{doc.subject}</p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-start gap-3 md:col-span-2">
+                                        <File size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">File</p>
+                                          <button onClick={() => openViewer(doc)} className="text-sm text-blue-600 hover:underline flex items-center gap-1.5">
+                                            <ViewIcon size={14} />
+                                            {doc.file_url.split("/").pop()}
+                                          </button>
+                                          {doc.original_filename && (
+                                            <p className="text-xs text-gray-400 mt-1">Original: {doc.original_filename}</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
                                   </div>
-                                </form>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
 
-        {totalPages > 1 && (
-          <div className="flex justify-end items-center gap-4 mt-5 text-sm">
-            <button disabled={currentPage === 1} onClick={() => setCurrentPage(currentPage - 1)} className={`font-semibold text-lg ${currentPage === 1 ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}>&lt;</button>
-            <span>Page {currentPage} of {totalPages}</span>
-            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(currentPage + 1)} className={`font-semibold text-lg ${currentPage === totalPages ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}>&gt;</button>
-          </div>
-        )}
-
-        <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-sm text-yellow-800">
-            💡 Click <strong>"Details"</strong> to view, edit, or delete your documents. Use <strong>"Send Notification"</strong> for selective sending.
-          </p>
-        </div>
-
-        {/* Test Email Modal */}
-        {showTestEmailModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-800">🧪 Send Test Email</h3>
-                <button onClick={() => { setShowTestEmailModal(false); setTestEmailInput(""); }} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
-              </div>
-              <p className="text-sm text-gray-600 mb-4">Enter an email address to send a test notification.</p>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                <input type="email" value={testEmailInput} onChange={(e) => setTestEmailInput(e.target.value)} placeholder="test@example.com" className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" autoFocus />
-              </div>
-              <div className="flex justify-end gap-3">
-                <button onClick={() => { setShowTestEmailModal(false); setTestEmailInput(""); }} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition">Cancel</button>
-                <button onClick={handleTestEmailSubmit} className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition">Send Test Email</button>
-              </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-          </div>
-        )}
 
-        {/* Send-to Modal */}
-        {showSendToModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
-              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800">📧 Send Notifications</h3>
-                <button onClick={closeSendToModal} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
-              </div>
-
-              {/* Tabs */}
-              <div className="flex border-b border-gray-200 overflow-x-auto">
-                <button onClick={() => setSendToTab("all")} className={`px-4 py-3 text-sm font-medium transition whitespace-nowrap ${sendToTab === "all" ? "border-b-2 border-indigo-500 text-indigo-600" : "text-gray-500 hover:text-gray-700"}`}>All Users</button>
-                <button onClick={() => setSendToTab("departments")} className={`px-4 py-3 text-sm font-medium transition whitespace-nowrap ${sendToTab === "departments" ? "border-b-2 border-indigo-500 text-indigo-600" : "text-gray-500 hover:text-gray-700"}`}>By Department</button>
-                <button onClick={() => setSendToTab("divisions")} className={`px-4 py-3 text-sm font-medium transition whitespace-nowrap ${sendToTab === "divisions" ? "border-b-2 border-indigo-500 text-indigo-600" : "text-gray-500 hover:text-gray-700"}`}>By Division</button>
-                <button onClick={() => setSendToTab("individuals")} className={`px-4 py-3 text-sm font-medium transition whitespace-nowrap ${sendToTab === "individuals" ? "border-b-2 border-indigo-500 text-indigo-600" : "text-gray-500 hover:text-gray-700"}`}>Individuals</button>
-              </div>
-
-              {/* Tab Content */}
-              <div className="flex-1 overflow-y-auto p-6">
-                {sendToTab === "all" && (
-                  <div className="text-center py-8">
-                    <Users size={48} className="text-indigo-500 mx-auto mb-4" />
-                    <p className="text-lg font-semibold text-gray-800">Send to All Users</p>
-                    <p className="text-sm text-gray-500 mt-2">This will send the notification to every active user in the system.</p>
-                  </div>
-                )}
-
-                {sendToTab === "departments" && (
-                  <div>
-                    <div className="flex justify-between items-center mb-3">
-                      <label className="text-sm font-medium text-gray-700">Select Departments ({selectedDepartments.length} selected)</label>
-                      <button onClick={selectAllDepartments} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                        {selectedDepartments.length === dropdowns.departments.length ? "Deselect All" : "Select All"}
-                      </button>
-                    </div>
-                    <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
-                      {dropdowns.departments.length === 0 ? (
-                        <div className="p-4 text-sm text-gray-500 text-center">No departments found</div>
-                      ) : (
-                        dropdowns.departments.map((dept) => (
-                          <label key={dept.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
-                            <input type="checkbox" checked={selectedDepartments.includes(dept.id)} onChange={() => toggleDepartment(dept.id)} className="w-4 h-4 text-indigo-600 rounded" />
-                            <span className="text-sm text-gray-800">{dept.name}</span>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {sendToTab === "divisions" && (
-                  <div>
-                    <div className="flex justify-between items-center mb-3">
-                      <label className="text-sm font-medium text-gray-700">Select Divisions ({selectedDivisions.length} selected)</label>
-                      <button onClick={selectAllDivisions} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                        {selectedDivisions.length === dropdowns.divisions.length ? "Deselect All" : "Select All"}
-                      </button>
-                    </div>
-                    <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
-                      {dropdowns.divisions.length === 0 ? (
-                        <div className="p-4 text-sm text-gray-500 text-center">No divisions found</div>
-                      ) : (
-                        dropdowns.divisions.map((div) => (
-                          <label key={div.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
-                            <input type="checkbox" checked={selectedDivisions.includes(div.id)} onChange={() => toggleDivision(div.id)} className="w-4 h-4 text-indigo-600 rounded" />
-                            <span className="text-sm text-gray-800">{div.name}</span>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {sendToTab === "individuals" && (
-                  <div>
-                    <div className="mb-3">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="text-sm font-medium text-gray-700">Select Individuals ({selectedUsers.length} selected)</label>
-                        {filteredUsers.length > 0 && (
-                          <button onClick={selectAllFilteredUsers} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                            {filteredUsers.every((u) => selectedUsers.includes(u._id)) ? "Deselect All" : "Select All"}
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                        <input
-                          type="text"
-                          placeholder="Search by name, email, CID, department, division..."
-                          value={userSearchTerm}
-                          onChange={(e) => setUserSearchTerm(e.target.value)}
-                          className="w-full border border-gray-300 rounded-md pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                        />
-                      </div>
-                    </div>
-                    <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
-                      {loadingUsers ? (
-                        <div className="p-4 text-sm text-gray-500 text-center">Loading users...</div>
-                      ) : filteredUsers.length === 0 ? (
-                        <div className="p-4 text-sm text-gray-500 text-center">No users found</div>
-                      ) : (
-                        filteredUsers.map((user) => (
-                          <label key={user._id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
-                            <input
-                              type="checkbox"
-                              checked={selectedUsers.includes(user._id)}
-                              onChange={() => toggleUser(user._id)}
-                              className="w-4 h-4 text-indigo-600 rounded mt-1"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{user.name || "Unnamed"}</p>
-                              <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                              {(user.departmentName || user.divisionName) && (
-                                <p className="text-xs text-gray-400 truncate mt-0.5">
-                                  {user.departmentName || "—"}
-                                  {user.divisionName ? ` · ${user.divisionName}` : ""}
-                                </p>
-                              )}
-                            </div>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-2">
-                <div className="text-sm text-gray-600">
-                  {sendToTab === "all" && "Will send to all active users"}
-                  {sendToTab === "departments" && (selectedDepartments.length > 0 ? `${selectedDepartments.length} department(s) selected` : "No departments selected")}
-                  {sendToTab === "divisions" && (selectedDivisions.length > 0 ? `${selectedDivisions.length} division(s) selected` : "No divisions selected")}
-                  {sendToTab === "individuals" && (selectedUsers.length > 0 ? `${selectedUsers.length} individual(s) selected` : "No individuals selected")}
+            {/* Pagination */}
+            {totalPages > 0 && (
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-5 text-sm text-gray-600">
+                <div>
+                  Showing <span className="font-semibold text-gray-800">{startIndex + 1}</span> to{" "}
+                  <span className="font-semibold text-gray-800">{Math.min(startIndex + rowsPerPage, sorted.length)}</span> of{" "}
+                  <span className="font-semibold text-gray-800">{sorted.length}</span> records
                 </div>
-                <div className="flex gap-3">
-                  <button onClick={closeSendToModal} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition">Cancel</button>
-                  <button onClick={handleSendToSubmit} disabled={sendingEmail === sendToDocId} className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition disabled:opacity-50">
-                    {sendingEmail === sendToDocId ? "Sending..." : "Send Emails"}
-                  </button>
+                <div className="flex items-center gap-4">
+                  <button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => p - 1)}
+                    className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors">&lt;</button>
+                  <span>Page {currentPage} of {totalPages}</span>
+                  <button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => p + 1)}
+                    className="font-semibold text-lg disabled:text-gray-300 hover:text-blue-600 transition-colors">&gt;</button>
                 </div>
               </div>
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* Send Notification Modal */}
+      {sendDocId && (
+        <SendNotificationModal
+          docId={sendDocId}
+          onClose={() => setSendDocId(null)}
+          onSent={() => setSendDocId(null)}
+        />
+      )}
+
+      {/* PDF Viewer Modal */}
+      {showViewerModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={closeViewer}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">📄 {viewerFileName}</h3>
+              <button onClick={closeViewer} className="text-gray-400 hover:text-gray-600 transition"><X size={24} /></button>
+            </div>
+            <div className="flex-1 p-4 overflow-hidden">
+              <iframe src={viewerFileUrl} className="w-full h-[75vh] border-0 rounded" title="PDF Viewer" allowFullScreen />
+            </div>
+            <div className="px-6 py-3 border-t border-gray-200 text-sm text-gray-500 flex justify-between items-center">
+              <span>File: {viewerFileName}</span>
+              <a href={viewerFileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Open in new tab</a>
             </div>
           </div>
-        )}
-
-        {/* Unified Send Notification Modal */}
-        {sendDocId && (
-          <SendNotificationModal
-            docId={sendDocId}
-            onClose={() => setSendDocId(null)}
-            onSent={(result) => {
-              setSendDocId(null);
-            }}
-          />
-        )}
-
-        {/* PDF Viewer Modal */}
-        {showViewerModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={closeViewer}>
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800">📄 {viewerFileName}</h3>
-                <button onClick={closeViewer} className="text-gray-400 hover:text-gray-600 transition"><X size={24} /></button>
-              </div>
-              <div className="flex-1 p-4 overflow-hidden">
-                <iframe src={viewerFileUrl} className="w-full h-[75vh] border-0 rounded" title="PDF Viewer" allowFullScreen />
-              </div>
-              <div className="px-6 py-3 border-t border-gray-200 text-sm text-gray-500 flex justify-between items-center">
-                <span>File: {viewerFileName}</span>
-                <a href={viewerFileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Open in new tab</a>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
+        </div>
+      )}
+    </>
   );
 }

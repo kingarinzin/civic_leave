@@ -41,7 +41,7 @@
     "react-pdf": "^10.3.0",
     "react-rnd": "^10.5.2",
     "rechart": "^0.0.1",
-    "recharts": "^3.10.0"
+    "recharts": "^3.10.1"
   },
   "overrides": {
     "pdfjs-dist": "5.4.296"
