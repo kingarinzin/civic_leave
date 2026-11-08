@@ -1,8 +1,43 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import MeetingDocument from "@/models/MeetingDocument";
+import User from "@/models/User"; // Added for RBAC
+import { getUserPermissions, hasPermission } from "@/lib/rbac"; // Added for RBAC
+import { ObjectId } from "mongodb"; // Added for RBAC lookup
+import jwt from "jsonwebtoken"; // Added to verify token safely
 import fs from "fs";
 import path from "path";
+
+// ─── HELPER: Verify User & Permissions ──────────────
+async function checkPermission(request, requiredPermission) {
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.split(" ")[1];
+  if (!token) return { error: "Unauthorized", status: 401 };
+
+  try {
+    // Verify token using your secret
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (typeof decoded === "string" || !decoded.id) {
+      return { error: "Invalid token payload", status: 401 };
+    }
+
+    // Fetch user from DB (using Mongoose since RBAC uses Mongoose models)
+    const user = await User.findById(decoded.id);
+    if (!user) return { error: "User not found", status: 404 };
+
+    // Get RBAC Permissions
+    const permissions = await getUserPermissions(user);
+
+    // Check permission
+    if (!hasPermission(permissions, requiredPermission)) {
+      return { error: `Forbidden: Missing ${requiredPermission} permission`, status: 403 };
+    }
+
+    return { success: true, user };
+  } catch (error) {
+    return { error: "Authentication failed", status: 401 };
+  }
+}
 
 // ─── GET ────────────────────────────────────────────
 export async function GET(request) {
@@ -36,6 +71,12 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await connectToDatabase();
+
+    // 🔥 SECURITY CHECK
+    const authCheck = await checkPermission(request, "meetings.create");
+    if (authCheck.error) {
+      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status });
+    }
 
     const formData = await request.formData();
     const file = formData.get("file");
@@ -78,6 +119,7 @@ export async function POST(request) {
     }
     fs.writeFileSync(path.join(uploadDir, filename), buffer);
 
+    // Keeping your original uploader logic
     let uploadedByEmail = "";
     let uploadedByName = "";
     try {
@@ -121,6 +163,13 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     await connectToDatabase();
+
+    // 🔥 SECURITY CHECK
+    const authCheck = await checkPermission(request, "meetings.edit");
+    if (authCheck.error) {
+      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -203,6 +252,13 @@ export async function PUT(request) {
 export async function DELETE(request) {
   try {
     await connectToDatabase();
+
+    // 🔥 SECURITY CHECK
+    const authCheck = await checkPermission(request, "meetings.delete");
+    if (authCheck.error) {
+      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

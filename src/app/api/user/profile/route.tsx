@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
+import { getUserPermissions } from "@/lib/rbac"; // Import the RBAC helper
 
 export async function GET(req: Request) {
   try {
@@ -39,11 +40,19 @@ export async function GET(req: Request) {
     const resolvedName =
       typeof user.name === "string" && user.name.trim() ? user.name : "";
 
+    // 👇 NEW RBAC LOGIC 👇
+    // 1. Fetch dynamic permissions based on the user's assignedRoleId
+    // We pass the raw MongoDB user object to the helper
+    const permissions = await getUserPermissions(user);
+    // 👆 NEW RBAC LOGIC 👆
+
     return NextResponse.json({
       ...user,
       name: resolvedName,
+      permissions, // 2. Append the permissions array to the response
     });
-  } catch {
+  } catch (err) {
+    console.error("Profile Fetch Error:", err);
     return NextResponse.json({ error: "Fetch failed" }, { status: 500 });
   }
 }
