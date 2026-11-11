@@ -11,7 +11,9 @@ import {
   RefreshCw,
   Search,
   Filter,
-  Home
+  Home,
+  Upload,
+  FileText
 } from "lucide-react";
 
 interface LedgerItem {
@@ -35,6 +37,9 @@ export default function MyLedgerPage() {
   const [selectedBill, setSelectedBill] = useState<LedgerItem | null>(null);
   const [journeyNo, setJourneyNo] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Attachment State
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   // Search & Pagination
   const [search, setSearch] = useState("");
@@ -66,22 +71,33 @@ export default function MyLedgerPage() {
     loadLedger();
   }, [token]);
 
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) setAttachments((prev) => [...prev, ...files]);
+    e.target.value = "";
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handlePaySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBill || !journeyNo) return alert("Please enter the Journey Number");
 
     setIsSubmitting(true);
     try {
+      const formData = new FormData();
+      formData.append("method", "MBOB");
+      formData.append("referenceNumber", journeyNo);
+      attachments.forEach((file) => formData.append("attachments", file));
+
       const res = await fetch(`/api/room-booking/ledger/${selectedBill._id}/pay`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          method: "MBOB",
-          referenceNumber: journeyNo,
-        }),
+        body: formData,
       });
 
       if (!res.ok) throw new Error("Payment submission failed");
@@ -89,6 +105,7 @@ export default function MyLedgerPage() {
       alert("Payment submitted successfully! Waiting for Admin verification.");
       setSelectedBill(null);
       setJourneyNo("");
+      setAttachments([]);
       loadLedger(); // Refresh the list to show the new status
     } catch (err: any) {
       alert(err.message);
@@ -357,12 +374,47 @@ export default function MyLedgerPage() {
                 />
               </div>
 
+              {/* ATTACHMENT UPLOAD SECTION */}
+              <div className="border-t border-gray-100 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Upload Receipt / Screenshot (Optional)</label>
+                  <label className="cursor-pointer text-blue-600 hover:text-blue-800 transition flex items-center gap-1 text-sm font-medium">
+                    <Upload size={16} /> Add File
+                    <input 
+                      type="file" 
+                      multiple 
+                      onChange={handleFileSelect} 
+                      accept="image/*,.pdf" 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+                
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2 max-h-32 overflow-y-auto">
+                    {attachments.map((file, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-xs font-medium border border-blue-100">
+                        <FileText size={14} className="text-blue-600" />
+                        <span className="truncate max-w-[150px]">{file.name}</span>
+                        <button 
+                          type="button" 
+                          onClick={() => handleRemoveFile(idx)} 
+                          className="text-blue-500 hover:text-blue-800 transition ml-1"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-black text-white rounded-md py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 flex justify-center"
+                className="w-full bg-black text-white rounded-md py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 flex justify-center mt-2"
               >
-                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : "Submit Journey Number"}
+                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : "Submit Payment Details"}
               </button>
             </form>
           </div>

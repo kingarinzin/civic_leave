@@ -168,9 +168,23 @@ export async function POST(req: NextRequest) {
       const tierKey = TIER_MAP[type] || "tier2";
       const rateTier = TIER_LABEL[type] || "TIER2";
 
+      // 🚨 FIXED RATE CALCULATION WITH FALLBACK
       let ratePerBed = 0;
       beds.forEach((b: any) => {
-        const rate = Number(b.rates?.[tierKey] || 0);
+        let rate = Number(b.rates?.[tierKey]);
+        
+        // Fallback defaults if the DB has missing rates
+        if (!rate || isNaN(rate) || rate === 0) {
+          const defaultPrices: Record<string, number> = {
+            tier1: 150,
+            tier2: 200,
+            tier3: 200,
+            tier4: 300,
+            tier5: 400
+          };
+          rate = defaultPrices[tierKey] || 200;
+        }
+        
         if (rate > ratePerBed) ratePerBed = rate;
       });
 

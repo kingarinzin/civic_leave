@@ -3,18 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { 
-  ArrowLeft, 
-  ArrowRight, 
-  Loader2, 
-  CheckCircle2, 
-  CalendarDays, 
-  BedDouble, 
-  Users,
-  Building2,
-  UserCheck,
-  Plus,
-  X,
-  Edit3
+  ArrowLeft, ArrowRight, Loader2, CheckCircle2, CalendarDays, 
+  BedDouble, Users, Building2, UserCheck, Plus, X, Edit3, Shield
 } from "lucide-react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -31,26 +21,16 @@ export default function BookingWizard({
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  
-  // Core Form State
-  const [selectedBedIds, setSelectedBedIds] = useState<string[]>(preselectedBedIds);
-  const [checkIn, setCheckIn] = useState<Date | null>(null);
-  const [checkOut, setCheckOut] = useState<Date | null>(null);
   const [purpose, setPurpose] = useState("");
 
-  // --- UNIFIED GUEST LIST STATE ---
   const [guests, setGuests] = useState<any[]>([]);
-  
-  // Tracks which category form is currently open (Defaults to ACC_STAFF)
   const [activeTab, setActiveTab] = useState("ACC_STAFF"); 
-  
-  // Tracks which guest ID is currently being edited
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
-
-  // Family Members Data
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
 
-  // Fetch Family Members on mount
+  // New State for Approver Info
+  const [activeApprover, setActiveApprover] = useState<any>(null);
+
   useEffect(() => {
     async function loadFamily() {
       try {
@@ -63,10 +43,25 @@ export default function BookingWizard({
         console.error("Failed to load family", err);
       }
     }
+    
+    async function loadApprover() {
+      try {
+        // We fetch the list of approvers, and find the one marked as active
+        const res = await fetch("/api/room-booking/admin/approvers", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        const active = (data.approvers || []).find((a: any) => a.isRoomBookingApprover);
+        setActiveApprover(active || null);
+      } catch (err) {
+        console.error("Failed to load approver", err);
+      }
+    }
+
     loadFamily();
+    loadApprover();
   }, [token]);
 
-  // Calculate Tier Rate
   const getTierKey = (type: string) => {
     switch(type) {
       case "ACC_STAFF": return "tier2";
@@ -77,34 +72,33 @@ export default function BookingWizard({
     }
   };
 
-  const totalNights = checkIn && checkOut 
-    ? Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 3600 * 24))) 
-    : 0;
-
-  // Calculate cost per guest
   let totalCost = 0;
   const guestCosts = guests.map(guest => {
     const tierKey = getTierKey(guest.type);
     
-    // Calculate base rate for 1 night for this guest
-    const bedRatePerNight = selectedBedIds.reduce((sum, bedId) => {
-      const bed = beds.find((b: any) => b._id === bedId);
-      return sum + Number(bed?.rates?.[tierKey] || 0);
-    }, 0);
-    
-    const guestTotal = bedRatePerNight * (totalNights || 1);
+    const assignedBed = beds.find((b: any) => b._id === guest.bedId);
+    const fallbackBed = beds[0];
+    const usedBed = assignedBed || fallbackBed;
+
+    const tierRate = Number(usedBed?.rates?.[tierKey] || 0);
+
+    let guestNights = 0;
+    if (guest.checkIn && guest.checkOut) {
+      guestNights = Math.max(1, Math.ceil((new Date(guest.checkOut).getTime() - new Date(guest.checkIn).getTime()) / (1000 * 3600 * 24)));
+    }
+
+    const guestTotal = tierRate * guestNights;
     totalCost += guestTotal;
 
-    return { ...guest, bedRatePerNight, total: guestTotal };
+    return { ...guest, tierRate, nights: guestNights, total: guestTotal };
   });
 
   const isStep1Valid = () => {
-    if (selectedBedIds.length === 0) return false;
     if (guests.length === 0) return false;
-    
-    const manualGuests = guests.filter(g => g.type === "CO_AGENCY" || g.type === "STAKEHOLDER");
-    if (manualGuests.some(g => !g.fullName?.trim() || g.fullName === "Unknown Guest")) return false;
-    
+    for (const g of guests) {
+      if (!g.checkIn || !g.checkOut) return false;
+      if ((g.type === "CO_AGENCY" || g.type === "STAKEHOLDER") && (!g.fullName?.trim() || g.fullName === "Unknown Guest")) return false;
+    }
     return true;
   };
 
@@ -116,14 +110,23 @@ export default function BookingWizard({
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const formattedGuests = guests.map(g => ({
-        occupantType: g.type,
-        fullName: g.fullName,
-        familyRegistryId: g.familyId,
-        agencyName: g.agencyName,
-        designation: g.designation,
-        contactNo: g.contactNo,
-      }));
+      const formattedGuests = guests.map(g => {
+        const checkInDate = g.checkIn ? new Date(g.checkIn).toISOString() : new Date().toISOString();
+        const checkOutDate = g.checkOut ? new Date(g.checkOut).toISOString() : new Date(Date.now() + 86400000).toISOString();
+
+        return {
+          occupantType: g.type,
+          fullName: g.fullName,
+          familyRegistryId: g.familyId,
+          agencyName: g.agencyName,
+          contactNo: g.contactNo,
+          checkIn: checkInDate,
+          checkOut: checkOutDate,
+          bedId: g.bedId || beds[0]?._id,
+        };
+      });
+
+      const uniqueBedIds = Array.from(new Set(guests.map(g => g.bedId || beds[0]?._id).filter(Boolean)));
 
       const res = await fetch("/api/room-booking/bookings", {
         method: "POST",
@@ -133,9 +136,7 @@ export default function BookingWizard({
         },
         body: JSON.stringify({
           roomId: room._id,
-          bedIds: selectedBedIds,
-          checkIn,
-          checkOut,
+          bedIds: uniqueBedIds,
           purpose,
           guests: formattedGuests, 
         }),
@@ -160,30 +161,35 @@ export default function BookingWizard({
     }
   };
 
-  // --- HELPERS ---
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
-    
     if (tabId === "ACC_STAFF") {
       const hasStaff = guests.some(g => g.type === "ACC_STAFF");
       if (!hasStaff) {
+        const newId = Date.now().toString();
         setGuests(prev => [
           ...prev, 
-          { id: "staff_self", type: "ACC_STAFF", fullName: "Myself (ACC Staff)" }
+          { id: newId, type: "ACC_STAFF", fullName: "Myself (ACC Staff)", checkIn: null, checkOut: null, bedId: "" }
         ]);
+        setEditingGuestId(newId);
       }
     }
   };
 
   const addFamilyMember = (fam: any) => {
     if (guests.some(g => g.familyId === fam._id)) return;
+    const newId = Date.now().toString();
     setGuests([...guests, {
-      id: Date.now().toString(),
+      id: newId,
       type: "FAMILY",
       familyId: fam._id,
       fullName: fam.fullName,
-      relationship: fam.relationshipCode
+      relationship: fam.relationshipCode,
+      checkIn: null,
+      checkOut: null,
+      bedId: ""
     }]);
+    setEditingGuestId(newId);
   };
 
   const addManualGuest = (type: "CO_AGENCY" | "STAKEHOLDER") => {
@@ -193,7 +199,10 @@ export default function BookingWizard({
       type,
       fullName: "",
       agencyName: "",
-      contactNo: ""
+      contactNo: "",
+      checkIn: null,
+      checkOut: null,
+      bedId: ""
     }]);
     setEditingGuestId(newId); 
   };
@@ -203,7 +212,7 @@ export default function BookingWizard({
     if (editingGuestId === id) setEditingGuestId(null);
   };
 
-  const updateGuestField = (id: string, field: string, value: string) => {
+  const updateGuestField = (id: string, field: string, value: any) => {
     setGuests(guests.map(g => g.id === id ? { ...g, [field]: value } : g));
   };
 
@@ -225,10 +234,12 @@ export default function BookingWizard({
     }
   };
 
+  // Check if any guest requires approval
+  const requiresApproval = guests.some(g => g.type === "CO_AGENCY" || g.type === "STAKEHOLDER");
+
   return (
     <div className={`w-full ${isInsideModal ? "" : "max-w-3xl mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"}`}>
       
-      {/* Header */}
       <div className="px-6 pt-6 pb-4 border-b border-gray-100 bg-white sticky top-0 z-10">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -238,8 +249,8 @@ export default function BookingWizard({
         </div>
         <div className="flex items-center justify-between relative">
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-gray-100 -z-10 rounded-full"></div>
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-blue-600 -z-10 rounded-full transition-all duration-300" style={{ width: `${((step - 1) / 3) * 100}%` }}></div>
-          {[1, 2, 3, 4].map((num) => (
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-blue-600 -z-10 rounded-full transition-all duration-300" style={{ width: `${((step - 1) / 2) * 100}%` }}></div>
+          {[1, 2, 3].map((num) => (
             <div key={num} className="flex flex-col items-center gap-2 bg-white px-2">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                 step > num ? "bg-blue-600 text-white" : 
@@ -253,7 +264,6 @@ export default function BookingWizard({
         </div>
       </div>
 
-      {/* Content */}
       <div className="p-6 min-h-[400px]">
         
         {step === 1 && (
@@ -286,7 +296,7 @@ export default function BookingWizard({
               {activeTab === "ACC_STAFF" && (
                 <div className="text-center text-sm text-gray-500 py-4">
                   {guests.some(g => g.type === "ACC_STAFF") 
-                    ? "You have been added as an ACC Staff guest." 
+                    ? "You have been added. Please assign your bed and dates." 
                     : "Click the Staff tab again to add yourself as a guest."}
                 </div>
               )}
@@ -341,32 +351,27 @@ export default function BookingWizard({
 
             <div>
               <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center justify-between">
-                <span>Selected Guests</span>
+                <span>Selected Guests, Beds & Dates</span>
                 <span className="bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-bold">{guests.length} Total</span>
               </h3>
               
               <div className="flex flex-wrap gap-2 mb-4">
                 {guests.length === 0 && (
-                  <span className="text-sm text-gray-400 italic">No guests added yet. Please click a tier to add.</span>
+                  <span className="text-sm text-gray-400 italic">No guests added yet.</span>
                 )}
                 {guests.map((g) => (
                   <div 
                     key={g.id} 
-                    onClick={() => {
-                      if (g.type !== "FAMILY" && g.type !== "ACC_STAFF") {
-                        setEditingGuestId(g.id);
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition ${
-                      g.type !== "FAMILY" && g.type !== "ACC_STAFF" ? "cursor-pointer" : ""
-                    } ${getPillColor(g.type)} ${editingGuestId === g.id ? "ring-2 ring-black" : ""}`}
+                    onClick={() => setEditingGuestId(g.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition cursor-pointer ${getPillColor(g.type)} ${editingGuestId === g.id ? "ring-2 ring-black" : ""}`}
                   >
                     <span>{g.fullName || `New ${g.type.replace("_", " ")}`}</span>
-                    
-                    {g.type !== "FAMILY" && g.type !== "ACC_STAFF" && (
-                      <Edit3 size={12} className="opacity-50" />
+                    {g.bedId && (
+                      <span className="text-[10px] bg-white/50 px-1.5 py-0.5 rounded text-gray-700 font-bold">
+                        Bed {beds.find((b:any) => b._id === g.bedId)?.bedLabel || "?"}
+                      </span>
                     )}
-
+                    <Edit3 size={12} className="opacity-50" />
                     <button onClick={(e) => { e.stopPropagation(); removeGuest(g.id); }} className="hover:bg-black/10 rounded-full p-0.5 transition">
                       <X size={14} />
                     </button>
@@ -381,11 +386,11 @@ export default function BookingWizard({
                     if (!g) return null;
                     
                     return (
-                      <div className="space-y-3">
+                      <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getPillColor(g.type)}`}>{g.type.replace("_", " ")}</span>
-                            <span className="text-xs font-semibold text-gray-600">Editing Details</span>
+                            <span className="text-xs font-semibold text-gray-600">Details, Bed & Dates</span>
                           </div>
                           <button onClick={finishEditing} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full hover:bg-blue-100">
                             Done
@@ -398,101 +403,77 @@ export default function BookingWizard({
                           value={g.fullName || ""} 
                           onChange={(e) => updateGuestField(g.id, "fullName", e.target.value)}
                           className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" 
-                          autoFocus
                         />
                         
                         {g.type === "CO_AGENCY" && (
                           <div className="grid grid-cols-2 gap-2">
-                            <input 
-                              type="text" 
-                              placeholder="Agency Name" 
-                              value={g.agencyName || ""} 
-                              onChange={(e) => updateGuestField(g.id, "agencyName", e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" 
-                            />
-                            <input 
-                              type="text" 
-                              placeholder="Contact No" 
-                              value={g.contactNo || ""} 
-                              onChange={(e) => updateGuestField(g.id, "contactNo", e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" 
-                            />
+                            <input type="text" placeholder="Agency Name" value={g.agencyName || ""} onChange={(e) => updateGuestField(g.id, "agencyName", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" />
+                            <input type="text" placeholder="Contact No" value={g.contactNo || ""} onChange={(e) => updateGuestField(g.id, "contactNo", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" />
                           </div>
                         )}
 
                         {g.type === "STAKEHOLDER" && (
-                          <input 
-                            type="text" 
-                            placeholder="Organization / Designation" 
-                            value={g.agencyName || ""} 
-                            onChange={(e) => updateGuestField(g.id, "agencyName", e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" 
-                          />
+                          <input type="text" placeholder="Organization / Designation" value={g.agencyName || ""} onChange={(e) => updateGuestField(g.id, "agencyName", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none" />
                         )}
+
+                        <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100">
+                          <label className="block text-xs font-bold text-gray-700 mb-1">Assign Bed (Optional)</label>
+                          <select
+                            value={g.bedId || ""}
+                            onChange={(e) => updateGuestField(g.id, "bedId", e.target.value)}
+                            className="w-full border border-gray-300 rounded-md p-2 text-sm outline-none focus:border-blue-600 bg-white"
+                          >
+                            <option value="">-- Select Bed --</option>
+                            {beds.map((b: any) => (
+                              <option key={b._id} value={b._id}>
+                                Bed {b.bedLabel} ({b.bedTypeCode})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                          <label className="block text-xs font-bold text-gray-700 mb-2">Stay Dates <span className="text-red-500">*</span></label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Check-in</span>
+                              <DatePicker
+                                selected={g.checkIn ? new Date(g.checkIn) : null}
+                                onChange={(date: Date | null) => updateGuestField(g.id, "checkIn", date)}
+                                selectsStart
+                                startDate={g.checkIn ? new Date(g.checkIn) : null}
+                                endDate={g.checkOut ? new Date(g.checkOut) : null}
+                                minDate={new Date()}
+                                placeholderText="Select"
+                                className="w-full border border-gray-300 rounded-md p-2 text-sm outline-none focus:border-blue-600"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Check-out</span>
+                              <DatePicker
+                                selected={g.checkOut ? new Date(g.checkOut) : null}
+                                onChange={(date: Date | null) => updateGuestField(g.id, "checkOut", date)}
+                                selectsEnd
+                                startDate={g.checkIn ? new Date(g.checkIn) : null}
+                                endDate={g.checkOut ? new Date(g.checkOut) : null}
+                                minDate={g.checkIn ? new Date(g.checkIn) : new Date()}
+                                placeholderText="Select"
+                                className="w-full border border-gray-300 rounded-md p-2 text-sm outline-none focus:border-blue-600"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
                       </div>
                     );
                   })()}
                 </div>
               )}
             </div>
-
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Select Beds</h3>
-              <div className="grid grid-cols-1 gap-3">
-                {beds.map((bed: any) => {
-                  const isSelected = selectedBedIds.includes(bed._id);
-                  return (
-                    <label key={bed._id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                        isSelected ? "border-blue-600 bg-blue-50/30" : "border-gray-200 bg-white hover:border-gray-300"
-                      }`}>
-                      <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-full ${isSelected ? "bg-blue-600 text-white" : "bg-gray-100"}`}>
-                          <BedDouble size={20} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-gray-900">Bed {bed.bedLabel}</p>
-                        </div>
-                      </div>
-                      <input type="checkbox" checked={isSelected} onChange={(e) => {
-                        if (e.target.checked) setSelectedBedIds([...selectedBedIds, bed._id]);
-                        else setSelectedBedIds(selectedBedIds.filter((id: string) => id !== bed._id));
-                      }} className="w-5 h-5 accent-blue-600" />
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
           </div>
         )}
 
         {step === 2 && (
-          <div className="animate-in fade-in">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">When are you staying?</h3>
-            <DatePicker
-              selected={checkIn}
-              onChange={(dates: any) => {
-                const [start, end] = dates;
-                setCheckIn(start);
-                setCheckOut(end);
-              }}
-              startDate={checkIn}
-              endDate={checkOut}
-              selectsRange
-              inline
-              monthsShown={2}
-              minDate={new Date()}
-              calendarClassName="custom-calendar"
-            />
-            {totalNights > 0 && (
-              <div className="mt-4 p-4 bg-blue-50 text-blue-800 rounded-xl font-medium">
-                Stay length: {totalNights} nights
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === 3 && (
           <div className="animate-in fade-in">
             <h3 className="text-lg font-semibold mb-4">Purpose of Stay</h3>
             <textarea 
@@ -501,11 +482,31 @@ export default function BookingWizard({
               className="w-full border rounded-xl p-4 h-32 focus:ring-2 focus:ring-blue-600 outline-none" 
               placeholder="Reason for stay..."
             ></textarea>
+
+            {/* APPROVAL BANNER FOR TIER 4 & 5 */}
+            {requiresApproval && (
+              <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl animate-in fade-in">
+                <h4 className="text-sm font-bold text-amber-900 mb-1 flex items-center gap-2">
+                  <Shield size={16} /> Approval Required
+                </h4>
+                <p className="text-xs text-amber-700">
+                  Your booking includes a Co-Agency or Stakeholder. It will be reviewed by:
+                </p>
+                {activeApprover ? (
+                  <p className="text-sm font-semibold text-gray-800 mt-2">
+                    {activeApprover.name} ({activeApprover.email})
+                  </p>
+                ) : (
+                  <p className="text-sm font-semibold text-red-600 mt-2">
+                    Warning: No active approver found. Please contact the Room Admin.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* STEP 4: REVIEW WITH EXPLICIT RATE X NIGHTS BREAKDOWN */}
-        {step === 4 && (
+        {step === 3 && (
           <div className="animate-in fade-in py-6">
             <div className="text-center mb-6">
               <CheckCircle2 size={48} className="text-green-500 mx-auto mb-4" />
@@ -514,24 +515,24 @@ export default function BookingWizard({
             
             <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200 max-w-md mx-auto space-y-4">
               
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Dates</span>
-                <span className="font-semibold">
-                  {checkIn?.toLocaleDateString()} to {checkOut?.toLocaleDateString()} ({totalNights} nights)
-                </span>
-              </div>
-
-              <div className="border-t border-gray-200 pt-4">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Pricing Breakdown</p>
+              <div className="border-b border-gray-200 pb-4">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Individual Guest Breakdown</p>
                 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {guestCosts.map((g, idx) => (
-                    <div key={idx} className="flex justify-between items-start text-sm text-gray-700">
+                    <div key={idx} className="flex justify-between items-start text-sm text-gray-700 bg-white p-3 rounded-lg border border-gray-100">
                       <div className="flex flex-col">
-                        <span className="font-semibold text-gray-900">{g.fullName}</span>
-                        {/* CLEAR BREAKDOWN: Rate x Nights */}
-                        <span className="text-xs text-gray-500">
-                          Nu. {g.bedRatePerNight.toLocaleString()} / night × {totalNights || 1} nights
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-900">{g.fullName}</span>
+                          {g.bedId && (
+                            <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded font-bold">Bed {beds.find((b:any) => b._id === g.bedId)?.bedLabel || "?"}</span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-500 mt-1">
+                          {g.checkIn ? new Date(g.checkIn).toLocaleDateString() : ""} to {g.checkOut ? new Date(g.checkOut).toLocaleDateString() : ""}
+                        </span>
+                        <span className="text-xs text-gray-500 mt-1">
+                          Nu. {g.tierRate.toLocaleString()} × {g.nights} nights
                         </span>
                       </div>
                       <span className="font-semibold mt-1">Nu. {g.total.toLocaleString()}</span>
@@ -540,7 +541,16 @@ export default function BookingWizard({
                 </div>
               </div>
 
-              <div className="border-t border-gray-200 pt-4 flex justify-between items-center">
+              {requiresApproval && (
+                <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-2">
+                  <Shield size={16} className="text-amber-600 shrink-0" />
+                  <p className="text-xs text-amber-800 font-medium">
+                    This booking will be sent to {activeApprover?.name || "the Commissioner"} for final approval before confirmation.
+                  </p>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-between items-center">
                 <span className="font-bold text-gray-900">Total Cost</span>
                 <span className="font-bold text-blue-600 text-xl">Nu. {totalCost.toLocaleString()}</span>
               </div>
@@ -550,13 +560,12 @@ export default function BookingWizard({
         )}
       </div>
 
-      {/* Footer */}
       <div className="p-6 border-t border-gray-100 flex items-center justify-between">
         <button onClick={step === 1 ? handleCancel : () => setStep(step - 1)} className="px-5 py-2.5 font-semibold text-gray-600">
           {step === 1 ? "Cancel" : "Back"}
         </button>
-        {step < 4 ? (
-          <button onClick={() => setStep(step + 1)} disabled={!isStep1Valid() || (step === 2 && (!checkIn || !checkOut))} className="px-8 py-2.5 font-bold text-white bg-blue-600 rounded-lg disabled:opacity-50">
+        {step < 3 ? (
+          <button onClick={() => setStep(step + 1)} disabled={!isStep1Valid()} className="px-8 py-2.5 font-bold text-white bg-blue-600 rounded-lg disabled:opacity-50">
             Continue
           </button>
         ) : (

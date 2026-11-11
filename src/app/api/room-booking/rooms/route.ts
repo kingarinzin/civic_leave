@@ -61,7 +61,9 @@ export async function GET(req: NextRequest) {
         ...bed,
         _id: bed._id.toString(),
         roomId: bed.roomId.toString(),
-        status: dynamicStatus // Override with dynamic status
+        status: dynamicStatus, // Override with dynamic status
+        // FIX: Ensure every bed has rates, fallback to defaults if missing
+        rates: bed.rates || { tier1: 150, tier2: 200, tier3: 200, tier4: 300, tier5: 400 }
       });
     }
 

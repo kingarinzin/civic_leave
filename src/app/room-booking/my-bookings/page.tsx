@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Loader2, 
@@ -16,7 +16,8 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Clock
+  Clock,
+  Upload
 } from "lucide-react";
 
 interface Guest {
@@ -38,6 +39,7 @@ interface Booking {
   totalAmount: number;
   paymentStatus: string;
   guests: Guest[];
+  receipts?: string[]; // ADDED: To hold uploaded files
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -75,6 +77,9 @@ export default function MyBookingsPage() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [journeyNo, setJourneyNo] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Attachment State
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -125,6 +130,17 @@ export default function MyBookingsPage() {
   const handlePayClick = (booking: Booking) => {
     setSelectedBooking(booking);
     setJourneyNo("");
+    setAttachments([]);
+  };
+
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) setAttachments((prev) => [...prev, ...files]);
+    e.target.value = "";
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handlePaySubmit = async (e: React.FormEvent) => {
@@ -136,28 +152,41 @@ export default function MyBookingsPage() {
       const ledgerRes = await fetch("/api/room-booking/ledger", {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
+      if (!ledgerRes.ok) throw new Error("Failed to fetch pending bills.");
+      
       const ledgerData = await ledgerRes.json();
       
-      const unpaidBill = ledgerData.ledger.find(
-        (l: any) => l.bookingId === selectedBooking._id && l.status === "UNPAID"
+      const unpaidBill = ledgerData.ledger?.find(
+        (l: any) => l.bookingId === selectedBooking._id
       );
 
-      if (!unpaidBill) throw new Error("Could not find the pending bill for this booking.");
+      if (!unpaidBill) {
+        throw new Error("Could not find the pending bill for this booking. It may have already been paid.");
+      }
+
+      const formData = new FormData();
+      formData.append("method", "MBOB");
+      formData.append("referenceNumber", journeyNo);
+      attachments.forEach((file) => formData.append("attachments", file));
 
       const res = await fetch(`/api/room-booking/ledger/${unpaidBill._id}/pay`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ method: "MBOB", referenceNumber: journeyNo }),
+        body: formData,
       });
 
-      if (!res.ok) throw new Error("Payment submission failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Payment submission failed");
+      }
 
       alert("Payment submitted successfully! Waiting for Admin verification.");
       setSelectedBooking(null);
       setJourneyNo("");
+      setAttachments([]);
       load(); 
     } catch (err: any) {
       alert(err.message);
@@ -271,9 +300,27 @@ export default function MyBookingsPage() {
                         </span>
                       )}
                       {isPendingVerification && (
-                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
-                          <Clock size={12} /> VERIFYING
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
+                            <Clock size={12} /> VERIFYING
+                          </span>
+                          {/* FIXED: href now points directly to the public folder */}
+                          {b.receipts && b.receipts.length > 0 && (
+                            <div className="flex flex-wrap gap-1 justify-end mt-1">
+                              {b.receipts.map((file: string, idx: number) => (
+                                <a 
+                                  key={idx} 
+                                  href={`/uploads/room-booking/money-receipt/${file}`} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
+                                >
+                                  <FileText size={10} /> Receipt {idx + 1}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -373,18 +420,72 @@ export default function MyBookingsPage() {
             <p className="text-sm text-gray-500 mb-6">
               Amount to pay: <strong className="text-black">Nu. {selectedBooking.totalAmount}</strong>
             </p>
-            <div className="flex flex-col items-center mb-6">
-              <div className="w-48 h-48 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center mb-2">
-                 <span className="text-gray-400 text-sm text-center px-4">Bank QR Code<br/>Goes Here</span>
+            
+            {/* UPDATED QR CODE SECTION WITH ACC DETAILS */}
+            <div className="flex flex-col items-center mb-6 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
+              <div className="w-56 h-56 bg-white border border-gray-200 rounded-lg flex items-center justify-center mb-3 p-2 shadow-sm overflow-hidden">
+                 <img 
+                   src="/uploads/room-booking/QR-Code/bob-QR-code.jpg"
+                   alt="mBop Payment QR Code" 
+                   className="w-full h-full object-contain" 
+                 />
+              </div>
+              <p className="text-xs text-gray-500 font-medium mb-3">Scan this QR code with the mBop app to pay</p>
+              
+              {/* ACCOUNT DETAILS */}
+              <div className="text-center space-y-1">
+                <p className="text-sm font-bold text-gray-800">
+                  ACC No: <span className="font-mono text-blue-600">206637082</span>
+                </p>
+                <p className="text-xs text-gray-600 font-medium">
+                  Account Holder: <span className="text-gray-900">Sonam Lhamo</span>
+                </p>
               </div>
             </div>
+
             <form onSubmit={handlePaySubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">mBop Journey Number</label>
                 <input type="text" required value={journeyNo} onChange={(e) => setJourneyNo(e.target.value)} placeholder="e.g. 123456789" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
               </div>
-              <button type="submit" disabled={isSubmitting} className="w-full bg-black text-white rounded-md py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 flex justify-center">
-                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : "Submit Journey Number"}
+
+              {/* ATTACHMENT UPLOAD SECTION */}
+              <div className="border-t border-gray-100 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Upload Receipt / Screenshot (Optional)</label>
+                  <label className="cursor-pointer text-blue-600 hover:text-blue-800 transition flex items-center gap-1 text-sm font-medium">
+                    <Upload size={16} /> Add File
+                    <input 
+                      type="file" 
+                      multiple 
+                      onChange={handleFileSelect} 
+                      accept="image/*,.pdf" 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+                
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2 max-h-32 overflow-y-auto">
+                    {attachments.map((file, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-xs font-medium border border-blue-100">
+                        <FileText size={14} className="text-blue-600" />
+                        <span className="truncate max-w-[150px]">{file.name}</span>
+                        <button 
+                          type="button" 
+                          onClick={() => handleRemoveFile(idx)} 
+                          className="text-blue-500 hover:text-blue-800 transition ml-1"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button type="submit" disabled={isSubmitting} className="w-full bg-black text-white rounded-md py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 flex justify-center mt-2">
+                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : "Submit Payment Details"}
               </button>
             </form>
           </div>

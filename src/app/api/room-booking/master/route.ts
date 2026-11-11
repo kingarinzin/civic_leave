@@ -1,7 +1,7 @@
 // src/app/api/room-booking/master/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
-import { verifyBookingAdmin } from "@/lib/room-booking-auth";
+import { verifyBookingUser, verifyBookingAdmin } from "@/lib/room-booking-auth";
 
 const MASTER_COLLECTIONS = [
   "rb_room_types",
@@ -16,7 +16,8 @@ const MASTER_COLLECTIONS = [
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await verifyBookingAdmin(req);
+    // CHANGED: any authenticated booking user can READ masters
+    const auth = await verifyBookingUser(req);
     if (!auth.valid) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

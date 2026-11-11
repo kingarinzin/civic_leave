@@ -208,7 +208,9 @@ export async function hasPendingBill(staffId: string): Promise<boolean> {
   const db = client.db("civic_leave_db");
   const count = await db.collection("rb_ledger").countDocuments({
     staffId: new ObjectId(staffId),
-    status: "UNPAID",
+    // FIX: Added PENDING_VERIFICATION so users cannot book new rooms
+    // until the admin verifies the mBop payment.
+    status: { $in: ["UNPAID", "PENDING_VERIFICATION"] },
   });
   return count > 0;
 }

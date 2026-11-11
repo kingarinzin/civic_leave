@@ -1,7 +1,7 @@
 // src/app/api/room-booking/master/[type]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
-import { verifyBookingAdmin } from "@/lib/room-booking-auth";
+import { verifyBookingUser, verifyBookingAdmin } from "@/lib/room-booking-auth";
 
 const ALLOWED_TYPES = new Set([
   "room-types",
@@ -35,7 +35,10 @@ export async function GET(
   { params }: { params: Promise<{ type: string }> },
 ) {
   try {
-    const auth = await verifyBookingAdmin(req);
+    // CHANGED: any authenticated booking user can READ masters
+    // (required so normal users can populate the relationship /
+    // proof-type dropdowns on the family-registration form).
+    const auth = await verifyBookingUser(req);
     if (!auth.valid) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

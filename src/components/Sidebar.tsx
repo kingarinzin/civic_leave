@@ -118,9 +118,9 @@ export default function Sidebar() {
     //"yangzom@acc.org.bt",
    // "skhando@acc.org.bt",
     //"bdorj@acc.org.bt",
-    "tshewangrinzin@acc.org.bt",
+   // "tshewangrinzin@acc.org.bt",
     //"chekiw@acc.org.bt",
-    "gyeltshencipo@acc.org.bt",
+    //"gyeltshencipo@acc.org.bt",
   ];
   const showHRS = isAdmin || hrsAllowedEmails.includes(normalizedEmail);
 

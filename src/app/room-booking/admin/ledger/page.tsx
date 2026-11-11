@@ -35,7 +35,7 @@ export default function AdminLedgerPage() {
   // API Filter State
   const [filter, setFilter] = useState<
     "ALL" | "UNPAID" | "PENDING_VERIFICATION" | "PAID"
-  >("PENDING_VERIFICATION");
+  >("ALL");
 
   // Client-side Search & Filter States
   const [search, setSearch] = useState("");

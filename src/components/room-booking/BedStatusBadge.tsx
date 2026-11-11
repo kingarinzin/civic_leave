@@ -13,7 +13,7 @@ const STATUS_STYLES: Record<
   { bg: string; text: string; dot: string; label: string }
 > = {
   AVAILABLE: { bg: "bg-green-100", text: "text-green-700", dot: "bg-green-500", label: "Available" },
-  OCCUPIED: { bg: "bg-gray-200", text: "text-gray-700", dot: "bg-gray-500", label: "Occupied" },
+  OCCUPIED: { bg: "bg-red-50", text: "text-red-600", dot: "bg-red-500", label: "Occupied" },
   RESERVED: { bg: "bg-amber-100", text: "text-amber-700", dot: "bg-amber-500", label: "Reserved" },
   MAINTENANCE: { bg: "bg-red-100", text: "text-red-700", dot: "bg-red-500", label: "Maintenance" },
 };
